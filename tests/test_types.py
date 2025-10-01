@@ -1,3 +1,5 @@
+import pytest
+
 from battle_sim.models.type_matchups import type_effectiveness
 from battle_sim.utils import Type
 
@@ -26,3 +28,7 @@ def test_dual_typing_effectiveness():
     # Ice vs Dragon/Ground (Garchomp): 2x * 2x = 4x
     multiplier = type_effectiveness(Type.ICE, (Type.DRAGON, Type.GROUND))
     assert multiplier == 4.0
+
+
+if __name__ == "__main__":
+    pytest.main()

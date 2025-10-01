@@ -44,3 +44,7 @@ def test_all_natures_are_unique_pairs():
         assert pair not in seen, f"Duplicate UP/DOWN pair found in {nature}"
         seen.add(pair)
     assert len(seen) == 25
+
+
+if __name__ == "__main__":
+    pytest.main()
