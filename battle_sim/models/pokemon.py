@@ -28,19 +28,9 @@ class Pokemon(BaseModel):
 
         return StatTotals(
             HP=calculate_total_hp(bs.HP, ivs.HP, evs.HP, lvl),
-            ATTACK=calculate_total_stat(
-                bs.ATTACK, ivs.ATTACK, evs.ATTACK, lvl, nat, "ATTACK"
-            ),
-            DEFENCE=calculate_total_stat(
-                bs.DEFENCE, ivs.DEFENCE, evs.DEFENCE, lvl, nat, "DEFENCE"
-            ),
-            SP_ATTACK=calculate_total_stat(
-                bs.SP_ATTACK, ivs.SP_ATTACK, evs.SP_ATTACK, lvl, nat, "SP_ATTACK"
-            ),
-            SP_DEFENCE=calculate_total_stat(
-                bs.SP_DEFENCE, ivs.SP_DEFENCE, evs.SP_DEFENCE, lvl, nat, "SP_DEFENCE"
-            ),
-            SPEED=calculate_total_stat(
-                bs.SPEED, ivs.SPEED, evs.SPEED, lvl, nat, "SPEED"
-            ),
+            ATTACK=calculate_total_stat(bs.ATTACK, ivs.ATTACK, evs.ATTACK, lvl, nat, "ATTACK"),
+            DEFENCE=calculate_total_stat(bs.DEFENCE, ivs.DEFENCE, evs.DEFENCE, lvl, nat, "DEFENCE"),
+            SP_ATTACK=calculate_total_stat(bs.SP_ATTACK, ivs.SP_ATTACK, evs.SP_ATTACK, lvl, nat, "SP_ATTACK"),
+            SP_DEFENCE=calculate_total_stat(bs.SP_DEFENCE, ivs.SP_DEFENCE, evs.SP_DEFENCE, lvl, nat, "SP_DEFENCE"),
+            SPEED=calculate_total_stat(bs.SPEED, ivs.SPEED, evs.SPEED, lvl, nat, "SPEED"),
         )
