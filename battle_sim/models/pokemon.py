@@ -39,7 +39,7 @@ class Pokemon(BaseModel):
         )
 
     def known_moves(self) -> list[Move]:
-        return self.moves.moves() if hasattr(self.moves, "moves") else self.moves.to_list()
+        return self.moves.to_list()
 
     def has_move(self, move: Move) -> bool:
         return self.moves.contains(move)
