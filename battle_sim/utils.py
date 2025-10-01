@@ -32,6 +32,17 @@ class Category(Enum):
     STATUS = auto()
 
 
+class Target(Enum):
+    SINGLE_OPPONENT = auto()
+    SELF = auto()
+    USER_SIDE = auto()
+    OPPONENT_SIDE = auto()
+    FIELD = auto()
+    # TODO: Add support for these in the engine:
+    ALL_ADJACENT_ENEMIES = auto()
+    ALL_ADJACENT = auto()
+
+
 class PriorityLevel(IntEnum):
     """
     These are codenames for various priority levels based on the most common moves that have them.

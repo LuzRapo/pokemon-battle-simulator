@@ -1,6 +1,8 @@
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from battle_sim.maths.stats import calculate_total_hp, calculate_total_stat
+from battle_sim.models.moves import Move, MoveSet, MoveSlot
 from battle_sim.models.stats import BaseStats, EVs, IVs, StatTotals
 from battle_sim.models.type_matchups import TypePair
 from battle_sim.utils import Nature
@@ -15,7 +17,8 @@ class Pokemon(BaseModel):
     individual_values: IVs
     base_stats: BaseStats
     types: TypePair
-    # items, abilities, moves, etc. can be added later
+    moves: MoveSet
+    # items, abilities, etc. can be added later
 
     @property
     def stat_totals(self) -> StatTotals:
@@ -34,3 +37,23 @@ class Pokemon(BaseModel):
             SP_DEFENCE=calculate_total_stat(bs.SP_DEFENCE, ivs.SP_DEFENCE, evs.SP_DEFENCE, lvl, nat, "SP_DEFENCE"),
             SPEED=calculate_total_stat(bs.SPEED, ivs.SPEED, evs.SPEED, lvl, nat, "SPEED"),
         )
+
+    def known_moves(self) -> list[Move]:
+        return self.moves.to_list()
+
+    def has_move(self, move: Move) -> bool:
+        return self.moves.contains(move)
+
+    def learn_move(self, new_move: Move, move_slot: MoveSlot) -> None:
+        """Learn a move. If not full, fills first empty slot; otherwise overwrites move_slot."""
+        if self.has_move(new_move):
+            return
+        self.moves.learn_move(new_move, move_slot)
+        logger.info(f"{self.nickname} has learned the move {new_move.name}.")
+
+    def forget_move(self, move_slot: MoveSlot) -> None:
+        """Forget a move and shift later moves left, leaving the last slot empty."""
+        old_move = self.moves[move_slot]
+        self.moves.forget_move(move_slot)
+        if old_move is not None:
+            logger.info(f"{self.nickname} has forgotten the move {old_move.name}.")
