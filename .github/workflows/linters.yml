@@ -1,0 +1,23 @@
+name: linters
+on: [ pull_request ]
+jobs:
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tsuyoshicho/action-mypy@v4
+        with:
+          fail_on_error: "true"
+          filter_mode: "nofilter"
+          mypy_flags: "--ignore-missing-imports"
+          setup_command: "pip install mypy==1.18.2"
+          setup_method: install
+          tool_name: "mypy check"
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+        with:
+          version: "0.13.2"
+          args: "format --check"

@@ -41,3 +41,19 @@ uv run python main.py
 - We use [uv](https://github.com/astral-sh/uv) for dependency & project management.
 - We use [mypy](https://github.com/python/mypy) for static type hinting.
 - We use [vulture](https://github.com/jendrikseipp/vulture) for finding & removing dead code.
+
+### Contributing:
+1. Create a feature branch:
+```bash
+git checkout -b feature/my-change
+```
+2. Do work, then make a commit:
+```bash
+git add -A
+git commit -m "Add cool thing"
+```
+3. Push the branch (if it's a new branch, use `-u`):
+```
+git push -u origin feature/my-change
+```
+4. Open a PR on GitHub and request a review.
