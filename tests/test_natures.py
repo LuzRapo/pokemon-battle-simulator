@@ -2,6 +2,8 @@ from typing import Any
 
 import pytest
 
+from battle_sim.database.sample_moves import DRACO_METEOR, EARTHQUAKE, ROCK_SLIDE, SWORDS_DANCE
+from battle_sim.models.moves import MoveSet
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.stats import BaseStats, EVs, IVs
 from battle_sim.utils import Nature, Type
@@ -17,6 +19,7 @@ def garchomp_setup():
         effort_values=EVs(HP=0, ATTACK=252, DEFENCE=0, SP_ATTACK=0, SP_DEFENCE=4, SPEED=252),
         individual_values=IVs(),  # defaults to 31s
         types=(Type.DRAGON, Type.GROUND),
+        moves=MoveSet(EARTHQUAKE, SWORDS_DANCE, DRACO_METEOR, ROCK_SLIDE),
     )
 
 
