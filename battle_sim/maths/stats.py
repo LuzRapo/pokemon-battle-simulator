@@ -27,7 +27,10 @@ def calculate_effective_stat(stat_totals: StatTotals, stat_stages: StatStages, s
     unmodified_value = getattr(stat_totals, stat.name)
     stage_level = getattr(stat_stages, stat.name)
 
-    stage_base = 3 if stat in (Stats.ACCURACY, Stats.EVASION) else 2
+    stage_base = 2
+
+    # TODO: add accuracy/evasion handling
+    # stage_base = 3 if stat in (Stats.ACCURACY, Stats.EVASION) else 2
 
     if stage_level >= 0:
         numerator, denominator = stage_base + stage_level, stage_base

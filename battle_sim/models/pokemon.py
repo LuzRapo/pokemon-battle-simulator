@@ -47,16 +47,15 @@ class Pokemon(BaseModel):
     @model_validator(mode="after")
     def _init_live_stats(self):
         """Populate live_stats using stat_totals when initialised."""
-        if self.live_stats is None:
-            totals = self.stat_totals
-            self.live_stats = LiveStats(
-                HP=totals.HP,
-                ATTACK=totals.ATTACK,
-                DEFENCE=totals.DEFENCE,
-                SP_ATTACK=totals.SP_ATTACK,
-                SP_DEFENCE=totals.SP_DEFENCE,
-                SPEED=totals.SPEED,
-            )
+        totals = self.stat_totals
+        self.live_stats = LiveStats(
+            HP=totals.HP,
+            ATTACK=totals.ATTACK,
+            DEFENCE=totals.DEFENCE,
+            SP_ATTACK=totals.SP_ATTACK,
+            SP_DEFENCE=totals.SP_DEFENCE,
+            SPEED=totals.SPEED,
+        )
         return self
 
     def reset_live_stats(self) -> None:
