@@ -5,7 +5,7 @@ from battle_sim.maths.stats import calculate_total_hp, calculate_total_stat
 from battle_sim.models.moves import Move, MoveSet, MoveSlot
 from battle_sim.models.stats import BaseStats, EVs, IVs, StatTotals
 from battle_sim.models.type_matchups import TypePair
-from battle_sim.utils import Nature
+from battle_sim.utils import Nature, Stats
 
 
 class Pokemon(BaseModel):
@@ -31,11 +31,11 @@ class Pokemon(BaseModel):
 
         return StatTotals(
             HP=calculate_total_hp(bs.HP, ivs.HP, evs.HP, lvl),
-            ATTACK=calculate_total_stat(bs.ATTACK, ivs.ATTACK, evs.ATTACK, lvl, nat, "ATTACK"),
-            DEFENCE=calculate_total_stat(bs.DEFENCE, ivs.DEFENCE, evs.DEFENCE, lvl, nat, "DEFENCE"),
-            SP_ATTACK=calculate_total_stat(bs.SP_ATTACK, ivs.SP_ATTACK, evs.SP_ATTACK, lvl, nat, "SP_ATTACK"),
-            SP_DEFENCE=calculate_total_stat(bs.SP_DEFENCE, ivs.SP_DEFENCE, evs.SP_DEFENCE, lvl, nat, "SP_DEFENCE"),
-            SPEED=calculate_total_stat(bs.SPEED, ivs.SPEED, evs.SPEED, lvl, nat, "SPEED"),
+            ATTACK=calculate_total_stat(bs.ATTACK, ivs.ATTACK, evs.ATTACK, lvl, nat, Stats.ATTACK),
+            DEFENCE=calculate_total_stat(bs.DEFENCE, ivs.DEFENCE, evs.DEFENCE, lvl, nat, Stats.DEFENCE),
+            SP_ATTACK=calculate_total_stat(bs.SP_ATTACK, ivs.SP_ATTACK, evs.SP_ATTACK, lvl, nat, Stats.SP_ATTACK),
+            SP_DEFENCE=calculate_total_stat(bs.SP_DEFENCE, ivs.SP_DEFENCE, evs.SP_DEFENCE, lvl, nat, Stats.SP_DEFENCE),
+            SPEED=calculate_total_stat(bs.SPEED, ivs.SPEED, evs.SPEED, lvl, nat, Stats.SPEED),
         )
 
     def known_moves(self) -> list[Move]:

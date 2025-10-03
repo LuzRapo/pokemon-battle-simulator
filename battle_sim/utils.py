@@ -1,8 +1,14 @@
 from dataclasses import dataclass
-from enum import Enum, IntEnum, auto
-from typing import Literal
+from enum import Enum, IntEnum, StrEnum, auto
 
-Stats = Literal["HP", "ATTACK", "DEFENCE", "SP_ATTACK", "SP_DEFENCE", "SPEED"]
+
+class Stats(StrEnum):
+    HP = "HP"
+    ATTACK = "ATTACK"
+    DEFENCE = "DEFENCE"
+    SP_ATTACK = "SP_ATTACK"
+    SP_DEFENCE = "SP_DEFENCE"
+    SPEED = "SPEED"
 
 
 class Type(Enum):
@@ -125,33 +131,33 @@ class NatureEffect:
 
 
 class Nature(Enum):
-    HARDY = NatureEffect("ATTACK", "ATTACK")
-    DOCILE = NatureEffect("DEFENCE", "DEFENCE")
-    BASHFUL = NatureEffect("SP_ATTACK", "SP_ATTACK")
-    QUIRKY = NatureEffect("SP_DEFENCE", "SP_DEFENCE")
-    SERIOUS = NatureEffect("SPEED", "SPEED")
+    HARDY = NatureEffect(Stats.ATTACK, Stats.ATTACK)
+    DOCILE = NatureEffect(Stats.DEFENCE, Stats.DEFENCE)
+    BASHFUL = NatureEffect(Stats.SP_ATTACK, Stats.SP_ATTACK)
+    QUIRKY = NatureEffect(Stats.SP_DEFENCE, Stats.SP_DEFENCE)
+    SERIOUS = NatureEffect(Stats.SPEED, Stats.SPEED)
 
-    LONELY = NatureEffect("ATTACK", "DEFENCE")
-    BRAVE = NatureEffect("ATTACK", "SPEED")
-    ADAMANT = NatureEffect("ATTACK", "SP_ATTACK")
-    NAUGHTY = NatureEffect("ATTACK", "SP_DEFENCE")
+    LONELY = NatureEffect(Stats.ATTACK, Stats.DEFENCE)
+    BRAVE = NatureEffect(Stats.ATTACK, Stats.SPEED)
+    ADAMANT = NatureEffect(Stats.ATTACK, Stats.SP_ATTACK)
+    NAUGHTY = NatureEffect(Stats.ATTACK, Stats.SP_DEFENCE)
 
-    BOLD = NatureEffect("DEFENCE", "ATTACK")
-    RELAXED = NatureEffect("DEFENCE", "SPEED")
-    IMPISH = NatureEffect("DEFENCE", "SP_ATTACK")
-    LAX = NatureEffect("DEFENCE", "SP_DEFENCE")
+    BOLD = NatureEffect(Stats.DEFENCE, Stats.ATTACK)
+    RELAXED = NatureEffect(Stats.DEFENCE, Stats.SPEED)
+    IMPISH = NatureEffect(Stats.DEFENCE, Stats.SP_ATTACK)
+    LAX = NatureEffect(Stats.DEFENCE, Stats.SP_DEFENCE)
 
-    TIMID = NatureEffect("SPEED", "ATTACK")
-    HASTY = NatureEffect("SPEED", "DEFENCE")
-    JOLLY = NatureEffect("SPEED", "SP_ATTACK")
-    NAIVE = NatureEffect("SPEED", "SP_DEFENCE")
+    TIMID = NatureEffect(Stats.SPEED, Stats.ATTACK)
+    HASTY = NatureEffect(Stats.SPEED, Stats.DEFENCE)
+    JOLLY = NatureEffect(Stats.SPEED, Stats.SP_ATTACK)
+    NAIVE = NatureEffect(Stats.SPEED, Stats.SP_DEFENCE)
 
-    MODEST = NatureEffect("SP_ATTACK", "ATTACK")
-    MILD = NatureEffect("SP_ATTACK", "DEFENCE")
-    QUIET = NatureEffect("SP_ATTACK", "SPEED")
-    RASH = NatureEffect("SP_ATTACK", "SP_DEFENCE")
+    MODEST = NatureEffect(Stats.SP_ATTACK, Stats.ATTACK)
+    MILD = NatureEffect(Stats.SP_ATTACK, Stats.DEFENCE)
+    QUIET = NatureEffect(Stats.SP_ATTACK, Stats.SPEED)
+    RASH = NatureEffect(Stats.SP_ATTACK, Stats.SP_DEFENCE)
 
-    CALM = NatureEffect("SP_DEFENCE", "ATTACK")
-    GENTLE = NatureEffect("SP_DEFENCE", "DEFENCE")
-    SASSY = NatureEffect("SP_DEFENCE", "SPEED")
-    CAREFUL = NatureEffect("SP_DEFENCE", "SP_ATTACK")
+    CALM = NatureEffect(Stats.SP_DEFENCE, Stats.ATTACK)
+    GENTLE = NatureEffect(Stats.SP_DEFENCE, Stats.DEFENCE)
+    SASSY = NatureEffect(Stats.SP_DEFENCE, Stats.SPEED)
+    CAREFUL = NatureEffect(Stats.SP_DEFENCE, Stats.SP_ATTACK)
