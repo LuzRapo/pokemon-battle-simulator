@@ -9,6 +9,8 @@ class Stats(StrEnum):
     SP_ATTACK = "SP_ATTACK"
     SP_DEFENCE = "SP_DEFENCE"
     SPEED = "SPEED"
+    ACCURACY = "ACCURACY"
+    EVASION = "EVASION"
 
 
 class Type(Enum):

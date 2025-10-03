@@ -23,14 +23,25 @@ class StatTotals:
     SPEED: int
 
 
-@dataclass
-class LiveStats:
-    HP: int  # Variable stats, affected in-battle
-    ATTACK: int
-    DEFENCE: int
-    SP_ATTACK: int
-    SP_DEFENCE: int
-    SPEED: int
+# From https://bulbapedia.bulbagarden.net/wiki/Stat:
+# "Aside from Shedinja's HP (which is always 1), the lowest a stat can ever possibly be is 4."
+class LiveStats(BaseModel):
+    HP: int = Field(default=1, ge=0)
+    ATTACK: int = Field(default=4, ge=4)
+    DEFENCE: int = Field(default=4, ge=4)
+    SP_ATTACK: int = Field(default=4, ge=4)
+    SP_DEFENCE: int = Field(default=4, ge=4)
+    SPEED: int = Field(default=4, ge=4)
+
+
+class StatStages(BaseModel):
+    ATTACK: int = Field(default=0, ge=-6, le=6)
+    DEFENCE: int = Field(default=0, ge=-6, le=6)
+    SP_ATTACK: int = Field(default=0, ge=-6, le=6)
+    SP_DEFENCE: int = Field(default=0, ge=-6, le=6)
+    SPEED: int = Field(default=0, ge=-6, le=6)
+    ACCURACY: int = Field(default=0, ge=-6, le=6)
+    EVASION: int = Field(default=0, ge=-6, le=6)
 
 
 class EVs(BaseModel):
