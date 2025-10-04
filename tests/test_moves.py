@@ -1,4 +1,4 @@
-from battle_sim.database.sample_moves import DRACO_METEOR, EARTHQUAKE, ROCK_SLIDE, SWORDS_DANCE
+from battle_sim.database.sample_moves import DRACO_METEOR, EARTHQUAKE, ROCK_SLIDE, SWORDS_DANCE, WILL_O_WISP
 from battle_sim.models.moves import MoveSet, MoveSlot
 
 
@@ -25,4 +25,6 @@ def test_learn_move_in_first_empty_slot():
 
 def test_learn_move_requires_slot_when_full():
     move_set = MoveSet(EARTHQUAKE, DRACO_METEOR, ROCK_SLIDE, SWORDS_DANCE)
-    move_set.learn_move(EARTHQUAKE, MoveSlot.FIRST)
+    move_set.learn_move(WILL_O_WISP, MoveSlot.FIRST)
+    assert move_set.to_list() == [WILL_O_WISP, DRACO_METEOR, ROCK_SLIDE, SWORDS_DANCE]
+    assert move_set[MoveSlot.FIRST] == WILL_O_WISP

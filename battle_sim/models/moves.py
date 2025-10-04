@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import ClassVar, Literal, Sequence, Union
 
-from battle_sim.utils import Category, PriorityLevel, Stats, Status, Target, Terrain, Type, Weather
+from battle_sim.utils import Category, ExtraStatus, PriorityLevel, Stats, Status, Target, Terrain, Type, Weather
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,7 @@ class FixedDamageEffect:
 
 @dataclass(frozen=True)
 class InflictStatusEffect:
-    status: Status
+    status: Status | ExtraStatus
     probability: float
     only_if_contact: bool = False
 
@@ -34,16 +34,6 @@ class StatStageChangeEffect:
     target: Literal["SELF", "TARGET"]
     stages: dict[Stats, int]  # e.g., {"ATTACK": +2} for Swords Dance
     probability: float
-
-
-@dataclass(frozen=True)
-class FlinchEffect:
-    probability: float
-
-
-@dataclass(frozen=True)
-class ForceSwitchEffect:
-    target: Literal["SELF", "TARGET"]
 
 
 @dataclass(frozen=True)
@@ -63,17 +53,9 @@ MoveEffect = Union[
     FixedDamageEffect,
     InflictStatusEffect,
     StatStageChangeEffect,
-    FlinchEffect,
-    ForceSwitchEffect,
     WeatherEffect,
     TerrainEffect,
     # TODO: add more effects as needed
-    # ProtectEffect,
-    # HealEffect,
-    # StatusCureEffect,
-    # SubstituteEffect,
-    # ChargeEffect,
-    # etc.
 ]
 
 
