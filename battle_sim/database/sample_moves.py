@@ -46,8 +46,8 @@ ROCK_SLIDE = Move(
     pp=10,
     target=Target.ALL_ADJACENT_ENEMIES,
     effects=[
-        DamageEffect(power=75, category=Category.PHYSICAL, contact=True, crit_stage=0),
-        InflictStatusEffect(status=ExtraStatus.FLINCH, probability=0.3, only_if_contact=True),
+        DamageEffect(power=75, category=Category.PHYSICAL, contact=False, crit_stage=0),
+        InflictStatusEffect(status=ExtraStatus.FLINCH, probability=0.3),
     ],
 )
 
