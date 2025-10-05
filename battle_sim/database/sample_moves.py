@@ -1,5 +1,5 @@
-from battle_sim.models.moves import DamageEffect, FlinchEffect, InflictStatusEffect, Move, StatStageChangeEffect
-from battle_sim.utils import Category, PriorityLevel, Status, Target, Type
+from battle_sim.models.moves import DamageEffect, InflictStatusEffect, Move, StatStageChangeEffect
+from battle_sim.utils import Category, ExtraStatus, PriorityLevel, Stats, Status, Target, Type
 
 EARTHQUAKE = Move(
     name="Earthquake",
@@ -21,7 +21,7 @@ SWORDS_DANCE = Move(
     priority=PriorityLevel.NORMAL,
     pp=20,
     target=Target.SELF,
-    effects=[StatStageChangeEffect(target="SELF", stages={"ATTACK": +2}, probability=1)],
+    effects=[StatStageChangeEffect(target="SELF", stages={Stats.ATTACK: +2}, probability=1)],
 )
 
 
@@ -46,8 +46,8 @@ ROCK_SLIDE = Move(
     pp=10,
     target=Target.ALL_ADJACENT_ENEMIES,
     effects=[
-        DamageEffect(power=75, category=Category.PHYSICAL, contact=True, crit_stage=0),
-        FlinchEffect(probability=0.3),
+        DamageEffect(power=75, category=Category.PHYSICAL, contact=False, crit_stage=0),
+        InflictStatusEffect(status=ExtraStatus.FLINCH, probability=0.3),
     ],
 )
 
@@ -59,8 +59,8 @@ DRACO_METEOR = Move(
     priority=PriorityLevel.NORMAL,
     pp=5,
     target=Target.SINGLE_OPPONENT,
-    effects=(
+    effects=[
         DamageEffect(power=130, category=Category.SPECIAL, crit_stage=0, contact=False),
-        StatStageChangeEffect(target="SELF", stages={"SP_ATTACK": -2}, probability=1),
-    ),
+        StatStageChangeEffect(target="SELF", stages={Stats.SP_ATTACK: -2}, probability=1),
+    ],
 )
