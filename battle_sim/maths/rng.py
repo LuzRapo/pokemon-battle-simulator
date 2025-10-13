@@ -17,7 +17,7 @@ class RNG:
 
     def random_integer(self, minimum: int, maximum: int) -> int:
         """Return a random integer N such that minimum <= N < maximum."""
-        return self._engine.randint(minimum, maximum)
+        return self._engine.randrange(minimum, maximum)
 
     def random_choice(self, options: Sequence[Any]) -> Any:
         """Return a random element from a non-empty sequence."""
