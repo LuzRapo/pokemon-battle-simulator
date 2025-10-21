@@ -1,6 +1,10 @@
 # pokemon-battle-simulator
 Engine for orchestrating 6v6 Pokemon battles.
 
+[![tests](https://github.com/LuzRapo/pokemon-battle-simulator/actions/workflows/tests.yml/badge.svg)](https://github.com/LuzRapo/pokemon-battle-simulator/actions/workflows/tests.yml)
+
+[![linters](https://github.com/LuzRapo/pokemon-battle-simulator/actions/workflows/linters.yml/badge.svg)](https://github.com/LuzRapo/pokemon-battle-simulator/actions/workflows/linters.yml)
+
 ## Features
 - None, yet.
 
