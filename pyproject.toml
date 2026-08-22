@@ -5,22 +5,18 @@ description = "Engine for orchestrating 6v6 Pokemon battles."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pandas>=2.3.3",
-    "numpy>=2.3.3",
     "pydantic>=2.11.9",
-    "hypothesis>=6.140.2",
     "loguru>=0.7.3",
 ]
 
 [dependency-groups]
 dev = [
-    "black>=24.10.0",
     "mypy>=1.18.2",
     "pytest>=8.4.2",
     "ruff>=0.13.2",
     "vulture>=2.14",
     "pre-commit>=4.3.0",
-    "pytest-cov>=7.0.0",
+    "streamlit>=1.57.0",
 ]
 
 [tool.ruff]
@@ -29,12 +25,47 @@ line-length = 120
 
 [tool.ruff.lint]
 select = [
-    "B",    # flake8-bugbear
-    "F",    # pyflakes
-    "I",    # isort
-    "F401", # remove unused imports
+    "B",
+    "F",
+    "I",
+    "UP",
+    "SIM",
+    "RET",
+    "C4",
+    "C90",
+    "TID",
+    "PGH",
+    "E501",
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "battle_sim.players.Weights",
+    "battle_sim.matchup.MatchupWeights",
+    "battle_sim.search.SearchProfile",
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"__future__.annotations".msg = "Not needed on 3.12+; PEP 604/695 syntax works natively"
+"typing.Union".msg = "Use `X | Y` (PEP 604)"
+"typing.Optional".msg = "Use `X | None` (PEP 604)"
+"typing.List".msg = "Use `list[...]`"
+"typing.Dict".msg = "Use `dict[...]`"
+"typing.Tuple".msg = "Use `tuple[...]`"
+"typing.Set".msg = "Use `set[...]`"
+"typing.FrozenSet".msg = "Use `frozenset[...]`"
+"typing.Type".msg = "Use `type[...]`"
+"typing.TypeAlias".msg = "Use the PEP 695 `type` statement"
+"typing.TypedDict".msg = "Prefer a pydantic model or frozen dataclass at this repo's boundaries"
 
 [tool.mypy]
 python_version = "3.12"
-disable_error_code = 'import-untyped'
+strict = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false

@@ -1,8 +1,8 @@
-from typing import TypeAlias
+from collections.abc import Iterable
 
 from battle_sim.utils import Type
 
-TypePair: TypeAlias = tuple[Type, Type | None]  # e.g. (Type.FIRE, Type.FLYING) or (Type.NORMAL, None)
+type TypePair = tuple[Type, Type | None]  # e.g. (Type.FIRE, Type.FLYING) or (Type.NORMAL, None)
 
 
 def monotype_effectiveness(attacking_type: Type, defending_type: Type) -> float:
@@ -10,16 +10,28 @@ def monotype_effectiveness(attacking_type: Type, defending_type: Type) -> float:
     return TYPE_CHART.get(attacking_type, {}).get(defending_type, 1.0)
 
 
-def type_effectiveness(attacking_type: Type, defending_types: TypePair) -> float:
-    """Return total type effectiveness multiplier for a move hitting a TypePair."""
+def type_effectiveness(
+    attacking_type: Type,
+    defending_types: TypePair,
+    immunity_bypass: Iterable[Type] = (),
+) -> float:
+    """Return total type effectiveness multiplier for a move hitting a TypePair.
+
+    immunity_bypass: defending types whose 0× immunity should be treated as 1× (Foresight/Miracle Eye).
+    """
+    bypass = frozenset(immunity_bypass)
     primary_type, secondary_type = defending_types
-
-    effectiveness_multiplier = monotype_effectiveness(attacking_type, primary_type)
-
+    effectiveness_multiplier = _monotype_with_bypass(attacking_type, primary_type, bypass)
     if secondary_type is not None and secondary_type != primary_type:
-        effectiveness_multiplier *= monotype_effectiveness(attacking_type, secondary_type)
-
+        effectiveness_multiplier *= _monotype_with_bypass(attacking_type, secondary_type, bypass)
     return effectiveness_multiplier
+
+
+def _monotype_with_bypass(attacking_type: Type, defending_type: Type, bypass: frozenset[Type]) -> float:
+    raw = monotype_effectiveness(attacking_type, defending_type)
+    if raw == 0.0 and defending_type in bypass:
+        return 1.0
+    return raw
 
 
 # Only store entries that differ from 1.0; assume 1.0 if missing.

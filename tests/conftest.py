@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import pytest
 
 from battle_sim.database.sample_moves import DRACO_METEOR, EARTHQUAKE, ROCK_SLIDE, SWORDS_DANCE
@@ -6,9 +8,11 @@ from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.stats import BaseStats, EVs, IVs
 from battle_sim.utils import Nature, Type
 
+GarchompFactory = Callable[[str], Pokemon]
+
 
 @pytest.fixture
-def garchomp_factory():
+def garchomp_factory() -> GarchompFactory:
     """I Guess We Doin' Garchomps Now"""
 
     def _make(nickname: str) -> Pokemon:

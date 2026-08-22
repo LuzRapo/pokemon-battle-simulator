@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from functools import cached_property
+
 from loguru import logger
 from pydantic import BaseModel, Field, model_validator
 
@@ -5,7 +8,21 @@ from battle_sim.maths.stats import calculate_effective_stat, calculate_total_hp,
 from battle_sim.models.moves import Move, MoveSet, MoveSlot
 from battle_sim.models.stats import BaseStats, EVs, IVs, LiveStats, StatStages, StatTotals
 from battle_sim.models.type_matchups import TypePair
-from battle_sim.utils import Nature, Stats
+from battle_sim.utils import Ability, Category, ExtraStatus, Item, Nature, Stats, Status, Type
+
+
+@dataclass(frozen=True)
+class FormSnapshot:
+    """A pokemon's pre-Transform form, restored on switch-out (see engine/transform.py)."""
+
+    base_stats: BaseStats
+    nature: Nature
+    effort_values: EVs
+    individual_values: IVs
+    types: TypePair
+    ability: Ability
+    moves: MoveSet
+    pp: dict[MoveSlot, int]
 
 
 class Pokemon(BaseModel):
@@ -19,16 +36,41 @@ class Pokemon(BaseModel):
     types: TypePair
     moves: MoveSet
 
-    # TODO: item
-    # TODO: ability
-    # TODO: status conditions
+    item: Item = Item.NONE
+    ability: Ability = Ability.NONE
+    weight_kg: float = Field(default=100.0, gt=0)
+    flash_fire_active: bool = False
+    item_consumed: bool = False  # distinguishes "used up" (Unburden) from "never held"
+    last_consumed_item: Item = Item.NONE  # what Harvest can regrow
+    fully_evolved: bool = True  # Eviolite's defence boost applies only to not-fully-evolved holders
+    paradox_boost: Stats | None = None  # Protosynthesis/Quark Drive: the boosted stat while active
+    paradox_from_booster: bool = False  # a Booster Energy activation outlasts the weather/terrain
+    switch_in_boost_used: bool = False  # Dauntless Shield / Intrepid Sword fire once per battle
+    times_hit: int = Field(default=0, ge=0)  # lifetime hits taken (Rage Fist)
+    last_hit_taken: int = Field(default=0, ge=0)  # damage from the most recent hit this turn (Counter family)
+    last_hit_category: Category | None = None
+    eject_pending: bool = False  # an Eject Pack waits for the action to resolve before pulling the holder
 
     live_stats: LiveStats = Field(default_factory=lambda: LiveStats())
     stat_stages: StatStages = Field(default_factory=lambda: StatStages())
+    status: Status = Status.NONE
+    status_turns: int = Field(default=0, ge=0)
+    volatiles: dict[ExtraStatus, int] = Field(default_factory=dict)
+    choice_locked_move: MoveSlot | None = None
+    protect_streak: int = Field(default=0, ge=0)  # consecutive successful Protect-likes; failure odds scale 3^n
+    pp: dict[MoveSlot, int] = Field(default_factory=dict)
+    last_move_slot: MoveSlot | None = None
+    encored_slot: MoveSlot | None = None
+    disabled_slot: MoveSlot | None = None
+    locked_slot: MoveSlot | None = None  # Outrage-style rampage
+    charging_slot: MoveSlot | None = None  # two-turn move committed last turn
 
-    @property
+    @cached_property
     def stat_totals(self) -> StatTotals:
-        """Calculate final stats from base stats, IVs, EVs, level, and nature."""
+        """Final stats from base stats, IVs, EVs, level, and nature.
+
+        Cached: the inputs only change via Transform / forme changes, which call refresh_stats().
+        """
         lvl = self.level
         nat = self.nature
         ivs = self.individual_values
@@ -45,8 +87,16 @@ class Pokemon(BaseModel):
         )
 
     @model_validator(mode="after")
-    def _init_live_stats(self):
-        """Populate live_stats using stat_totals when initialised."""
+    def _init_pp(self) -> "Pokemon":
+        if not self.pp:
+            self.pp = {slot: move.pp for slot in MoveSlot if (move := self.moves[slot]) is not None}
+        return self
+
+    @model_validator(mode="after")
+    def _init_live_stats(self) -> "Pokemon":
+        """Populate live_stats from stat_totals iff still at construction-time defaults."""
+        if self.live_stats != LiveStats():
+            return self
         totals = self.stat_totals
         self.live_stats = LiveStats(
             HP=totals.HP,
@@ -57,6 +107,10 @@ class Pokemon(BaseModel):
             SPEED=totals.SPEED,
         )
         return self
+
+    def refresh_stats(self) -> None:
+        """Drop the cached totals after base stats / nature / EVs / IVs changed."""
+        self.__dict__.pop("stat_totals", None)
 
     def reset_live_stats(self) -> None:
         totals = self.stat_totals
@@ -80,10 +134,15 @@ class Pokemon(BaseModel):
     def apply_healing(self, amount: int) -> int:
         return self._adjust_hp(abs(amount))
 
+    def consume_item(self) -> None:
+        self.last_consumed_item = self.item
+        self.item = Item.NONE
+        self.item_consumed = True
+
     def change_stat_stage(self, stat: Stats, stages: int) -> int:
-        old_stage = getattr(self.stat_stages, stat.name)
+        old_stage = self.stat_stages[stat]
         new_stage = max(-6, min(6, old_stage + stages))
-        setattr(self.stat_stages, stat.name, new_stage)
+        self.stat_stages[stat] = new_stage
         return new_stage - old_stage
 
     def reset_stat_stages(self) -> None:
@@ -95,6 +154,12 @@ class Pokemon(BaseModel):
 
     def is_fainted(self) -> bool:
         return self.live_stats.HP <= 0
+
+    def is_grounded(self) -> bool:
+        """Intrinsic grounding only (types, item, ability); field effects like Gravity would need field state."""
+        return (
+            Type.FLYING not in self.types and self.item is not Item.AIR_BALLOON and self.ability is not Ability.LEVITATE
+        )
 
     def known_moves(self) -> list[Move]:
         return self.moves.to_list()
