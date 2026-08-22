@@ -2,7 +2,7 @@ from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.moves import Move
 from battle_sim.models.pokemon import Pokemon
-from battle_sim.utils import Ability, Category, Item, PseudoWeather, Stats, Status, Type, Weather
+from battle_sim.utils import Ability, Category, ExtraStatus, Item, PseudoWeather, Stats, Status, Type, Weather
 
 _CATEGORY_ORDER: dict[ActionType, int] = {
     ActionType.SWITCH_OUT: 0,
@@ -21,6 +21,8 @@ _WEATHER_SPEED_DOUBLERS: dict[Ability, frozenset[Weather]] = {
 def effective_speed(pokemon: Pokemon, side: SideState, field: FieldState) -> int:
     speed = pokemon.effective_stat(Stats.SPEED)
     if pokemon.status is Status.PARALYSIS and pokemon.ability is not Ability.QUICK_FEET:
+        speed = speed // 2
+    if ExtraStatus.SLOW_START in pokemon.volatiles:
         speed = speed // 2
     if pokemon.ability is Ability.QUICK_FEET and pokemon.status is not Status.NONE:
         speed = speed * 3 // 2

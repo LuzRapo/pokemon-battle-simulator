@@ -61,6 +61,8 @@ _SOURCE_ABILITIES: dict[str, Ability] = {
     "soul_heart": Ability.SOUL_HEART,
     "chilling_neigh": Ability.CHILLING_NEIGH,
     "as_one_glastrier": Ability.AS_ONE_GLASTRIER,
+    "steadfast": Ability.STEADFAST,
+    "beast_boost": Ability.BEAST_BOOST,
     "sap_sipper": Ability.SAP_SIPPER,
     "well_baked_body": Ability.WELL_BAKED_BODY,
 }

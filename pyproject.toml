@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "pokemon-battle-simulator"
 version = "0.1.0"
@@ -8,6 +12,9 @@ dependencies = [
     "pydantic>=2.11.9",
     "loguru>=0.7.3",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["battle_sim"]
 
 [dependency-groups]
 dev = [

@@ -44,7 +44,8 @@ def calculate_damage(  # noqa: C901 — the Gen-9 modifier chain; its sequence I
         crit_stage = damage_effect.crit_stage + (2 if ExtraStatus.FOCUS_ENERGY in attacker.volatiles else 0)
         if attacker.item is Item.SCOPE_LENS:
             crit_stage += 1
-        is_crit = rng.roll_chance(_crit_chance(crit_stage))
+        rolled_crit = rng.roll_chance(_crit_chance(crit_stage))
+        is_crit = rolled_crit and defender.ability not in (Ability.BATTLE_ARMOR, Ability.SHELL_ARMOR)
 
     if damage_effect.category is Category.PHYSICAL:
         attack_stat, defense_stat = Stats.ATTACK, Stats.DEFENCE
@@ -73,7 +74,7 @@ def calculate_damage(  # noqa: C901 — the Gen-9 modifier chain; its sequence I
         weather_mod = 4096  # Hydro Steam thrives in the sun
     damage = _chain(damage, weather_mod)
     if is_crit:
-        damage = _chain(damage, 6144)
+        damage = _chain(damage, 9216 if attacker.ability is Ability.SNIPER else 6144)
 
     if random_roll is None:
         random_roll = rng.random_integer(85, 101)
