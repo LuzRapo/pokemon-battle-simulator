@@ -435,3 +435,36 @@ def test_identified_does_not_grant_normal_to_dark_immunity_bypass():
     dark_def.volatiles[ExtraStatus.IDENTIFIED] = 1
     psychic_move = get_move("Psychic")
     assert _damage(attacker, dark_def, move=psychic_move) == 0
+
+
+def _guaranteed_crit_roll(attacker: Pokemon, defender: Pokemon) -> int:
+    """Scope Lens + Focus Energy pushes crit_stage to 3, where PS's own table is 100%."""
+    attacker.item = Item.SCOPE_LENS
+    attacker.volatiles[ExtraStatus.FOCUS_ENERGY] = 1
+    side = SideState(team=[defender])
+    return calculate_damage(attacker, defender, TACKLE, FieldState(), side, rng=RNG(seed=0), random_roll=100)
+
+
+def test_shell_armor_prevents_the_guaranteed_crit():
+    attacker = make_pokemon()
+    plain = make_pokemon()
+    armored = make_pokemon()
+    armored.ability = Ability.SHELL_ARMOR
+    assert _guaranteed_crit_roll(attacker, armored) < _guaranteed_crit_roll(attacker, plain)
+
+
+def test_battle_armor_prevents_the_guaranteed_crit():
+    attacker = make_pokemon()
+    plain = make_pokemon()
+    armored = make_pokemon()
+    armored.ability = Ability.BATTLE_ARMOR
+    assert _guaranteed_crit_roll(attacker, armored) < _guaranteed_crit_roll(attacker, plain)
+
+
+def test_sniper_boosts_crit_damage_beyond_the_normal_multiplier():
+    plain_attacker = make_pokemon()
+    sniper_attacker = make_pokemon()
+    sniper_attacker.ability = Ability.SNIPER
+    defender_a = make_pokemon()
+    defender_b = make_pokemon()
+    assert _guaranteed_crit_roll(sniper_attacker, defender_b) > _guaranteed_crit_roll(plain_attacker, defender_a)

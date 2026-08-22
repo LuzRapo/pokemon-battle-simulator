@@ -1,12 +1,14 @@
 from datetime import date
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from loguru import logger
 
 SOURCES = {
     "moves.json": "https://play.pokemonshowdown.com/data/moves.json",
     "pokedex.json": "https://play.pokemonshowdown.com/data/pokedex.json",
+    "learnsets.json": "https://play.pokemonshowdown.com/data/learnsets.json",
+    "randbats_gen7.json": "https://pkmn.github.io/randbats/data/gen7randombattle.json",
 }
 
 VENDOR_DIR = Path(__file__).parent / "_vendor"
@@ -16,7 +18,8 @@ def refresh() -> None:
     VENDOR_DIR.mkdir(exist_ok=True)
     for filename, url in SOURCES.items():
         logger.info(f"Fetching {url}")
-        with urlopen(url) as response:
+        request = Request(url, headers={"User-Agent": "Mozilla/5.0"})  # the CDN 403s python's default UA
+        with urlopen(request) as response:
             payload = response.read()
         (VENDOR_DIR / filename).write_bytes(payload)
         logger.info(f"Wrote {filename} ({len(payload):,} bytes)")
@@ -28,8 +31,6 @@ def _write_source_manifest() -> None:
     today = date.today().isoformat()
     lines = [
         "# Vendored data",
-        "",
-        "Source: https://play.pokemonshowdown.com/data/",
         "",
         "| File | URL |",
         "| --- | --- |",

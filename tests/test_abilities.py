@@ -1,3 +1,5 @@
+import pytest
+
 from battle_sim.database.loader import get_move
 from battle_sim.engine import step
 from battle_sim.maths.rng import RNG
@@ -1088,3 +1090,316 @@ def test_poison_puppeteer_confuses_what_it_poisons():
     step(state, {0: USE_FIRST, 1: USE_SPLASH})
     assert victim.status is Status.TOXIC
     assert ExtraStatus.CONFUSION in victim.volatiles
+
+
+# -- Gen-7-scope ability coverage (Sam, 2026-08-22) --------------------------------
+
+STONE_EDGE = get_move("Stone Edge")  # 80% accuracy
+HYPER_VOICE = get_move("Hyper Voice")  # sound-flagged
+DOUBLE_EDGE = get_move("Double-Edge")  # 1/3 recoil
+TICKLE = get_move("Tickle")  # drops Attack and Defense together
+USE_ALL_ADJACENT_ENEMIES = Action(action=ActionType.USE_MOVE, target=Target.ALL_ADJACENT_ENEMIES, move=MoveSlot.FIRST)
+
+
+@pytest.mark.parametrize(
+    "ability, status",
+    [
+        (Ability.LIMBER, Status.PARALYSIS),
+        (Ability.INSOMNIA, Status.SLEEP),
+        (Ability.VITAL_SPIRIT, Status.SLEEP),
+        (Ability.WATER_VEIL, Status.BURN),
+        (Ability.MAGMA_ARMOR, Status.FREEZE),
+        (Ability.IMMUNITY, Status.POISON),
+    ],
+)
+def test_status_immunity_abilities_block_their_status(ability: Ability, status: Status) -> None:
+    from battle_sim.engine.status_apply import _apply_main_status
+    from battle_sim.mechanics.log import BattleLog
+
+    mon = _mk("B", ability=ability)
+    _apply_main_status(status, mon, 0, RNG(seed=0), BattleLog())
+    assert mon.status is Status.NONE
+
+
+def test_own_tempo_prevents_confusion():
+    from battle_sim.engine.status_apply import _apply_volatile
+    from battle_sim.mechanics.log import BattleLog
+
+    mon = _mk("B", ability=Ability.OWN_TEMPO)
+    _apply_volatile(ExtraStatus.CONFUSION, mon, 0, RNG(seed=0), BattleLog())
+    assert ExtraStatus.CONFUSION not in mon.volatiles
+
+
+def test_white_smoke_blocks_stat_drops():
+    from battle_sim.mechanics.log import BattleLog
+    from battle_sim.mechanics.stages import apply_stage_changes
+
+    mon = _mk("B", ability=Ability.WHITE_SMOKE)
+    apply_stage_changes(mon, 0, {Stats.ATTACK: -1}, BattleLog(), inflicted_by_opponent=True)
+    assert mon.stat_stages.ATTACK == 0
+
+
+def test_soundproof_blocks_sound_moves():
+    moves = MoveSet(HYPER_VOICE, TACKLE, EMBER, SWORDS_DANCE)
+    deafened = _mk("B", ability=Ability.SOUNDPROOF)
+    state = _battle([_mk("A", moves=moves)], [deafened])
+    step(state, {0: USE_ALL_ADJACENT_ENEMIES, 1: USE_SWORDS_DANCE})
+    assert deafened.live_stats.HP == deafened.stat_totals.HP
+
+
+def test_reckless_boosts_recoil_move_power():
+    moves = MoveSet(DOUBLE_EDGE, TACKLE, EMBER, SWORDS_DANCE)
+    plain = _duel_damage(_mk("A", moves=moves), _mk("B"), USE_FIRST)
+    reckless = _duel_damage(_mk("A", ability=Ability.RECKLESS, moves=moves), _mk("B"), USE_FIRST)
+    assert reckless > plain
+
+
+def test_rain_dish_heals_each_turn_in_rain():
+    dish = _mk("B", ability=Ability.RAIN_DISH)
+    dish.live_stats.HP = dish.stat_totals.HP // 2
+    hp_before = dish.live_stats.HP
+    field = FieldState(weather=Weather.RAIN, weather_turns_left=5)
+    state = _battle([_mk("A")], [dish], field=field)
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert hp_before + dish.stat_totals.HP // 16 == dish.live_stats.HP
+
+
+def test_steadfast_gains_speed_when_flinched():
+    """Flinch itself is cleared by end-of-turn residuals; the Speed boost it left behind persists."""
+    moves = MoveSet(FAKE_OUT, TACKLE, EMBER, SWORDS_DANCE)
+    steady = _mk("B", ability=Ability.STEADFAST)
+    state = _battle([_mk("A", moves=moves)], [steady])
+    step(state, {0: USE_FIRST, 1: USE_SWORDS_DANCE})
+    assert steady.stat_stages.SPEED == 1
+
+
+def _hit_count(move, attacker: Pokemon, defender: Pokemon, field: FieldState | None = None, trials: int = 1000) -> int:
+    from battle_sim.engine.moves import _accuracy_check
+
+    resolved_field = field or FieldState()
+    return sum(1 for seed in range(trials) if _accuracy_check(move, attacker, defender, resolved_field, RNG(seed=seed)))
+
+
+def test_compound_eyes_boosts_own_accuracy():
+    plain = _hit_count(STONE_EDGE, _mk("A"), _mk("B"))
+    boosted = _hit_count(STONE_EDGE, _mk("A", ability=Ability.COMPOUND_EYES), _mk("B"))
+    assert boosted > plain
+
+
+def test_snow_cloak_lowers_incoming_accuracy_in_snow():
+    field = FieldState(weather=Weather.SNOW, weather_turns_left=5)
+    plain = _hit_count(STONE_EDGE, _mk("A"), _mk("B"), field=field)
+    cloaked = _hit_count(STONE_EDGE, _mk("A"), _mk("B", ability=Ability.SNOW_CLOAK), field=field)
+    assert cloaked < plain
+
+
+def test_snow_cloak_does_nothing_outside_snow():
+    plain = _hit_count(STONE_EDGE, _mk("A"), _mk("B"))
+    cloaked = _hit_count(STONE_EDGE, _mk("A"), _mk("B", ability=Ability.SNOW_CLOAK))
+    assert cloaked == plain
+
+
+def test_tangled_feet_lowers_accuracy_while_confused():
+    confused = _mk("B")
+    confused.volatiles[ExtraStatus.CONFUSION] = 3
+    tangled = _mk("B", ability=Ability.TANGLED_FEET)
+    tangled.volatiles[ExtraStatus.CONFUSION] = 3
+    plain = _hit_count(STONE_EDGE, _mk("A"), confused)
+    dodgy = _hit_count(STONE_EDGE, _mk("A"), tangled)
+    assert dodgy < plain
+
+
+def test_hustle_lowers_own_physical_accuracy():
+    plain = _hit_count(STONE_EDGE, _mk("A"), _mk("B"))
+    hustled = _hit_count(STONE_EDGE, _mk("A", ability=Ability.HUSTLE), _mk("B"))
+    assert hustled < plain
+
+
+def test_hustle_boosts_own_physical_attack():
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    hustled = _duel_damage(_mk("A", ability=Ability.HUSTLE), _mk("B"), USE_TACKLE)
+    assert hustled > plain
+
+
+# -- Legendary/mythical ability coverage (Sam, 2026-08-22) --------------------------
+
+
+def test_multitype_takes_the_type_of_its_held_plate():
+    arceus = _mk("A", ability=Ability.MULTITYPE, item=Item.FLAME_PLATE)
+    state = _battle([arceus], [_mk("B")])
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert arceus.types == (Type.FIRE, None)
+
+
+def test_multitype_is_normal_type_with_no_plate():
+    arceus = _mk("A", ability=Ability.MULTITYPE)
+    state = _battle([arceus], [_mk("B")])
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert arceus.types == (Type.NORMAL, None)
+
+
+def test_rks_system_takes_the_type_of_its_held_memory():
+    silvally = _mk("A", ability=Ability.RKS_SYSTEM, item=Item.WATER_MEMORY)
+    state = _battle([silvally], [_mk("B")])
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert silvally.types == (Type.WATER, None)
+
+
+def test_beast_boost_raises_its_highest_stat_on_ko():
+    beast = _mk(
+        "A",
+        ability=Ability.BEAST_BOOST,
+        base_stats=BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    weak = _mk("W", base_stats=BaseStats(HP=1, ATTACK=1, DEFENCE=1, SP_ATTACK=1, SP_DEFENCE=1, SPEED=1))
+    state = _battle([beast], [weak])
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert weak.is_fainted()
+    assert beast.stat_stages.SPEED == 1
+    assert beast.stat_stages.ATTACK == 0
+
+
+def test_turboblaze_ignores_the_defenders_ability():
+    earthquake = get_move("Earthquake")
+    attacker = _mk(
+        "A",
+        ability=Ability.TURBOBLAZE,
+        moves=MoveSet(earthquake, TACKLE, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    defender = _mk("B", ability=Ability.LEVITATE)
+    state = _battle([attacker], [defender])
+    use_eq = Action(action=ActionType.USE_MOVE, target=Target.ALL_ADJACENT, move=MoveSlot.FIRST)
+    step(state, {0: use_eq, 1: USE_SWORDS_DANCE})
+    assert defender.live_stats.HP < defender.stat_totals.HP
+
+
+def test_shadow_shield_halves_damage_at_full_hp():
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    shielded = _duel_damage(_mk("A"), _mk("B", ability=Ability.SHADOW_SHIELD), USE_TACKLE)
+    assert 0 < shielded < plain
+
+
+def test_neuroforce_boosts_super_effective_damage():
+    plain = _duel_damage(_mk("A", types=(Type.FIRE, None)), _mk("B", types=(Type.GRASS, None)), USE_EMBER)
+    boosted = _duel_damage(
+        _mk("A", types=(Type.FIRE, None), ability=Ability.NEUROFORCE), _mk("B", types=(Type.GRASS, None)), USE_EMBER
+    )
+    assert boosted > plain
+
+
+def test_neuroforce_does_not_boost_neutral_damage():
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    same = _duel_damage(_mk("A", ability=Ability.NEUROFORCE), _mk("B"), USE_TACKLE)
+    assert same == plain
+
+
+def test_victory_star_boosts_own_accuracy():
+    plain = _hit_count(STONE_EDGE, _mk("A"), _mk("B"))
+    starred = _hit_count(STONE_EDGE, _mk("A", ability=Ability.VICTORY_STAR), _mk("B"))
+    assert starred > plain
+
+
+def test_fairy_aura_boosts_fairy_type_moves():
+    moonblast = get_move("Moonblast")
+    moves = MoveSet(moonblast, TACKLE, EMBER, SWORDS_DANCE)
+    plain = _duel_damage(_mk("A", types=(Type.FAIRY, None), moves=moves), _mk("B"), USE_FIRST)
+    boosted = _duel_damage(
+        _mk("A", types=(Type.FAIRY, None), moves=moves), _mk("B", ability=Ability.FAIRY_AURA), USE_FIRST
+    )
+    assert boosted > plain
+
+
+def test_aura_break_flips_fairy_aura_to_a_reduction():
+    moonblast = get_move("Moonblast")
+    moves = MoveSet(moonblast, TACKLE, EMBER, SWORDS_DANCE)
+    boosted = _duel_damage(
+        _mk("A", types=(Type.FAIRY, None), moves=moves), _mk("B", ability=Ability.FAIRY_AURA), USE_FIRST
+    )
+    broken = _duel_damage(
+        _mk("A", types=(Type.FAIRY, None), moves=moves), _mk("B", ability=Ability.AURA_BREAK), USE_FIRST
+    )
+    assert broken < boosted
+
+
+def test_synchronize_mirrors_status_onto_the_inflictor():
+    wisp = get_move("Will-O-Wisp")
+    attacker = _mk("A", moves=MoveSet(wisp, TACKLE, EMBER, SWORDS_DANCE))
+    mew = _mk("B", ability=Ability.SYNCHRONIZE)
+    state = _battle([attacker], [mew])
+    step(state, {0: USE_FIRST, 1: USE_SWORDS_DANCE})
+    assert mew.status is Status.BURN
+    assert attacker.status is Status.BURN
+
+
+def test_slow_start_halves_speed_for_five_turns_then_wears_off():
+    slow_stats = BaseStats(HP=100, ATTACK=160, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=110)
+    regigigas = _mk("A", ability=Ability.SLOW_START, base_stats=slow_stats)
+    reference = _mk("X", base_stats=slow_stats)
+    state = _battle([regigigas], [_mk("B")])
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert ExtraStatus.SLOW_START in regigigas.volatiles  # switch-in set 5; this turn's residual already ticked it once
+    assert (
+        effective_speed(regigigas, state.sides[0], state.field)
+        == effective_speed(reference, state.sides[0], state.field) // 2
+    )
+    for _ in range(5):
+        step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert ExtraStatus.SLOW_START not in regigigas.volatiles
+    assert effective_speed(regigigas, state.sides[0], state.field) == effective_speed(
+        reference, state.sides[0], state.field
+    )
+
+
+def test_slow_start_halves_physical_damage():
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    slowed = _duel_damage(_mk("A", ability=Ability.SLOW_START), _mk("B"), USE_TACKLE)
+    assert 0 < slowed < plain
+
+
+def test_keen_eye_blocks_accuracy_drops():
+    from battle_sim.mechanics.log import BattleLog
+    from battle_sim.mechanics.stages import apply_stage_changes
+
+    mon = _mk("B", ability=Ability.KEEN_EYE)
+    apply_stage_changes(mon, 0, {Stats.ACCURACY: -1}, BattleLog(), inflicted_by_opponent=True)
+    assert mon.stat_stages.ACCURACY == 0
+
+
+def test_hyper_cutter_blocks_only_its_own_stat_from_a_multi_stat_drop():
+    """Tickle drops Attack and Defense together; Hyper Cutter must guard only Attack."""
+    from battle_sim.mechanics.log import BattleLog
+    from battle_sim.mechanics.stages import apply_stage_changes
+
+    mon = _mk("B", ability=Ability.HYPER_CUTTER)
+    apply_stage_changes(mon, 0, {Stats.ATTACK: -1, Stats.DEFENCE: -1}, BattleLog(), inflicted_by_opponent=True)
+    assert mon.stat_stages.ATTACK == 0
+    assert mon.stat_stages.DEFENCE == -1
+
+
+def test_big_pecks_blocks_only_its_own_stat_from_a_multi_stat_drop():
+    from battle_sim.mechanics.log import BattleLog
+    from battle_sim.mechanics.stages import apply_stage_changes
+
+    mon = _mk("B", ability=Ability.BIG_PECKS)
+    apply_stage_changes(mon, 0, {Stats.ATTACK: -1, Stats.DEFENCE: -1}, BattleLog(), inflicted_by_opponent=True)
+    assert mon.stat_stages.ATTACK == -1
+    assert mon.stat_stages.DEFENCE == 0
+
+
+def test_hyper_cutter_does_not_block_its_own_raises():
+    from battle_sim.mechanics.log import BattleLog
+    from battle_sim.mechanics.stages import apply_stage_changes
+
+    mon = _mk("B", ability=Ability.HYPER_CUTTER)
+    apply_stage_changes(mon, 0, {Stats.ATTACK: 1}, BattleLog(), inflicted_by_opponent=True)
+    assert mon.stat_stages.ATTACK == 1
+
+
+def test_tickle_through_the_full_engine_respects_hyper_cutter():
+    moves = MoveSet(TICKLE, TACKLE, EMBER, SWORDS_DANCE)
+    cut = _mk("B", ability=Ability.HYPER_CUTTER, moves=IDLE_MOVES)
+    state = _battle([_mk("A", moves=moves)], [cut])
+    step(state, {0: USE_FIRST, 1: USE_SPLASH})
+    assert cut.stat_stages.ATTACK == 0
+    assert cut.stat_stages.DEFENCE == -1

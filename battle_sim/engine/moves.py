@@ -404,6 +404,16 @@ def _accuracy_check(move: Move, attacker: Pokemon, defender: Pokemon, field: Fie
     multiplier = (3 + net_stage) / 3 if net_stage >= 0 else 3 / (3 - net_stage)
     if defender.ability is Ability.SAND_VEIL and field.weather is Weather.SANDSTORM:
         multiplier *= 0.8
+    if defender.ability is Ability.SNOW_CLOAK and field.weather is Weather.SNOW:
+        multiplier *= 0.8
+    if defender.ability is Ability.TANGLED_FEET and ExtraStatus.CONFUSION in defender.volatiles:
+        multiplier *= 0.8
+    if attacker.ability is Ability.COMPOUND_EYES:
+        multiplier *= 1.3
+    if attacker.ability is Ability.HUSTLE and move.category is Category.PHYSICAL:
+        multiplier *= 0.8
+    if attacker.ability is Ability.VICTORY_STAR:
+        multiplier *= 1.1
     if attacker.item is Item.WIDE_LENS:
         multiplier *= 1.1
     return rng.roll_chance(min(1.0, move.accuracy_probability * multiplier))  # boosted past 100% always hits

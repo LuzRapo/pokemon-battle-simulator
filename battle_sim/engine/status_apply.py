@@ -14,7 +14,7 @@ from battle_sim.models.log_events import (
 )
 from battle_sim.models.moves import InflictStatusEffect, StatStageChangeEffect
 from battle_sim.models.pokemon import Pokemon
-from battle_sim.utils import Ability, ExtraStatus, Item, Status, Type, Weather
+from battle_sim.utils import Ability, ExtraStatus, Item, Stats, Status, Type, Weather
 
 _STATUS_TYPE_IMMUNITY: dict[Status, frozenset[Type]] = {
     Status.BURN: frozenset({Type.FIRE}),
@@ -24,10 +24,17 @@ _STATUS_TYPE_IMMUNITY: dict[Status, frozenset[Type]] = {
     Status.TOXIC: frozenset({Type.POISON, Type.STEEL}),
 }
 _ALL_STATUSES = frozenset(Status) - {Status.NONE}
+_SYNCHRONIZE_STATUSES = frozenset({Status.BURN, Status.PARALYSIS, Status.POISON, Status.TOXIC})
 _STATUS_ABILITY_IMMUNITY: dict[Ability, frozenset[Status]] = {
     Ability.PURIFYING_SALT: _ALL_STATUSES,
     Ability.WATER_BUBBLE: frozenset({Status.BURN}),
     Ability.THERMAL_EXCHANGE: frozenset({Status.BURN}),
+    Ability.LIMBER: frozenset({Status.PARALYSIS}),
+    Ability.INSOMNIA: frozenset({Status.SLEEP}),
+    Ability.VITAL_SPIRIT: frozenset({Status.SLEEP}),
+    Ability.WATER_VEIL: frozenset({Status.BURN}),
+    Ability.MAGMA_ARMOR: frozenset({Status.FREEZE}),
+    Ability.IMMUNITY: frozenset({Status.POISON, Status.TOXIC}),
 }
 _STATUS_CURE_ITEMS: dict[Item, frozenset[Status]] = {
     Item.LUM_BERRY: _ALL_STATUSES,
@@ -38,6 +45,7 @@ _VOLATILE_TYPE_IMMUNITY: dict[ExtraStatus, frozenset[Type]] = {
 }
 _VOLATILE_ABILITY_IMMUNITY: dict[ExtraStatus, frozenset[Ability]] = {
     ExtraStatus.FLINCH: frozenset({Ability.INNER_FOCUS}),
+    ExtraStatus.CONFUSION: frozenset({Ability.OWN_TEMPO}),
 }
 _VOLATILE_INITIAL_DURATIONS: dict[ExtraStatus, tuple[int, int]] = {
     ExtraStatus.CONFUSION: (2, 6),  # random.randrange(2, 6) -> 2..5 turns
@@ -74,6 +82,24 @@ def _apply_status(
         _apply_volatile(effect.status, target, target_index, rng, log)
 
 
+def _reflect_synchronize(
+    status: Status,
+    target: Pokemon,
+    target_index: int,
+    inflictor: Pokemon | None,
+    rng: RNG,
+    log: BattleLog,
+    field: FieldState | None,
+) -> None:
+    if inflictor is None or target.ability is not Ability.SYNCHRONIZE:
+        return
+    if status not in _SYNCHRONIZE_STATUSES or inflictor.status is not Status.NONE:
+        return
+    # inflictor=None: the mirrored status doesn't itself re-trigger Synchronize or Poison
+    # Puppeteer — it respects the inflictor's own type/ability immunities, nothing more.
+    _apply_main_status(status, inflictor, 1 - target_index, rng, log, inflictor=None, field=field)
+
+
 def _apply_main_status(
     status: Status,
     target: Pokemon,
@@ -105,6 +131,7 @@ def _apply_main_status(
     elif status is Status.TOXIC:
         target.status_turns = 0
     log.add(StatusInflicted(side=target_index, pokemon=target.nickname, status=status))
+    _reflect_synchronize(status, target, target_index, inflictor, rng, log, field)
     puppeteered = (
         status in (Status.POISON, Status.TOXIC)
         and inflictor is not None
@@ -133,6 +160,10 @@ def _apply_volatile(volatile: ExtraStatus, target: Pokemon, target_index: int, r
         return  # Yawn fails against an already-statused target
     target.volatiles[volatile] = _initial_volatile_duration(volatile, rng)
     log.add(VolatileInflicted(side=target_index, pokemon=target.nickname, volatile=volatile))
+    if volatile is ExtraStatus.FLINCH and target.ability is Ability.STEADFAST:
+        apply_stage_changes(
+            target, target_index, {Stats.SPEED: 1}, log, inflicted_by_opponent=False, source="steadfast"
+        )
     _mental_herb_cure(target, target_index, volatile, log)
 
 

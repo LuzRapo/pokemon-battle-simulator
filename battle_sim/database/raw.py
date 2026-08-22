@@ -76,5 +76,34 @@ class RawSpeciesData(BaseModel):
     height_m: float | None = Field(default=None, alias="heightm")
     weight_kg: float | None = Field(default=None, alias="weightkg")
     evos: list[str] = Field(default_factory=list)
+    forme: str | None = None
+    base_species: str | None = Field(default=None, alias="baseSpecies")
+    battle_only: str | list[str] | None = Field(default=None, alias="battleOnly")
     is_nonstandard: str | None = Field(default=None, alias="isNonstandard")
     is_cosmetic_forme: bool = Field(default=False, alias="isCosmeticForme")
+
+    def battle_only_parents(self) -> tuple[str, ...]:
+        if self.battle_only is None:
+            return ()
+        return (self.battle_only,) if isinstance(self.battle_only, str) else tuple(self.battle_only)
+
+
+class RawLearnsetData(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    learnset: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class RawRandbatsRole(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    abilities: list[str] = Field(default_factory=list)
+    items: list[str] = Field(default_factory=list)
+    moves: list[str] = Field(default_factory=list)
+
+
+class RawRandbatsSpecies(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    items: list[str] = Field(default_factory=list)  # species-level fallback for the rare itemless role
+    roles: dict[str, RawRandbatsRole] = Field(default_factory=dict)

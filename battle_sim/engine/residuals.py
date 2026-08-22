@@ -8,6 +8,8 @@
 3. Per side: tailwind and screen ticks.
 """
 
+from collections.abc import Callable
+
 from battle_sim.mechanics.battle import BattleState, SideState, effective_weather
 from battle_sim.mechanics.events import Event, EventBus, EventContext, HandlerResult, Payload, ResidualOrder
 from battle_sim.mechanics.log import BattleLog
@@ -18,6 +20,7 @@ from battle_sim.models.log_events import (
     PseudoWeatherEnded,
     ResidualDamage,
     ScreenFaded,
+    StatusClearance,
     StatusCleared,
     StatusInflicted,
     TailwindFaded,
@@ -219,6 +222,24 @@ def _tick_field_durations(state: BattleState, log: BattleLog) -> None:
             log.add(PseudoWeatherEnded(kind=pseudo))
 
 
+def _tick_countdown(
+    active: Pokemon,
+    side_index: int,
+    volatile: ExtraStatus,
+    clearance: StatusClearance,
+    log: BattleLog,
+    on_expire: Callable[[], None] | None = None,
+) -> None:
+    if volatile not in active.volatiles:
+        return
+    active.volatiles[volatile] -= 1
+    if active.volatiles[volatile] <= 0:
+        del active.volatiles[volatile]
+        if on_expire is not None:
+            on_expire()
+        log.add(StatusCleared(side=side_index, pokemon=active.nickname, clearance=clearance))
+
+
 def _tick_volatiles(active: Pokemon, side_index: int, log: BattleLog) -> None:
     active.volatiles.pop(ExtraStatus.FLINCH, None)
     active.volatiles.pop(ExtraStatus.PROTECT, None)
@@ -229,23 +250,17 @@ def _tick_volatiles(active: Pokemon, side_index: int, log: BattleLog) -> None:
             del active.volatiles[ExtraStatus.PERISH]
             active.apply_damage(active.live_stats.HP)
             log.add(Fainted(side=side_index, pokemon=active.nickname))
-    if ExtraStatus.TAUNT in active.volatiles:
-        active.volatiles[ExtraStatus.TAUNT] -= 1
-        if active.volatiles[ExtraStatus.TAUNT] <= 0:
-            del active.volatiles[ExtraStatus.TAUNT]
-            log.add(StatusCleared(side=side_index, pokemon=active.nickname, clearance="taunt_ended"))
-    if ExtraStatus.ENCORE in active.volatiles:
-        active.volatiles[ExtraStatus.ENCORE] -= 1
-        if active.volatiles[ExtraStatus.ENCORE] <= 0:
-            del active.volatiles[ExtraStatus.ENCORE]
-            active.encored_slot = None
-            log.add(StatusCleared(side=side_index, pokemon=active.nickname, clearance="encore_ended"))
-    if ExtraStatus.DISABLE in active.volatiles:
-        active.volatiles[ExtraStatus.DISABLE] -= 1
-        if active.volatiles[ExtraStatus.DISABLE] <= 0:
-            del active.volatiles[ExtraStatus.DISABLE]
-            active.disabled_slot = None
-            log.add(StatusCleared(side=side_index, pokemon=active.nickname, clearance="disable_ended"))
+
+    def clear_encored_slot() -> None:
+        active.encored_slot = None
+
+    def clear_disabled_slot() -> None:
+        active.disabled_slot = None
+
+    _tick_countdown(active, side_index, ExtraStatus.TAUNT, "taunt_ended", log)
+    _tick_countdown(active, side_index, ExtraStatus.ENCORE, "encore_ended", log, on_expire=clear_encored_slot)
+    _tick_countdown(active, side_index, ExtraStatus.DISABLE, "disable_ended", log, on_expire=clear_disabled_slot)
+    _tick_countdown(active, side_index, ExtraStatus.SLOW_START, "slow_start_ended", log)
 
 
 def _tick_side_durations(side: SideState, side_index: int, log: BattleLog) -> None:

@@ -10,7 +10,7 @@ from battle_sim.mechanics.log import BattleLog
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.utils import Ability
 
-_MOLD_BREAKERS = frozenset({Ability.MOLD_BREAKER, Ability.TERAVOLT})
+_MOLD_BREAKERS = frozenset({Ability.MOLD_BREAKER, Ability.TERAVOLT, Ability.TURBOBLAZE})
 
 
 def _execute_action(state: BattleState, side_index: int, action: Action, log: BattleLog) -> None:
@@ -29,7 +29,7 @@ def _execute_action(state: BattleState, side_index: int, action: Action, log: Ba
 
 @contextmanager
 def _mold_breaker_window(state: BattleState, side_index: int) -> Iterator[None]:
-    """Mold Breaker / Teravolt: the defender's ability handlers are unwired for the move's duration."""
+    """Mold Breaker / Teravolt / Turboblaze: the defender's ability handlers are unwired for the move's duration."""
     attacker = state.sides[side_index].active_pokemon
     defender = state.sides[1 - side_index].active_pokemon
     suppress = attacker.ability in _MOLD_BREAKERS and not defender.is_fainted()
