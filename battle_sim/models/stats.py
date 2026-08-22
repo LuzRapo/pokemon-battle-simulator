@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, Field, model_validator
 
+from battle_sim.utils import Stats
+
 
 @dataclass(frozen=True)
 class BaseStats:
@@ -21,6 +23,9 @@ class StatTotals:
     SP_ATTACK: int
     SP_DEFENCE: int
     SPEED: int
+
+    def __getitem__(self, stat: Stats) -> int:
+        return int(getattr(self, stat.name))
 
 
 # From https://bulbapedia.bulbagarden.net/wiki/Stat:
@@ -42,6 +47,12 @@ class StatStages(BaseModel):
     SPEED: int = Field(default=0, ge=-6, le=6)
     ACCURACY: int = Field(default=0, ge=-6, le=6)
     EVASION: int = Field(default=0, ge=-6, le=6)
+
+    def __getitem__(self, stat: Stats) -> int:
+        return int(getattr(self, stat.name))
+
+    def __setitem__(self, stat: Stats, stage: int) -> None:
+        setattr(self, stat.name, stage)
 
 
 class EVs(BaseModel):

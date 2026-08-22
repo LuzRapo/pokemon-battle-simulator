@@ -1,0 +1,49 @@
+-- turn 0 --
+P1's Tyranitar's Sand Stream set the weather!
+P2's Gengar used Will-O-Wisp!
+P1's Tyranitar was burned!
+P1's Tyranitar used Stealth Rock!
+Stealth Rock was scattered on P2's side!
+P1's Tyranitar was hurt by its burn! (21 HP)
+P2's Gengar was hurt by the sandstorm! (16 HP)
+P2's Gengar restored a little HP using Black Sludge!
+-- turn 1 --
+P2's Gengar used Taunt!
+P1's Tyranitar fell for the taunt!
+P1's Tyranitar used Rock Slide!
+P2's Gengar took 84 damage!
+P1's Tyranitar restored a little HP using Leftovers!
+P1's Tyranitar was hurt by its burn! (21 HP)
+P2's Gengar was hurt by the sandstorm! (16 HP)
+P2's Gengar restored a little HP using Black Sludge!
+-- turn 2 --
+P2's Gengar used Shadow Ball!
+It's not very effective…
+P1's Tyranitar took 57 damage!
+P1's Tyranitar used Crunch!
+It's super effective!
+P2's Gengar took 177 damage!
+P2's Gengar fainted!
+P1's Tyranitar restored a little HP using Leftovers!
+P1's Tyranitar was hurt by its burn! (21 HP)
+P2 withdrew Gengar and sent out Staraptor!
+P2's Staraptor was hurt by Stealth Rock! (77 HP)
+P1's Tyranitar's Attack fell from Intimidate!
+-- turn 3 --
+P1 withdrew Tyranitar and sent out Garchomp!
+P2's Staraptor used U-turn!
+P1's Garchomp took 99 damage!
+P2's Staraptor was hurt by the sandstorm! (19 HP)
+-- turn 4 --
+P2 withdrew Staraptor and sent out Staraptor!
+P2's Staraptor was hurt by Stealth Rock! (77 HP)
+P1's Garchomp's Attack fell from Intimidate!
+P1's Garchomp used Swords Dance!
+P1's Garchomp's Attack rose by 2!
+Sandstorm faded.
+-- turn 5 --
+P1's Garchomp used Dragon Claw!
+P2's Staraptor took 138 damage!
+P2's Staraptor fainted!
+P1's Garchomp was hurt by Life Orb! (35 HP)
+Player 1 wins!

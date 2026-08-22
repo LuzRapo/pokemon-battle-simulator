@@ -1,18 +1,20 @@
+from dataclasses import asdict
+
 import pytest
 
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.utils import Stats
 
 
-def assert_stats(pokemon: Pokemon, expected: dict):
+def assert_stats(pokemon: Pokemon, expected: dict[str, int]) -> None:
     for stat_name, value in expected.items():
-        assert getattr(pokemon.stat_totals, stat_name) == value, f"{stat_name} mismatch"
+        assert asdict(pokemon.stat_totals)[stat_name] == value, f"{stat_name} mismatch"
 
 
 @pytest.fixture
 def expected_garchomp_stats():
     # From: https://bulbapedia.bulbagarden.net/wiki/Stat#Formula
-    return dict(HP=289, ATTACK=278, DEFENCE=193, SP_ATTACK=135, SP_DEFENCE=171, SPEED=171)
+    return {"HP": 289, "ATTACK": 278, "DEFENCE": 193, "SP_ATTACK": 135, "SP_DEFENCE": 171, "SPEED": 171}
 
 
 def test_hp_damage_heal_and_faint(garchomp_factory, expected_garchomp_stats):

@@ -1,20 +1,29 @@
 import pytest
 
 from battle_sim.maths.rng import RNG
+from battle_sim.mechanics.battle import BattleState, SideState
 from battle_sim.mechanics.events import Event, EventBus, EventContext, EventPriority, HandlerResult
+from battle_sim.mechanics.log import BattleLog
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.moves import MoveSlot
 from battle_sim.utils import Target
+from tests.conftest import GarchompFactory
 
 
-def make_context(garchomp_factory):
+def make_context(garchomp_factory: GarchompFactory) -> EventContext:
     chompilly = garchomp_factory("Chompilly")
+    battle = BattleState(
+        sides=(SideState(team=[chompilly]), SideState(team=[garchomp_factory("Rival")])),
+        rng=RNG(seed=123),
+    )
     action = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
-    return EventContext(rng=RNG(seed=123), actor=chompilly, target=action.target, action=action)
+    return EventContext(
+        rng=battle.rng, battle=battle, log=BattleLog(), actor=chompilly, target=action.target, action=action
+    )
 
 
 @pytest.fixture
-def context(garchomp_factory):
+def context(garchomp_factory: GarchompFactory) -> EventContext:
     return make_context(garchomp_factory)
 
 
@@ -30,9 +39,9 @@ def test_subscription_ordering_and_execution(context):
         order.append("h2")
         return HandlerResult()
 
-    bus.on(Event.ON_ACTION_START, h2, priority=EventPriority.DEFAULT)
-    bus.on(Event.ON_ACTION_START, h1, priority=EventPriority.MOVE)
-    bus.emit(Event.ON_ACTION_START, context)
+    bus.on(Event.ON_BEFORE_ACTION, h2, priority=EventPriority.DEFAULT)
+    bus.on(Event.ON_BEFORE_ACTION, h1, priority=EventPriority.MOVE)
+    bus.emit(Event.ON_BEFORE_ACTION, context)
     assert order == ["h1", "h2"]
 
 
@@ -94,7 +103,7 @@ def test_deduplication_same_handler_not_added_twice(context):
     def handler(ctx, payload):
         nonlocal calls
         calls += 1
-        return None
+        return
 
     sub1 = bus.on(Event.ON_AFTER_ACTION, handler)
     sub2 = bus.on(Event.ON_AFTER_ACTION, handler)
@@ -112,9 +121,6 @@ def test_off_owner_removes_all_owned_subscriptions(context):
 
     class DummyOwner:
         name = "X"
-
-        def on_register(self, b): ...
-        def on_unregister(self, b): ...
 
     owner = DummyOwner()
     called = []

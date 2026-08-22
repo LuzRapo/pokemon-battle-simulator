@@ -14,3 +14,4 @@ class BaseSpecies:
     hidden_ability: str | None
     height_m: float
     weight_kg: float
+    fully_evolved: bool

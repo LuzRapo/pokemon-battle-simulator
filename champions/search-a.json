@@ -1,0 +1,20 @@
+{
+  "ko_now": 3.4666425841681865,
+  "hko_progress": 0.42610440889572615,
+  "exchange_edge": 0.14535522974146792,
+  "timer_value": 0.0,
+  "para_speed_control": 0.6644245090557487,
+  "burn_disable": 0.5834292004326858,
+  "knock_progress": 0.1287327996964558,
+  "hazard_value": 1.1612839917121442,
+  "hazard_removal": 0.7709655279738754,
+  "heal_turns": 1.1212308509767723,
+  "entry_cost": 0.2880989032239212,
+  "setup_value": 0.24345638438278458,
+  "fodder_exploit": 0.17596361493053225,
+  "wincon_preservation": 0.16824053591144167,
+  "matchup_gain": 1.9576316933921074,
+  "tempo_cost": 0.28124672696236996,
+  "phaze_value": 0.9795914510926785,
+  "lock_risk": 0.8115990334823933
+}

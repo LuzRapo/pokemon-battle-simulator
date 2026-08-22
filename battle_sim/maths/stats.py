@@ -23,25 +23,15 @@ def calculate_total_stat(base: int, iv: int, ev: int, lvl: int, nature: Nature, 
     return floor(raw * mult)
 
 
-def calculate_effective_stat(stat_totals: StatTotals, stat_stages: StatStages, stat: Stats) -> int:
-    assert stat in (Stats.ATTACK, Stats.DEFENCE, Stats.SP_ATTACK, Stats.SP_DEFENCE, Stats.SPEED)
-    unmodified_value = getattr(stat_totals, stat.name)
-    stage_level = getattr(stat_stages, stat.name)
-    stage_base = StageBases.STATS
-
+def apply_stage_multiplier(unmodified_value: int, stage_level: int) -> int:
+    stage_base = int(StageBases.STATS)
     if stage_level >= 0:
         numerator, denominator = stage_base + stage_level, stage_base
     else:
         numerator, denominator = stage_base, stage_base - stage_level
+    return max(1, unmodified_value * numerator // denominator)
 
-    modified_value = unmodified_value * numerator // denominator
 
-    # TODO: status/items/abilities/field (nerd modifiers)
-    # if stat is Stats.SPEED and self.paralyzed:
-    #     val = val * 1 // 2
-    # if stat is Stats.SPEED and self.tailwind:
-    #     val = val * 2 // 1
-    # if stat is Stats.ATTACK and self.item == Item.CHOICE_BAND:
-    #     val = val * 3 // 2
-
-    return max(1, modified_value)
+def calculate_effective_stat(stat_totals: StatTotals, stat_stages: StatStages, stat: Stats) -> int:
+    assert stat in (Stats.ATTACK, Stats.DEFENCE, Stats.SP_ATTACK, Stats.SP_DEFENCE, Stats.SPEED)
+    return apply_stage_multiplier(stat_totals[stat], stat_stages[stat])

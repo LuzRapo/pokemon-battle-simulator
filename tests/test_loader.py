@@ -19,7 +19,18 @@ from battle_sim.database.loader import (
 from battle_sim.models.moves import DamageEffect, InflictStatusEffect, Move, StatStageChangeEffect
 from battle_sim.models.species import BaseSpecies
 from battle_sim.models.stats import BaseStats
-from battle_sim.utils import Category, ExtraStatus, PriorityLevel, Stats, Status, Target, Type
+from battle_sim.utils import (
+    Category,
+    ExtraStatus,
+    PriorityLevel,
+    PseudoWeather,
+    Stats,
+    Status,
+    Target,
+    Terrain,
+    Type,
+    Weather,
+)
 
 
 @pytest.mark.parametrize(
@@ -79,6 +90,7 @@ def test_earthquake_full_shape():
         pp=10,
         target=Target.ALL_ADJACENT,
         effects=(DamageEffect(power=100, category=Category.PHYSICAL, crit_stage=0, contact=False),),
+        protectable=True,
     )
 
 
@@ -122,25 +134,31 @@ def test_rockslide_flinch_chance():
     move = get_move("Rock Slide")
     assert move.target is Target.ALL_ADJACENT_ENEMIES
     damage, flinch = move.effects
+    assert isinstance(damage, DamageEffect)
+    assert isinstance(flinch, InflictStatusEffect)
     assert damage.power == 75
-    assert flinch == InflictStatusEffect(status=ExtraStatus.FLINCH, probability=pytest.approx(0.3))
+    assert flinch.status is ExtraStatus.FLINCH
+    assert flinch.probability == pytest.approx(0.3)
 
 
 def test_bulletseed_multihit():
     move = get_move("Bullet Seed")
     (damage,) = move.effects
+    assert isinstance(damage, DamageEffect)
     assert damage.multi_hit == (2, 5)
 
 
 def test_doubleedge_recoil():
     move = get_move("Double-Edge")
     (damage,) = move.effects
+    assert isinstance(damage, DamageEffect)
     assert damage.recoil_percent == pytest.approx(0.33)
 
 
 def test_gigadrain_drain():
     move = get_move("Giga Drain")
     (damage,) = move.effects
+    assert isinstance(damage, DamageEffect)
     assert damage.drain_percent == pytest.approx(0.5)
 
 
@@ -148,8 +166,9 @@ def test_fakeout_priority_and_flinch():
     move = get_move("Fake Out")
     assert move.priority is PriorityLevel.FAKE_OUT
     damage, flinch = move.effects
+    assert isinstance(damage, DamageEffect)
     assert damage.power == 40 and damage.contact is True
-    assert flinch == InflictStatusEffect(status=ExtraStatus.FLINCH, probability=1.0)
+    assert flinch == InflictStatusEffect(status=ExtraStatus.FLINCH, probability=1.0, is_secondary=True)
 
 
 def test_extremespeed_priority():
@@ -173,6 +192,7 @@ def test_bulbasaur_species():
         hidden_ability="Chlorophyll",
         height_m=0.7,
         weight_kg=6.9,
+        fully_evolved=False,
     )
 
 
@@ -292,3 +312,84 @@ def test_loaded_garchomp_matches_conftest_fixture(garchomp_factory):
     species = get_species("Garchomp")
     assert chompy.base_stats == species.base_stats
     assert chompy.types == species.types
+
+
+def test_fixed_damage_level_move_loads():
+    from battle_sim.models.moves import FixedDamageEffect
+
+    move = get_move("Seismic Toss")
+    fixed = next(e for e in move.effects if isinstance(e, FixedDamageEffect))
+    assert fixed.amount_formula == "LEVEL"
+    assert fixed.set_amount is None
+
+
+def test_fixed_damage_set_move_loads():
+    from battle_sim.models.moves import FixedDamageEffect
+
+    move = get_move("Sonic Boom")
+    fixed = next(e for e in move.effects if isinstance(e, FixedDamageEffect))
+    assert fixed.amount_formula == "SET"
+    assert fixed.set_amount == 20
+
+
+def test_weather_setup_move_loads():
+    from battle_sim.models.moves import WeatherEffect
+
+    move = get_move("Rain Dance")
+    weather = next(e for e in move.effects if isinstance(e, WeatherEffect))
+    assert weather.kind is Weather.RAIN
+
+
+def test_terrain_setup_move_loads():
+    from battle_sim.models.moves import TerrainEffect
+
+    move = get_move("Electric Terrain")
+    terrain = next(e for e in move.effects if isinstance(e, TerrainEffect))
+    assert terrain.kind is Terrain.ELECTRIC
+
+
+def test_pseudo_weather_setup_move_loads():
+    from battle_sim.models.moves import PseudoWeatherEffect
+
+    move = get_move("Trick Room")
+    pw = next(e for e in move.effects if isinstance(e, PseudoWeatherEffect))
+    assert pw.kind is PseudoWeather.TRICK_ROOM
+
+
+def test_foresight_loads_identified_volatile():
+    move = get_move("Foresight")
+    inflict = next(e for e in move.effects if isinstance(e, InflictStatusEffect))
+    assert inflict.status is ExtraStatus.IDENTIFIED
+
+
+def test_miracle_eye_loads_miracle_eye_volatile():
+    move = get_move("Miracle Eye")
+    inflict = next(e for e in move.effects if isinstance(e, InflictStatusEffect))
+    assert inflict.status is ExtraStatus.MIRACLE_EYE
+
+
+def test_confuse_ray_loads_confusion_volatile():
+    move = get_move("Confuse Ray")
+    inflict = next(e for e in move.effects if isinstance(e, InflictStatusEffect))
+    assert inflict.status is ExtraStatus.CONFUSION
+
+
+def test_taunt_loads_taunt_volatile():
+    move = get_move("Taunt")
+    inflict = next(e for e in move.effects if isinstance(e, InflictStatusEffect))
+    assert inflict.status is ExtraStatus.TAUNT
+
+
+def test_firefang_loads_plural_secondaries():
+    """Fire Fang's burn and flinch live under `secondaries` (plural), not `secondary`."""
+    move = get_move("Fire Fang")
+    inflicted = [e for e in move.effects if isinstance(e, InflictStatusEffect)]
+    assert {e.status for e in inflicted} == {Status.BURN, ExtraStatus.FLINCH}
+    assert all(e.probability == pytest.approx(0.1) for e in inflicted)
+
+
+def test_all_fang_moves_carry_both_secondaries():
+    for name in ("Fire Fang", "Ice Fang", "Thunder Fang"):
+        move = get_move(name)
+        inflicted = [e for e in move.effects if isinstance(e, InflictStatusEffect)]
+        assert len(inflicted) == 2, f"{name} should carry status + flinch, got {inflicted}"

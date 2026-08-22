@@ -34,10 +34,9 @@ uv run pre-commit install
 ```
 
 ## Running:
-- Manually go to `main.py` and press Run ▶ in PyCharm
-- Or, in console:
+- Launch the battle UI:
 ```bash
-uv run python main.py
+uv run streamlit run app.py
 ```
 
 ## Developer Info

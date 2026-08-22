@@ -16,3 +16,5 @@ build/
 *.pdf
 *.csv
 *.env
+sample_teams/
+battles/
