@@ -1,3 +1,4 @@
+import json
 import random
 from pathlib import Path
 
@@ -115,3 +116,24 @@ def test_evolve_is_deterministic_and_tracks_the_champion():
     assert ticks == config.generations * config.population
     assert all(0.0 <= stats.best_fitness <= 1.0 for stats in history_a)
     assert all(stats.mean_fitness <= stats.best_fitness for stats in history_a)
+
+
+def test_load_weights_defaults_genes_added_after_a_champion_was_written(tmp_path: Path):
+    """An older champion is still a valid baseline; refusing it would discard the comparison."""
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps({"ko_now": 5.0, "tempo_cost": 0.25}))
+
+    weights = load_weights(path)
+
+    assert weights.ko_now == 5.0
+    assert weights.tempo_cost == 0.25
+    assert weights.setup_denial == MatchupWeights().setup_denial  # absent gene falls back to its default
+
+
+def test_load_weights_rejects_a_gene_the_code_does_not_have(tmp_path: Path):
+    """A file/code disagreement is a real error, unlike a merely older file."""
+    path = tmp_path / "future.json"
+    path.write_text(json.dumps({"ko_now": 5.0, "telepathy_value": 1.0}))
+
+    with pytest.raises(ValueError, match="telepathy_value"):
+        load_weights(path)

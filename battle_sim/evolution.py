@@ -218,10 +218,20 @@ def save_weights(weights: MatchupWeights, path: Path) -> None:
 
 
 def load_weights(path: Path) -> MatchupWeights:
+    """Genes absent from an older champion file fall back to their default.
+
+    Genes get added as the feature set grows, and a champion written before a gene existed is still a
+    valid baseline to measure against — refusing to load it would throw away exactly the comparison
+    we want. An *unknown* gene is still an error: that means the file and the code disagree.
+    """
     data = json.loads(path.read_text())
     expected = {gene.name for gene in fields(MatchupWeights)}
-    if set(data) != expected:
-        raise ValueError(f"{path} genes don't match MatchupWeights: {sorted(set(data) ^ expected)}")
+    unknown = set(data) - expected
+    if unknown:
+        raise ValueError(f"{path} has genes MatchupWeights does not: {sorted(unknown)}")
+    missing = expected - set(data)
+    if missing:
+        logger.warning(f"{path} predates {len(missing)} gene(s), defaulting them: {sorted(missing)}")
     return MatchupWeights(**{name: float(value) for name, value in data.items()})
 
 
@@ -258,6 +268,10 @@ def main() -> None:
     parser.add_argument("--population", type=int, default=24)
     parser.add_argument("--generations", type=int, default=30)
     parser.add_argument("--matchups", type=int, default=60)
+    parser.add_argument("--elites", type=int, default=EvolutionConfig.elites)
+    parser.add_argument("--tournament", type=int, default=EvolutionConfig.tournament)
+    parser.add_argument("--mutation-rate", type=float, default=EvolutionConfig.mutation_rate)
+    parser.add_argument("--mutation-sigma", type=float, default=EvolutionConfig.mutation_sigma)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--holdout", type=int, default=400, help="held-out matchups for the final champion eval")
     parser.add_argument("--workers", type=int, default=os.cpu_count())
@@ -268,6 +282,25 @@ def main() -> None:
         default=[],
         dest="opponents",
         help="champion weights JSON to add to the opponent pool (repeatable)",
+    )
+    parser.add_argument(
+        "--search-opponent",
+        type=Path,
+        action="append",
+        default=[],
+        dest="search_opponents",
+        help="champion weights JSON added to the pool as a SearchPlayer, not myopic (repeatable)",
+    )
+    parser.add_argument(
+        "--opponent-budget",
+        type=int,
+        default=30,
+        help="search budget for --search-opponent pool members",
+    )
+    parser.add_argument(
+        "--drop-reference-pool",
+        action="store_true",
+        help="omit BasicPlayer and stock MatchupPlayer, leaving only the champions supplied",
     )
     parser.add_argument("--save", type=Path, default=None, help="write the champion's weights JSON here")
     parser.add_argument(
@@ -290,10 +323,29 @@ def main() -> None:
         parser.error(f"--save directory {args.save.parent} does not exist")  # fail before the run, not after
 
     teams = [load_team(args.team)] if args.team is not None else load_teams(args.teams_dir)
-    pool: list[tuple[str, Player]] = [("BasicPlayer", BasicPlayer()), ("MatchupPlayer(stock)", MatchupPlayer())]
+    # A league, not two reference bots. Evolving against BasicPlayer and stock MatchupPlayer selects
+    # for exploiting them: a round-robin showed every champion so evolved drifts to roughly twice the
+    # switch rate of expert play, which beats weak opposition and little else. Searching pool members
+    # matter most — they are the strongest agents available, and a myopic copy of a search champion is
+    # a much softer target than the champion itself.
+    pool: list[tuple[str, Player]] = []
+    if not args.drop_reference_pool:
+        pool += [("BasicPlayer", BasicPlayer()), ("MatchupPlayer(stock)", MatchupPlayer())]
     pool += [(path.stem, MatchupPlayer(load_weights(path))) for path in args.opponents]
+    opponent_profile = SearchProfile(
+        budget=args.opponent_budget,
+        root_k=args.root_k,
+        chance_samples=args.chance_samples,
+        determinizations=args.determinizations,
+    )
+    pool += [
+        (f"{path.stem}+S", SearchPlayer(load_weights(path), profile=opponent_profile)) for path in args.search_opponents
+    ]
+    if not pool:
+        parser.error("empty opponent pool: --drop-reference-pool needs at least one --opponent/--search-opponent")
     opponents = [player for _, player in pool]
     logger.info(f"loaded {len(teams)} team(s) from {args.team or args.teams_dir}; pool of {len(pool)} opponents")
+    logger.info(f"pool: {', '.join(label for label, _ in pool)}")
     search = (
         SearchProfile(
             budget=args.search_budget,
@@ -308,6 +360,10 @@ def main() -> None:
         population=args.population,
         generations=args.generations,
         matchups_per_eval=args.matchups,
+        elites=args.elites,
+        tournament=args.tournament,
+        mutation_rate=args.mutation_rate,
+        mutation_sigma=args.mutation_sigma,
         seed=args.seed,
         workers=args.workers,
         search=search,

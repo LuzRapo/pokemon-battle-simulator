@@ -6,11 +6,14 @@ action is not guaranteed to *succeed* (a Disabled or Taunt-blocked move wastes
 the turn, exactly as the engine resolves it).
 """
 
+from dataclasses import replace
+
 from battle_sim.mechanics.battle import BattleState, SideState
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.moves import MoveSlot
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.utils import Ability, Category, ExtraStatus, Type
+from battle_sim.zmoves import z_move_for
 
 
 def legal_actions(state: BattleState, side_index: int) -> list[Action]:
@@ -23,8 +26,8 @@ def legal_actions(state: BattleState, side_index: int) -> list[Action]:
     if ExtraStatus.CHARGING in active.volatiles and active.charging_slot is not None:
         return [_move_action(active, active.charging_slot)]  # committed to releasing the charged move
     if _trapped(active, state.sides[1 - side_index].active_pokemon):
-        return _move_actions(active)
-    return _move_actions(active) + _switch_actions(side)
+        return _move_actions(active, side)
+    return _move_actions(active, side) + _switch_actions(side)
 
 
 def _trapped(active: Pokemon, opponent: Pokemon) -> bool:
@@ -36,12 +39,12 @@ def _trapped(active: Pokemon, opponent: Pokemon) -> bool:
     return opponent.ability is Ability.MAGNET_PULL and Type.STEEL in active.types
 
 
-def _move_actions(active: Pokemon) -> list[Action]:
+def _move_actions(active: Pokemon, side: SideState) -> list[Action]:
     forced = next((lock for lock in (active.choice_locked_move, active.encored_slot) if lock is not None), None)
     slots = [forced] if forced is not None else [s for s in MoveSlot if active.moves[s] is not None]
     usable = [s for s in slots if active.pp[s] > 0 and s is not active.disabled_slot and not _taunt_blocked(active, s)]
     if usable:
-        return [_move_action(active, s) for s in usable]
+        return [a for s in usable for a in _slot_actions(active, side, s)]
     if forced is not None or all(pp == 0 for pp in active.pp.values()):
         # Constrained into an empty move, or everything exhausted: the engine substitutes Struggle.
         return [_move_action(active, forced if forced is not None else slots[0])]
@@ -53,6 +56,22 @@ def _taunt_blocked(active: Pokemon, slot: MoveSlot) -> bool:
     move = active.moves[slot]
     assert move is not None  # callers only pass filled slots
     return ExtraStatus.TAUNT in active.volatiles and move.category is Category.STATUS
+
+
+def _slot_actions(active: Pokemon, side: SideState, slot: MoveSlot) -> list[Action]:
+    """The plain use of this slot, plus its Z-move if the held crystal can upgrade it.
+
+    Only moves matching the crystal's type qualify, so this adds one or two actions rather than
+    doubling the move set the way a Mega variant of every move would.
+    """
+    plain = _move_action(active, slot)
+    if side.has_used_z_move:
+        return [plain]
+    move = active.moves[slot]
+    assert move is not None  # callers only pass filled slots
+    if z_move_for(active.item, move) is None:
+        return [plain]
+    return [plain, replace(plain, z_move=True)]
 
 
 def _move_action(active: Pokemon, slot: MoveSlot) -> Action:

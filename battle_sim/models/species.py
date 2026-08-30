@@ -15,3 +15,5 @@ class BaseSpecies:
     height_m: float
     weight_kg: float
     fully_evolved: bool
+    base_species: str | None = None  # the forme this one transforms from, for Mega/Primal formes
+    required_item: str | None = None  # the Mega Stone / orb that reaches this forme

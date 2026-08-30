@@ -37,6 +37,7 @@ _BULKY_DOMINANCE = 1.15  # average defensive stat must clearly exceed the best o
 _BULKY_ITEMS = (Item.LEFTOVERS, Item.SITRUS_BERRY, Item.ROCKY_HELMET, Item.HEAVY_DUTY_BOOTS, Item.ASSAULT_VEST)
 _FAST_OFFENSE_ITEMS = (Item.LIFE_ORB, Item.CHOICE_SCARF)
 _SLOW_OFFENSE_ITEMS = (Item.LIFE_ORB, Item.EXPERT_BELT)
+_GUARANTEED_ATTACKS = 2  # a heuristic set gets at least this many attacks off the species' own better stat
 
 
 @cache
@@ -84,25 +85,64 @@ def _from_role(key: str, entry: RawRandbatsSpecies, rng: random.Random) -> tuple
 
 
 def _from_heuristic(key: str, rng: random.Random) -> tuple[Ability, Item, list[str]]:
-    """No randbats role exists for this species: any of its real abilities, any legal moves."""
+    """No randbats role exists for this species: any of its real abilities, moves biased toward
+    actually being able to fight (see `_pick_heuristic_moves`)."""
     species = get_species(key)
     ability_names = [name for name in (*species.regular_abilities, species.hidden_ability) if name is not None]
     ability = _pick_ability(ability_names, rng)
     pool = sorted(gen7_movepool(key) & get_all_moves().keys())
-    chosen = rng.sample(pool, min(_MAX_MOVES, len(pool)))
+    chosen = _pick_heuristic_moves(species, pool, rng)
     item = _infer_item(species, pool, rng)
     return ability, item, [get_move(name).name for name in chosen]
+
+
+def _pick_heuristic_moves(species: BaseSpecies, pool: list[str], rng: random.Random) -> list[str]:
+    """A uniform draw over the whole movepool can hand a species four status moves and nothing to
+    hit back with. Guarantee `_GUARANTEED_ATTACKS` attacks off whichever of Attack/Sp. Atk is
+    higher, preferring the species' own type (STAB) — then fill the rest of the set at random as
+    before, so there's no other bias toward what a "good" set looks like.
+    """
+    category = Category.PHYSICAL if species.base_stats.ATTACK >= species.base_stats.SP_ATTACK else Category.SPECIAL
+    types = {t for t in species.types if t is not None}
+
+    def attacks(names: list[str]) -> list[str]:
+        return [name for name in names if get_move(name).category is category]
+
+    stab_attacks = attacks([name for name in pool if get_move(name).type in types])
+    candidates = (
+        stab_attacks or attacks(pool) or [name for name in pool if get_move(name).category is not Category.STATUS]
+    )
+    guaranteed = rng.sample(candidates, min(_GUARANTEED_ATTACKS, len(candidates)))
+
+    remaining = [name for name in pool if name not in guaranteed]
+    filler = rng.sample(remaining, min(_MAX_MOVES - len(guaranteed), len(remaining)))
+    chosen = guaranteed + filler
+    rng.shuffle(chosen)  # so the guaranteed attacks don't always land in the first move slots
+    return chosen
+
+
+_GENESECT_DRIVES: dict[str, Item] = {
+    "Genesect-Douse": Item.DOUSE_DRIVE,
+    "Genesect-Shock": Item.SHOCK_DRIVE,
+    "Genesect-Burn": Item.BURN_DRIVE,
+    "Genesect-Chill": Item.CHILL_DRIVE,
+}
 
 
 def _infer_item(species: BaseSpecies, movepool: list[str], rng: random.Random) -> Item:
     """No usage data exists for this species: read a role off its base stats and movepool instead.
 
     Not-fully-evolved species get Eviolite outright — it's close to a free +stat boost for them
-    and there's no meaningful alternative to weigh it against. Fully evolved species get a random
-    item from whichever of {bulky wall, fast offense, slow offense/wallbreaker} pool matches their
-    stat spread; ties between a physical and special leaning are broken by which the movepool
-    actually leans toward, since a mon's base Attack/Sp. Atk split doesn't always match its kit.
+    and there's no meaningful alternative to weigh it against. A Genesect Drive forme gets its
+    matching Drive outright too — it's the only item that makes its signature move Techno Blast
+    anything but Normal-type (see engine.moves._move_type_override), so there's no real
+    alternative to weigh there either. Fully evolved species get a random item from whichever of
+    {bulky wall, fast offense, slow offense/wallbreaker} pool matches their stat spread; ties
+    between a physical and special leaning are broken by which the movepool actually leans
+    toward, since a mon's base Attack/Sp. Atk split doesn't always match its kit.
     """
+    if species.name in _GENESECT_DRIVES:
+        return _GENESECT_DRIVES[species.name]
     if not species.fully_evolved:
         return Item.EVIOLITE
     stats = species.base_stats

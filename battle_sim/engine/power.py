@@ -21,6 +21,16 @@ type PowerCondition = Callable[[Pokemon, Pokemon, BattleState], bool]
 type PowerFormula = Callable[[Pokemon, Pokemon, BattleState], int]
 
 
+ROLLING_MOVES: frozenset[str] = frozenset({"Rollout", "Ice Ball"})
+_ROLLING_POWERS: tuple[int, ...] = (30, 60, 120, 240, 480)  # doubles per connected hit, then holds
+ROLLING_LOCK_TURNS = len(_ROLLING_POWERS)  # committed for the whole run; a miss ends it early
+
+
+def _rolling_power(attacker: Pokemon, defender: Pokemon, state: BattleState) -> int:
+    """Rollout and Ice Ball double for every consecutive hit that has already connected."""
+    return _ROLLING_POWERS[min(attacker.rolling_hits, len(_ROLLING_POWERS) - 1)]
+
+
 def _weight_class_power(attacker: Pokemon, defender: Pokemon, state: BattleState) -> int:
     for threshold, power in ((200.0, 120), (100.0, 100), (50.0, 80), (25.0, 60), (10.0, 40)):
         if defender.weight_kg >= threshold:
@@ -47,6 +57,14 @@ def _speed_ratio_power(attacker: Pokemon, defender: Pokemon, state: BattleState)
     return 40
 
 
+def _gyro_ball_power(attacker: Pokemon, defender: Pokemon, state: BattleState) -> int:
+    """The slower the user next to its target, the harder Gyro Ball hits."""
+    attacker_side, defender_side = _sides_of(attacker, defender, state)
+    own = max(1, effective_speed(attacker, attacker_side, state.field))
+    other = effective_speed(defender, defender_side, state.field)
+    return min(150, 25 * other // own + 1)
+
+
 def _boost_count_power(attacker: Pokemon, defender: Pokemon, state: BattleState) -> int:
     positive = sum(max(0, attacker.stat_stages[stat]) for stat in _STAGED_STATS)
     return 20 + 20 * positive
@@ -69,6 +87,11 @@ def _beat_up_power(attacker: Pokemon, defender: Pokemon, state: BattleState) -> 
     return sum(5 + m.base_stats.ATTACK // 10 for m in contributors) or 5
 
 
+def _hp_scaled_power(attacker: Pokemon, defender: Pokemon, state: BattleState) -> int:
+    """Water Spout / Eruption / Dragon Energy: power falls off with the user's current HP%."""
+    return max(1, 150 * attacker.live_stats.HP // attacker.stat_totals.HP)
+
+
 _STAGED_STATS = tuple(s for s in Stats if s is not Stats.HP)
 
 _POWER_FORMULAS: dict[str, PowerFormula] = {
@@ -77,11 +100,17 @@ _POWER_FORMULAS: dict[str, PowerFormula] = {
     "Heavy Slam": _weight_ratio_power,
     "Heat Crash": _weight_ratio_power,
     "Electro Ball": _speed_ratio_power,
+    "Gyro Ball": _gyro_ball_power,
     "Stored Power": _boost_count_power,
     "Power Trip": _boost_count_power,
     "Last Respects": _last_respects_power,
     "Rage Fist": _rage_fist_power,
     "Beat Up": _beat_up_power,
+    "Rollout": _rolling_power,
+    "Ice Ball": _rolling_power,
+    "Water Spout": _hp_scaled_power,
+    "Eruption": _hp_scaled_power,
+    "Dragon Energy": _hp_scaled_power,
 }
 
 
@@ -166,6 +195,10 @@ def coded_move_fails(move: Move, attacker: Pokemon, defender: Pokemon, state: Ba
         return defender.item is Item.NONE
     if move.name in ("Sucker Punch", "Thunderclap"):
         return not _target_is_about_to_attack(defender, state)
+    if move.name == "Dream Eater":
+        return defender.status is not Status.SLEEP
+    if move.name in ("Fake Out", "First Impression"):
+        return attacker.turns_active > 0
     return False
 
 

@@ -1,0 +1,5951 @@
+###################################################
+##### Generation 1 — Pokémon Red/Blue #####
+###################################################
+
+=== Brock — Kanto Gym Leader (Pokémon Red/Blue) ===
+
+Geodude @ Eviolite
+Ability: Rock Head
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Tackle
+- Defense Curl
+
+Onix @ Silk Scarf
+Ability: Rock Head
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Tackle
+- Screech
+- Bide
+
+=== Misty — Kanto Gym Leader (Pokémon Red/Blue) ===
+
+Staryu @ Eviolite
+Ability: Natural Cure
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Tackle
+- Water Gun
+
+Starmie @ Splash Plate
+Ability: Natural Cure
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Tackle
+- Water Gun
+- Bubble Beam
+
+=== Lt. Surge — Kanto Gym Leader (Pokémon Red/Blue) ===
+
+Voltorb @ Eviolite
+Ability: Soundproof
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Tackle
+- Screech
+- Sonic Boom
+
+Pikachu @ Zap Plate
+Ability: Static
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Thunder Shock
+- Growl
+- Thunder Wave
+- Quick Attack
+
+Raichu @ Wise Glasses
+Ability: Static
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Thunder Shock
+- Growl
+- Thunderbolt
+
+=== Erika — Kanto Gym Leader (Pokémon Red/Blue) ===
+
+Victreebel @ Meadow Plate
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Razor Leaf
+- Wrap
+- Poison Powder
+- Sleep Powder
+
+Tangela @ Eviolite
+Ability: Chlorophyll
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Constrict
+- Bind
+
+Vileplume @ Miracle Seed
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Petal Dance
+- Poison Powder
+- Mega Drain
+- Sleep Powder
+
+=== Koga — Kanto Gym Leader (Pokémon Red/Blue) ===
+
+Koffing I (Koffing) @ Eviolite
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+Modest Nature
+- Tackle
+- Smog
+- Sludge
+- Smokescreen
+
+Muk @ Toxic Plate
+Ability: Poison Touch
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Disable
+- Poison Gas
+- Minimize
+- Sludge
+
+Koffing II (Koffing) @ Wise Glasses
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+Modest Nature
+- Tackle
+- Smog
+- Sludge
+- Smokescreen
+
+Weezing @ Custap Berry
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Smog
+- Sludge
+- Toxic
+- Self-Destruct
+
+=== Sabrina — Kanto Gym Leader (Pokémon Red/Blue) ===
+
+Kadabra @ Eviolite
+Ability: Synchronize
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Disable
+- Psybeam
+- Recover
+- Psychic
+
+Mr. Mime @ Light Clay
+Ability: Soundproof
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Confusion
+- Barrier
+- Light Screen
+- Double Slap
+
+Venomoth @ Insect Plate
+Ability: Shield Dust
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Poison Powder
+- Leech Life
+- Stun Spore
+- Psybeam
+
+Alakazam @ Mind Plate
+Ability: Synchronize
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Psybeam
+- Recover
+- Psywave
+- Reflect
+
+=== Blaine — Kanto Gym Leader (Pokémon Red/Blue) ===
+
+Growlithe @ Eviolite
+Ability: Intimidate
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Ember
+- Leer
+- Take Down
+- Agility
+
+Ponyta @ Silk Scarf
+Ability: Flash Fire
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Tail Whip
+- Stomp
+- Growl
+- Fire Spin
+
+Rapidash @ Muscle Band
+Ability: Flash Fire
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Tail Whip
+- Stomp
+- Growl
+- Fire Spin
+
+Arcanine @ Flame Plate
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Roar
+- Ember
+- Fire Blast
+- Take Down
+
+=== Giovanni — Kanto Team Boss (Pokémon Red/Blue) ===
+
+Rhyhorn @ Eviolite
+Ability: Rock Head
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Stomp
+- Tail Whip
+- Fury Attack
+- Horn Drill
+
+Dugtrio @ Earth Plate
+Ability: Sand Veil
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Growl
+- Dig
+- Sand Attack
+- Slash
+
+Nidoqueen @ Silk Scarf
+Ability: Sheer Force
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Scratch
+- Tail Whip
+- Body Slam
+- Poison Sting
+
+Nidoking @ Choice Band
+Ability: Sheer Force
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Tackle
+- Horn Attack
+- Poison Sting
+- Thrash
+
+Rhydon @ Muscle Band
+Ability: Rock Head
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Stomp
+- Tail Whip
+- Fissure
+- Horn Drill
+
+=== Lorelei — Kanto Elite Four (Pokémon Red/Blue) ===
+
+Dewgong @ Chesto Berry
+Ability: Thick Fat
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Growl
+- Aurora Beam
+- Rest
+- Take Down
+
+Cloyster @ Loaded Dice
+Ability: Shell Armor
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Supersonic
+- Clamp
+- Aurora Beam
+- Spike Cannon
+
+Slowbro @ Splash Plate
+Ability: Own Tempo
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+IVs: 0 Atk
+Calm Nature
+- Growl
+- Water Gun
+- Withdraw
+- Amnesia
+
+Jynx @ Punching Glove
+Ability: Dry Skin
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Double Slap
+- Ice Punch
+- Body Slam
+- Thrash
+
+Lapras @ Silk Scarf
+Ability: Water Absorb
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Body Slam
+- Confuse Ray
+- Blizzard
+- Hydro Pump
+
+=== Bruno — Kanto Elite Four (Pokémon Red/Blue) ===
+
+Onix I (Onix) @ Eviolite
+Ability: Rock Head
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Rock Throw
+- Rage
+- Slam
+- Harden
+
+Hitmonchan @ Punching Glove
+Ability: Keen Eye
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Ice Punch
+- Thunder Punch
+- Mega Punch
+- Counter
+
+Hitmonlee @ Fist Plate
+Ability: Limber
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Jump Kick
+- Focus Energy
+- High Jump Kick
+- Mega Kick
+
+Onix II (Onix) @ Silk Scarf
+Ability: Rock Head
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Rock Throw
+- Rage
+- Slam
+- Harden
+
+Machamp @ Earth Plate
+Ability: Guts
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Leer
+- Focus Energy
+- Fissure
+- Submission
+
+=== Agatha — Kanto Elite Four (Pokémon Red/Blue) ===
+
+Gengar I (Gengar) @ Spooky Plate
+Ability: Cursed Body
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Confuse Ray
+- Night Shade
+- Hypnosis
+- Dream Eater
+
+Golbat @ Eviolite
+Ability: Inner Focus
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Supersonic
+- Confuse Ray
+- Wing Attack
+- Haze
+
+Haunter @ Wise Glasses
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Confuse Ray
+- Night Shade
+- Hypnosis
+- Dream Eater
+
+Arbok @ Dread Plate
+Ability: Intimidate
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Bite
+- Glare
+- Screech
+- Acid
+
+Gengar II (Gengar) @ Life Orb
+Ability: Cursed Body
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Confuse Ray
+- Night Shade
+- Toxic
+- Dream Eater
+
+=== Lance — Kanto Elite Four (Pokémon Red/Blue) ===
+
+Gyarados @ Draco Plate
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Dragon Rage
+- Leer
+- Hydro Pump
+- Hyper Beam
+
+Dragonair I (Dragonair) @ Eviolite
+Ability: Multiscale
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Agility
+- Slam
+- Dragon Rage
+- Hyper Beam
+
+Dragonair II (Dragonair) @ Silk Scarf
+Ability: Multiscale
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Agility
+- Slam
+- Dragon Rage
+- Hyper Beam
+
+Aerodactyl @ Muscle Band
+Ability: Rock Head
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Supersonic
+- Bite
+- Take Down
+- Hyper Beam
+
+Dragonite @ Life Orb
+Ability: Inner Focus
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Agility
+- Slam
+- Barrier
+- Hyper Beam
+
+=== Blue — Kanto Rival (Pokémon Red/Blue) ===
+
+Pidgeot @ Sky Plate
+Ability: Keen Eye
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Wing Attack
+- Mirror Move
+- Sky Attack
+- Whirlwind
+
+Alakazam @ Light Clay
+Ability: Synchronize
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Psybeam
+- Psychic
+- Reflect
+- Recover
+
+Rhydon @ Eviolite
+Ability: Rock Head
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Leer
+- Tail Whip
+- Fury Attack
+- Horn Drill
+
+Arcanine @ Flame Plate
+Ability: Intimidate
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Roar
+- Leer
+- Ember
+- Take Down
+
+Exeggutor @ Loaded Dice
+Ability: Chlorophyll
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Hypnosis
+- Barrage
+- Stomp
+
+Blastoise @ Splash Plate
+Ability: Torrent
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Hydro Pump
+- Blizzard
+- Bite
+- Withdraw
+
+##################################################
+##### Generation 2 — Pokémon Crystal #####
+##################################################
+
+=== Falkner — Johto Gym Leader (Pokémon Crystal) ===
+
+Pidgey @ Eviolite
+Ability: Keen Eye
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Tackle
+- Mud-Slap
+
+Pidgeotto @ Silk Scarf
+Ability: Keen Eye
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Tackle
+- Gust
+- Mud-Slap
+
+=== Bugsy — Johto Gym Leader (Pokémon Crystal) ===
+
+Metapod @ Eviolite
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Tackle
+- String Shot
+- Harden
+
+Kakuna @ Toxic Plate
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Poison Sting
+- String Shot
+- Harden
+
+Scyther @ Insect Plate
+Ability: Swarm
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Fury Cutter
+- Quick Attack
+- Leer
+
+=== Whitney — Johto Gym Leader (Pokémon Crystal) ===
+
+Clefairy @ Eviolite
+Ability: Magic Guard
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Encore
+- Mimic
+- Double Slap
+- Metronome
+
+Miltank @ Silk Scarf
+Ability: Thick Fat
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Stomp
+- Attract
+- Milk Drink
+- Rollout
+
+=== Morty — Johto Gym Leader (Pokémon Crystal) ===
+
+Gastly @ Eviolite
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Lick
+- Spite
+- Mean Look
+- Curse
+
+Haunter I (Haunter) @ Spooky Plate
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Hypnosis
+- Curse
+- Mimic
+- Night Shade
+
+Gengar @ Wise Glasses
+Ability: Cursed Body
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Shadow Ball
+- Mean Look
+- Hypnosis
+- Dream Eater
+
+Haunter II (Haunter) @ Life Orb
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Spite
+- Mean Look
+- Mimic
+- Night Shade
+
+=== Chuck — Johto Gym Leader (Pokémon Crystal) ===
+
+Primeape @ Eviolite
+Ability: Vital Spirit
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Leer
+- Rage
+- Karate Chop
+- Fury Swipes
+
+Poliwrath @ Punching Glove
+Ability: Water Absorb
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Hypnosis
+- Mind Reader
+- Surf
+- Dynamic Punch
+
+=== Jasmine — Johto Gym Leader (Pokémon Crystal) ===
+
+Magnemite @ Eviolite
+Ability: Magnet Pull
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+IVs: 0 Atk
+Calm Nature
+- Thunderbolt
+- Supersonic
+- Sonic Boom
+- Thunder Wave
+
+Steelix @ Iron Plate
+Ability: Rock Head
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Iron Tail
+- Rock Throw
+- Sunny Day
+- Screech
+
+=== Pryce — Johto Gym Leader (Pokémon Crystal) ===
+
+Seel @ Eviolite
+Ability: Thick Fat
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+Modest Nature
+- Headbutt
+- Icy Wind
+- Aurora Beam
+- Rest
+
+Dewgong @ Chesto Berry
+Ability: Thick Fat
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Headbutt
+- Icy Wind
+- Aurora Beam
+- Rest
+
+Piloswine @ Loaded Dice
+Ability: Snow Cloak
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Icy Wind
+- Fury Attack
+- Mist
+- Blizzard
+
+=== Clair — Johto Gym Leader (Pokémon Crystal) ===
+
+Dragonair I (Dragonair) @ Eviolite
+Ability: Multiscale
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Surf
+- Slam
+- Thunder Wave
+- Dragon Breath
+
+Dragonair II (Dragonair) @ Zap Plate
+Ability: Multiscale
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Thunderbolt
+- Slam
+- Thunder Wave
+- Dragon Breath
+
+Dragonair III (Dragonair) @ Icicle Plate
+Ability: Multiscale
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Ice Beam
+- Slam
+- Thunder Wave
+- Dragon Breath
+
+Kingdra @ Splash Plate
+Ability: Swift Swim
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Surf
+- Dragon Breath
+- Smokescreen
+- Hyper Beam
+
+=== Will — Johto Elite Four (Pokémon Crystal) ===
+
+Xatu I (Xatu) @ Mind Plate
+Ability: Synchronize
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Quick Attack
+- Future Sight
+- Psychic
+- Confuse Ray
+
+Exeggutor @ Light Clay
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Reflect
+- Egg Bomb
+- Psychic
+- Leech Seed
+
+Slowbro @ Silk Scarf
+Ability: Own Tempo
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Curse
+- Amnesia
+- Body Slam
+- Psychic
+
+Jynx @ Punching Glove
+Ability: Dry Skin
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Ice Punch
+- Double Slap
+- Psychic
+- Lovely Kiss
+
+Xatu II (Xatu) @ Wise Glasses
+Ability: Synchronize
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Quick Attack
+- Future Sight
+- Psychic
+- Confuse Ray
+
+=== Karen — Johto Elite Four (Pokémon Crystal) ===
+
+Umbreon @ Dread Plate
+Ability: Synchronize
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Feint Attack
+- Confuse Ray
+- Mean Look
+- Sand Attack
+
+Vileplume @ Toxic Plate
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Stun Spore
+- Acid
+- Petal Dance
+- Moonlight
+
+Gengar @ Spooky Plate
+Ability: Cursed Body
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Lick
+- Spite
+- Curse
+- Destiny Bond
+
+Murkrow @ Eviolite
+Ability: Prankster
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Feint Attack
+- Whirlwind
+- Pursuit
+- Quick Attack
+
+Houndoom @ Black Glasses
+Ability: Flash Fire
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Crunch
+- Flamethrower
+- Roar
+- Pursuit
+
+=== Silver — Johto Rival (Pokémon Crystal) ===
+
+Sneasel @ Eviolite
+Ability: Inner Focus
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Quick Attack
+- Screech
+- Feint Attack
+- Fury Cutter
+
+Golbat @ Sky Plate
+Ability: Inner Focus
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Wing Attack
+- Confuse Ray
+- Bite
+- Leech Life
+
+Magneton @ Silk Scarf
+Ability: Magnet Pull
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Sonic Boom
+- Thunder Wave
+- Thunder Shock
+- Swift
+
+Gengar @ Spooky Plate
+Ability: Cursed Body
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Shadow Ball
+- Curse
+- Mean Look
+- Confuse Ray
+
+Alakazam @ Mind Plate
+Ability: Synchronize
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Recover
+- Future Sight
+- Disable
+- Psychic
+
+Feraligatr @ Splash Plate
+Ability: Torrent
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Water Gun
+- Bite
+- Scary Face
+- Slash
+
+=== Red — Kanto Superboss (Pokémon Crystal) ===
+
+Pikachu @ Eviolite
+Ability: Static
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Charm
+- Quick Attack
+- Thunderbolt
+- Thunder
+
+Espeon @ Light Clay
+Ability: Synchronize
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Mud-Slap
+- Swift
+- Reflect
+- Psychic
+
+Snorlax @ Chesto Berry
+Ability: Immunity
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Amnesia
+- Snore
+- Rest
+- Body Slam
+
+Venusaur @ Meadow Plate
+Ability: Overgrow
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Sunny Day
+- Giga Drain
+- Synthesis
+- Solar Beam
+
+Charizard @ Choice Specs
+Ability: Blaze
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Flamethrower
+- Wing Attack
+- Slash
+- Fire Spin
+
+Blastoise @ Splash Plate
+Ability: Torrent
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Rain Dance
+- Blizzard
+- Surf
+- Whirlpool
+
+##################################################
+##### Generation 3 — Pokémon Emerald #####
+##################################################
+
+=== Roxanne — Hoenn Gym Leader (Pokémon Emerald) ===
+
+Geodude I (Geodude) @ Eviolite
+Ability: Rock Head
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Tackle
+- Defense Curl
+- Rock Throw
+- Rock Tomb
+
+Geodude II (Geodude) @ Stone Plate
+Ability: Rock Head
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Tackle
+- Defense Curl
+- Rock Throw
+- Rock Tomb
+
+Nosepass @ Silk Scarf
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Block
+- Harden
+- Tackle
+- Rock Tomb
+
+=== Brawly — Hoenn Gym Leader (Pokémon Emerald) ===
+
+Machop @ Eviolite
+Ability: Guts
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Karate Chop
+- Low Kick
+- Seismic Toss
+- Bulk Up
+
+Meditite @ Light Clay
+Ability: Pure Power
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Focus Punch
+- Light Screen
+- Reflect
+- Bulk Up
+
+Makuhita @ Sitrus Berry
+Ability: Thick Fat
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Arm Thrust
+- Vital Throw
+- Reversal
+- Bulk Up
+
+=== Wattson — Hoenn Gym Leader (Pokémon Emerald) ===
+
+Voltorb @ Eviolite
+Ability: Soundproof
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Rollout
+- Spark
+- Self-Destruct
+- Shock Wave
+
+Electrike @ Zap Plate
+Ability: Static
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Shock Wave
+- Leer
+- Quick Attack
+
+Magneton @ Wise Glasses
+Ability: Magnet Pull
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+IVs: 0 Atk
+Calm Nature
+- Supersonic
+- Shock Wave
+- Thunder Wave
+- Sonic Boom
+
+Manectric @ Sitrus Berry
+Ability: Static
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Quick Attack
+- Thunder Wave
+- Shock Wave
+
+=== Flannery — Hoenn Gym Leader (Pokémon Emerald) ===
+
+Numel @ Eviolite
+Ability: Solar Power
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Overheat
+- Take Down
+- Magnitude
+- Sunny Day
+
+Slugma @ Light Clay
+Ability: Magma Armor
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Overheat
+- Smog
+- Light Screen
+- Sunny Day
+
+Camerupt @ Flame Plate
+Ability: Magma Armor
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Overheat
+- Tackle
+- Sunny Day
+- Attract
+
+Torkoal @ White Herb
+Ability: White Smoke
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Overheat
+- Sunny Day
+- Body Slam
+- Attract
+
+=== Norman — Hoenn Gym Leader (Pokémon Emerald) ===
+
+Spinda @ Mind Plate
+Ability: Own Tempo
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Teeter Dance
+- Psybeam
+- Facade
+- Encore
+
+Vigoroth @ Eviolite
+Ability: Vital Spirit
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Slash
+- Facade
+- Encore
+- Feint Attack
+
+Linoone @ Silk Scarf
+Ability: Adaptability
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Slash
+- Belly Drum
+- Facade
+- Headbutt
+
+Slaking @ Sitrus Berry
+Ability: Slow Start
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Counter
+- Yawn
+- Facade
+- Feint Attack
+
+=== Winona — Hoenn Gym Leader (Pokémon Emerald) ===
+
+Swablu @ Eviolite
+Ability: Natural Cure
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Perish Song
+- Mirror Move
+- Safeguard
+- Aerial Ace
+
+Tropius @ Sky Plate
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Sunny Day
+- Aerial Ace
+- Solar Beam
+- Synthesis
+
+Pelipper @ Splash Plate
+Ability: Keen Eye
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Water Gun
+- Supersonic
+- Protect
+- Aerial Ace
+
+Skarmory @ Loaded Dice
+Ability: Keen Eye
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Sand Attack
+- Fury Attack
+- Steel Wing
+- Aerial Ace
+
+Altaria @ Earth Plate
+Ability: Natural Cure
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Earthquake
+- Dragon Breath
+- Dragon Dance
+- Aerial Ace
+
+=== Tate & Liza — Hoenn Gym Leaders (Pokémon Emerald) ===
+
+Claydol @ Light Clay
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Earthquake
+- Ancient Power
+- Psychic
+- Light Screen
+
+Xatu @ Mind Plate
+Ability: Synchronize
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Psychic
+- Sunny Day
+- Confuse Ray
+- Calm Mind
+
+Lunatone @ Sitrus Berry
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Light Screen
+- Psychic
+- Hypnosis
+- Calm Mind
+
+Solrock @ Meadow Plate
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Sunny Day
+- Solar Beam
+- Psychic
+- Flamethrower
+
+=== Juan — Hoenn Gym Leader (Pokémon Emerald) ===
+
+Luvdisc @ Splash Plate
+Ability: Swift Swim
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Water Pulse
+- Attract
+- Sweet Kiss
+- Flail
+
+Whiscash @ Mystic Water
+Ability: Swift Swim
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Rain Dance
+- Water Pulse
+- Amnesia
+- Earthquake
+
+Sealeo @ Eviolite
+Ability: Thick Fat
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+Modest Nature
+- Encore
+- Body Slam
+- Aurora Beam
+- Water Pulse
+
+Crawdaunt @ Muscle Band
+Ability: Hyper Cutter
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Water Pulse
+- Crabhammer
+- Taunt
+- Leer
+
+Kingdra @ Chesto Berry
+Ability: Swift Swim
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Water Pulse
+- Double Team
+- Ice Beam
+- Rest
+
+=== Sidney — Hoenn Elite Four (Pokémon Emerald) ===
+
+Mightyena @ Silk Scarf
+Ability: Intimidate
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Roar
+- Double-Edge
+- Sand Attack
+- Crunch
+
+Shiftry @ Mind Plate
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Torment
+- Double Team
+- Swagger
+- Extrasensory
+
+Cacturne @ Dread Plate
+Ability: Sand Veil
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Leech Seed
+- Feint Attack
+- Needle Arm
+- Cotton Spore
+
+Crawdaunt @ Muscle Band
+Ability: Hyper Cutter
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Surf
+- Swords Dance
+- Strength
+- Facade
+
+Absol @ Sitrus Berry
+Ability: Pressure
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Aerial Ace
+- Rock Slide
+- Swords Dance
+- Slash
+
+=== Phoebe — Hoenn Elite Four (Pokémon Emerald) ===
+
+Dusclops I (Dusclops) @ Eviolite
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Shadow Punch
+- Confuse Ray
+- Curse
+- Protect
+
+Banette I (Banette) @ Spooky Plate
+Ability: Insomnia
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Shadow Ball
+- Grudge
+- Will-O-Wisp
+- Feint Attack
+
+Sableye @ Wise Glasses
+Ability: Keen Eye
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Shadow Ball
+- Double Team
+- Night Shade
+- Feint Attack
+
+Banette II (Banette) @ Choice Specs
+Ability: Insomnia
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Shadow Ball
+- Psychic
+- Thunderbolt
+- Facade
+
+Dusclops II (Dusclops) @ Sitrus Berry
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Shadow Ball
+- Ice Beam
+- Rock Slide
+- Earthquake
+
+=== Glacia — Hoenn Elite Four (Pokémon Emerald) ===
+
+Sealeo I (Sealeo) @ Eviolite
+Ability: Thick Fat
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Encore
+- Body Slam
+- Hail
+- Ice Ball
+
+Glalie I (Glalie) @ Light Clay
+Ability: Inner Focus
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Light Screen
+- Crunch
+- Icy Wind
+- Ice Beam
+
+Sealeo II (Sealeo) @ Silk Scarf
+Ability: Thick Fat
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Attract
+- Double-Edge
+- Hail
+- Blizzard
+
+Glalie II (Glalie) @ Custap Berry
+Ability: Inner Focus
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Shadow Ball
+- Explosion
+- Hail
+- Ice Beam
+
+Walrein @ Sitrus Berry
+Ability: Thick Fat
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Surf
+- Body Slam
+- Ice Beam
+- Sheer Cold
+
+=== Drake — Hoenn Elite Four (Pokémon Emerald) ===
+
+Shelgon @ Eviolite
+Ability: Rock Head
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Rock Tomb
+- Dragon Claw
+- Protect
+- Double-Edge
+
+Altaria @ Silk Scarf
+Ability: Natural Cure
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Double-Edge
+- Dragon Breath
+- Dragon Dance
+- Aerial Ace
+
+Kingdra @ Splash Plate
+Ability: Swift Swim
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Smokescreen
+- Dragon Dance
+- Surf
+- Body Slam
+
+Flygon @ Choice Band
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Flamethrower
+- Crunch
+- Dragon Breath
+- Earthquake
+
+Salamence @ Sitrus Berry
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Flamethrower
+- Dragon Claw
+- Rock Slide
+- Crunch
+
+=== Wallace — Hoenn Champion (Pokémon Emerald) ===
+
+Wailord @ Splash Plate
+Ability: Water Veil
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Rain Dance
+- Water Spout
+- Double-Edge
+- Blizzard
+
+Tentacruel @ Mystic Water
+Ability: Clear Body
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Toxic
+- Hydro Pump
+- Sludge Bomb
+- Ice Beam
+
+Ludicolo @ Meadow Plate
+Ability: Swift Swim
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Giga Drain
+- Surf
+- Leech Seed
+- Double Team
+
+Whiscash @ Earth Plate
+Ability: Water Absorb
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Earthquake
+- Surf
+- Amnesia
+- Hyper Beam
+
+Gyarados @ Wise Glasses
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Dragon Dance
+- Earthquake
+- Hyper Beam
+- Surf
+
+Milotic @ Sitrus Berry
+Ability: Competitive
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Recover
+- Surf
+- Ice Beam
+- Toxic
+
+=== May — Hoenn Rival (Pokémon Emerald) ===
+
+Tropius @ Silk Scarf
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Stomp
+- Sweet Scent
+- Whirlwind
+- Magical Leaf
+
+Slugma @ Eviolite
+Ability: Magma Armor
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Ember
+- Rock Throw
+- Harden
+- Amnesia
+
+Pelipper @ Sky Plate
+Ability: Keen Eye
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Wing Attack
+- Supersonic
+- Mist
+- Protect
+
+Grovyle @ Insect Plate
+Ability: Overgrow
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Fury Cutter
+- Pursuit
+- Screech
+- Leaf Blade
+
+=== Maxie — Hoenn Team Boss (Pokémon Emerald) ===
+
+Mightyena @ Silk Scarf
+Ability: Intimidate
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Swagger
+- Scary Face
+- Take Down
+- Taunt
+
+Crobat @ Sky Plate
+Ability: Inner Focus
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Wing Attack
+- Confuse Ray
+- Air Cutter
+- Mean Look
+
+Camerupt @ Muscle Band
+Ability: Magma Armor
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Take Down
+- Amnesia
+- Rock Slide
+- Earthquake
+
+=== Archie — Hoenn Team Boss (Pokémon Emerald) ===
+
+Mightyena @ Silk Scarf
+Ability: Intimidate
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Roar
+- Swagger
+- Scary Face
+- Take Down
+
+Crobat @ Sky Plate
+Ability: Inner Focus
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Bite
+- Wing Attack
+- Confuse Ray
+- Air Cutter
+
+Sharpedo @ Muscle Band
+Ability: Rough Skin
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Screech
+- Slash
+- Taunt
+- Swagger
+
+###################################################
+##### Generation 4 — Pokémon Platinum #####
+###################################################
+
+=== Roark — Sinnoh Gym Leader (Pokémon Platinum) ===
+
+Aerodactyl @ Choice Band
+Ability: Rock Head
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Stone Edge
+- Earthquake
+- Dragon Claw
+- Aerial Ace
+
+Probopass @ Stone Plate
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+Modest Nature
+- Stone Edge
+- Earth Power
+- Discharge
+- Stealth Rock
+
+Golem @ Choice Scarf
+Ability: Rock Head
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Stone Edge
+- Earthquake
+- Brick Break
+- Flamethrower
+
+Rampardos @ Muscle Band
+Ability: Mold Breaker
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Head Smash
+- Earthquake
+- Zen Headbutt
+- Avalanche
+
+Tyranitar @ Sitrus Berry
+Ability: Sand Stream
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Stone Edge
+- Crunch
+- Fire Fang
+- Aerial Ace
+
+=== Gardenia — Sinnoh Gym Leader (Pokémon Platinum) ===
+
+Jumpluff @ Insect Plate
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Sunny Day
+- Toxic
+- Silver Wind
+- Bounce
+
+Cherrim @ Meadow Plate
+Ability: Leaf Guard
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Toxic
+- Leech Seed
+- Sunny Day
+- Solar Beam
+
+Bellossom @ Punching Glove
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Sunny Day
+- Ingrain
+- Giga Drain
+- Drain Punch
+
+Torterra @ Choice Band
+Ability: Overgrow
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Wood Hammer
+- Earthquake
+- Stone Edge
+- Crunch
+
+Roserade @ Sitrus Berry
+Ability: Natural Cure
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Sludge Bomb
+- Shadow Ball
+- Hyper Beam
+- Leaf Storm
+
+=== Maylene — Sinnoh Gym Leader (Pokémon Platinum) ===
+
+Hitmontop @ Loaded Dice
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Fake Out
+- Triple Kick
+- Aerial Ace
+- Quick Attack
+
+Medicham @ Punching Glove
+Ability: Pure Power
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- High Jump Kick
+- Thunder Punch
+- Ice Punch
+- Fire Punch
+
+Breloom @ Fist Plate
+Ability: Poison Heal
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Spore
+- Mach Punch
+- Seed Bomb
+- Stone Edge
+
+Machamp @ Choice Band
+Ability: Guts
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Cross Chop
+- Rock Climb
+- Stone Edge
+- Earthquake
+
+Lucario @ Choice Scarf
+Ability: Steadfast
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Close Combat
+- Extreme Speed
+- Drain Punch
+- Bone Rush
+
+=== Crasher Wake — Sinnoh Gym Leader (Pokémon Platinum) ===
+
+Sharpedo @ Dread Plate
+Ability: Rough Skin
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Night Slash
+- Slash
+- Aqua Jet
+- Endure
+
+Quagsire @ Splash Plate
+Ability: Water Absorb
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Surf
+- Earthquake
+- Stone Edge
+- Yawn
+
+Floatzel @ Choice Band
+Ability: Swift Swim
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Brine
+- Crunch
+- Ice Fang
+- Aqua Jet
+
+Gyarados @ Choice Scarf
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Bite
+- Avalanche
+- Aqua Tail
+- Giga Impact
+
+Ludicolo @ Sitrus Berry
+Ability: Swift Swim
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Surf
+- Energy Ball
+- Ice Beam
+- Focus Blast
+
+=== Fantina — Sinnoh Gym Leader (Pokémon Platinum) ===
+
+Banette @ Spooky Plate
+Ability: Insomnia
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Shadow Claw
+- Feint Attack
+- Thunderbolt
+- Will-O-Wisp
+
+Mismagius @ Choice Specs
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Shadow Ball
+- Thunderbolt
+- Psychic
+- Magical Leaf
+
+Drifblim @ Mind Plate
+Ability: Unburden
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Psychic
+- Silver Wind
+- Ominous Wind
+- Baton Pass
+
+Dusknoir @ Punching Glove
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Shadow Punch
+- Rock Slide
+- Double Team
+- Protect
+
+Gengar @ Sitrus Berry
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Focus Blast
+- Thunder
+- Shadow Ball
+- Psychic
+
+=== Byron — Sinnoh Gym Leader (Pokémon Platinum) ===
+
+Skarmory @ Sky Plate
+Ability: Keen Eye
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Drill Peck
+- Night Slash
+- Rock Tomb
+- Stealth Rock
+
+Magnezone @ Zap Plate
+Ability: Magnet Pull
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+IVs: 0 Atk
+Calm Nature
+- Thunderbolt
+- Flash Cannon
+- Thunder Wave
+- Supersonic
+
+Steelix @ Iron Plate
+Ability: Rock Head
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Gyro Ball
+- Ice Fang
+- Dragon Breath
+- Sandstorm
+
+Bastiodon @ Chesto Berry
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+- Metal Burst
+- Ancient Power
+- Iron Defense
+- Rest
+
+Aggron @ Sitrus Berry
+Ability: Sturdy
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Metal Burst
+- Stone Edge
+- Earthquake
+- Avalanche
+
+=== Candice — Sinnoh Gym Leader (Pokémon Platinum) ===
+
+Weavile @ Dread Plate
+Ability: Pressure
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Feint Attack
+- Slash
+- Taunt
+- Avalanche
+
+Mamoswine @ Earth Plate
+Ability: Thick Fat
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Hail
+- Earthquake
+- Ancient Power
+- Avalanche
+
+Abomasnow @ Icy Rock
+Ability: Snow Warning
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Wood Hammer
+- Ingrain
+- Grass Whistle
+- Avalanche
+
+Froslass @ Spooky Plate
+Ability: Snow Cloak
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Hail
+- Ominous Wind
+- Confuse Ray
+- Blizzard
+
+Glaceon @ Sitrus Berry
+Ability: Snow Cloak
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Blizzard
+- Shadow Ball
+- Water Pulse
+- Mirror Coat
+
+=== Volkner — Sinnoh Gym Leader (Pokémon Platinum) ===
+
+Jolteon @ Loaded Dice
+Ability: Volt Absorb
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Charge Beam
+- Double Kick
+- Pin Missile
+- Quick Attack
+
+Raichu @ Light Clay
+Ability: Static
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Charge Beam
+- Brick Break
+- Light Screen
+- Thunder Wave
+
+Luxray @ Choice Band
+Ability: Guts
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Thunder Fang
+- Ice Fang
+- Fire Fang
+- Crunch
+
+Lanturn @ Choice Specs
+Ability: Volt Absorb
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Surf
+- Discharge
+- Ice Beam
+- Signal Beam
+
+Electivire @ Sitrus Berry
+Ability: Motor Drive
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Thunder Punch
+- Fire Punch
+- Brick Break
+- Giga Impact
+
+=== Aaron — Sinnoh Elite Four (Pokémon Platinum) ===
+
+Yanmega @ Insect Plate
+Ability: Speed Boost
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Bug Buzz
+- Air Slash
+- U-turn
+- Double Team
+
+Scizor @ Choice Band
+Ability: Swarm
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- X-Scissor
+- Iron Head
+- Night Slash
+- Quick Attack
+
+Heracross @ Choice Scarf
+Ability: Swarm
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Megahorn
+- Close Combat
+- Night Slash
+- Stone Edge
+
+Vespiquen @ Silver Powder
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Attack Order
+- Defend Order
+- Heal Order
+- Power Gem
+
+Drapion @ Sitrus Berry
+Ability: Battle Armor
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- X-Scissor
+- Cross Poison
+- Ice Fang
+- Aerial Ace
+
+=== Bertha — Sinnoh Elite Four (Pokémon Platinum) ===
+
+Whiscash @ Earth Plate
+Ability: Hydration
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Earth Power
+- Aqua Tail
+- Zen Headbutt
+- Sandstorm
+
+Gliscor @ Choice Band
+Ability: Hyper Cutter
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Earthquake
+- Ice Fang
+- Fire Fang
+- Thunder Fang
+
+Hippowdon @ Smooth Rock
+Ability: Sand Stream
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Earthquake
+- Stone Edge
+- Crunch
+- Yawn
+
+Golem @ Punching Glove
+Ability: Rock Head
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Earthquake
+- Fire Punch
+- Thunder Punch
+- Sandstorm
+
+Rhyperior @ Sitrus Berry
+Ability: Hydration
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Earthquake
+- Rock Wrecker
+- Megahorn
+- Avalanche
+
+=== Flint — Sinnoh Elite Four (Pokémon Platinum) ===
+
+Houndoom @ Flame Plate
+Ability: Flash Fire
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Flamethrower
+- Sludge Bomb
+- Dark Pulse
+- Sunny Day
+
+Flareon @ Silk Scarf
+Ability: Flash Fire
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Overheat
+- Giga Impact
+- Quick Attack
+- Will-O-Wisp
+
+Rapidash @ Muscle Band
+Ability: Flash Fire
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Flare Blitz
+- Solar Beam
+- Bounce
+- Sunny Day
+
+Infernape @ Punching Glove
+Ability: Blaze
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Flare Blitz
+- Thunder Punch
+- Mach Punch
+- Earthquake
+
+Magmortar @ Sitrus Berry
+Ability: Flame Body
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Flamethrower
+- Thunderbolt
+- Solar Beam
+- Hyper Beam
+
+=== Lucian — Sinnoh Elite Four (Pokémon Platinum) ===
+
+Mr. Mime @ Light Clay
+Ability: Soundproof
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Psychic
+- Thunderbolt
+- Reflect
+- Light Screen
+
+Espeon @ Choice Specs
+Ability: Synchronize
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Psychic
+- Shadow Ball
+- Quick Attack
+- Signal Beam
+
+Bronzong @ Mind Plate
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Psychic
+- Gyro Ball
+- Earthquake
+- Calm Mind
+
+Alakazam @ Wise Glasses
+Ability: Synchronize
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Psychic
+- Energy Ball
+- Focus Blast
+- Recover
+
+Gallade @ Sitrus Berry
+Ability: Steadfast
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Drain Punch
+- Psycho Cut
+- Leaf Blade
+- Stone Edge
+
+=== Cynthia — Sinnoh Champion (Pokémon Platinum) ===
+
+Spiritomb @ Choice Specs
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+IVs: 0 Atk
+Modest Nature
+- Dark Pulse
+- Psychic
+- Silver Wind
+- Ominous Wind
+
+Roserade @ Choice Scarf
+Ability: Natural Cure
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Energy Ball
+- Sludge Bomb
+- Shadow Ball
+- Extrasensory
+
+Togekiss @ Sky Plate
+Ability: Hustle
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Air Slash
+- Aura Sphere
+- Water Pulse
+- Psychic
+
+Lucario @ Fist Plate
+Ability: Steadfast
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Aura Sphere
+- Dragon Pulse
+- Psychic
+- Earthquake
+
+Milotic @ Splash Plate
+Ability: Competitive
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Surf
+- Ice Beam
+- Mirror Coat
+- Aqua Ring
+
+Garchomp @ Sitrus Berry
+Ability: Sand Veil
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Dragon Rush
+- Earthquake
+- Brick Break
+- Giga Impact
+
+=== Barry — Sinnoh Rival (Pokémon Platinum) ===
+
+Staraptor @ Choice Band
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Close Combat
+- Aerial Ace
+- Steel Wing
+- U-turn
+
+Heracross @ Choice Scarf
+Ability: Swarm
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Megahorn
+- Close Combat
+- Night Slash
+- Rock Slide
+
+Snorlax @ Fist Plate
+Ability: Immunity
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Brick Break
+- Crunch
+- Earthquake
+- Giga Impact
+
+Roserade @ Toxic Plate
+Ability: Natural Cure
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Sludge Bomb
+- Giga Drain
+- Shadow Ball
+- Grass Whistle
+
+Floatzel @ Splash Plate
+Ability: Swift Swim
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Aqua Jet
+- Ice Fang
+- Crunch
+- Brick Break
+
+Infernape @ Flame Plate
+Ability: Blaze
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Flare Blitz
+- Focus Blast
+- Aerial Ace
+- Shadow Claw
+
+=== Cyrus — Sinnoh Team Boss (Pokémon Platinum) ===
+
+Houndoom @ Flame Plate
+Ability: Flash Fire
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Flamethrower
+- Dark Pulse
+- Will-O-Wisp
+- Thunder Fang
+
+Honchkrow @ Choice Band
+Ability: Insomnia
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Drill Peck
+- Night Slash
+- Heat Wave
+- Psychic
+
+Crobat @ Toxic Plate
+Ability: Inner Focus
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Cross Poison
+- Air Slash
+- Toxic
+- Confuse Ray
+
+Gyarados @ Choice Scarf
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Waterfall
+- Ice Fang
+- Earthquake
+- Giga Impact
+
+Weavile @ Sitrus Berry
+Ability: Pressure
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Night Slash
+- Ice Punch
+- X-Scissor
+- Fake Out
+
+##################################################
+##### Generation 5 — Pokémon Black 2 #####
+##################################################
+
+=== Cheren — Unova Gym Leader (Pokémon Black 2) ===
+
+Stoutland @ Silk Scarf
+Ability: Intimidate
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Tackle
+- Work Up
+- Bite
+- Odor Sleuth
+
+Cinccino @ Loaded Dice
+Ability: Technician
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Work Up
+- Sing
+- Wake-Up Slap
+- Bullet Seed
+
+Watchog @ Dread Plate
+Ability: Keen Eye
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Work Up
+- Confuse Ray
+- Hypnosis
+- Bite
+
+=== Roxie — Unova Gym Leader (Pokémon Black 2) ===
+
+Koffing @ Eviolite
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Assurance
+- Tackle
+- Smog
+- Venoshock
+
+Grimer @ Toxic Plate
+Ability: Poison Touch
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Venoshock
+- Mud-Slap
+- Poison Gas
+- Disable
+
+Whirlipede @ Sitrus Berry
+Ability: Swarm
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Venoshock
+- Protect
+- Poison Sting
+- Rollout
+
+=== Burgh — Unova Gym Leader (Pokémon Black 2) ===
+
+Dwebble @ Sitrus Berry
+Ability: Sturdy
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Rock Polish
+- Feint Attack
+- Rock Blast
+- Struggle Bug
+
+Shelmet @ Eviolite
+Ability: Shell Armor
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+IVs: 0 Atk
+Modest Nature
+- Acid
+- Mega Drain
+- Struggle Bug
+- Curse
+
+Karrablast @ Sky Plate
+Ability: Swarm
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Endure
+- Aerial Ace
+- Struggle Bug
+- Headbutt
+
+Leavanny @ Muscle Band
+Ability: Swarm
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Grass Whistle
+- Aerial Ace
+- Razor Leaf
+- Struggle Bug
+
+=== Elesa — Unova Gym Leader (Pokémon Black 2) ===
+
+Emolga @ Sitrus Berry
+Ability: Static
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Quick Attack
+- Pursuit
+- Aerial Ace
+- Volt Switch
+
+Flaaffy @ Eviolite
+Ability: Static
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Thunder Wave
+- Volt Switch
+- Confuse Ray
+- Take Down
+
+Joltik @ Zap Plate
+Ability: Compound Eyes
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Thunder Wave
+- Volt Switch
+- Energy Ball
+- X-Scissor
+
+Zebstrika @ Choice Band
+Ability: Motor Drive
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Volt Switch
+- Pursuit
+- Flame Charge
+- Stomp
+
+=== Clay — Unova Gym Leader (Pokémon Black 2) ===
+
+Krokorok @ Sitrus Berry
+Ability: Intimidate
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Crunch
+- Sandstorm
+- Torment
+- Bulldoze
+
+Sandslash @ Earth Plate
+Ability: Sand Veil
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Bulldoze
+- Crush Claw
+- Hone Claws
+- Rock Slide
+
+Onix @ Eviolite
+Ability: Sturdy
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Explosion
+- Bulldoze
+- Rock Polish
+- Rock Slide
+
+Excadrill @ Choice Band
+Ability: Sand Rush
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Slash
+- Bulldoze
+- Metal Claw
+- Rock Slide
+
+=== Skyla — Unova Gym Leader (Pokémon Black 2) ===
+
+Swoobat @ Mind Plate
+Ability: Unaware
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Psychic
+- Acrobatics
+- Energy Ball
+- Attract
+
+Skarmory @ Sitrus Berry
+Ability: Sturdy
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Aerial Ace
+- Steel Wing
+- X-Scissor
+- Agility
+
+Sigilyph @ Wise Glasses
+Ability: Magic Guard
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Psychic
+- Hypnosis
+- Air Cutter
+- Flash Cannon
+
+Swanna @ Splash Plate
+Ability: Big Pecks
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Roost
+- Feather Dance
+- Surf
+- Air Slash
+
+=== Drayden — Unova Gym Leader (Pokémon Black 2) ===
+
+Druddigon @ Sitrus Berry
+Ability: Sheer Force
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Revenge
+- Crunch
+- Dragon Tail
+- Rock Slide
+
+Flygon @ Choice Band
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Rock Slide
+- Dragon Tail
+- Crunch
+- Earth Power
+
+Altaria @ Flame Plate
+Ability: Natural Cure
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Cotton Guard
+- Fire Blast
+- Sing
+- Dragon Pulse
+
+Haxorus @ Draco Plate
+Ability: Mold Breaker
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Dragon Dance
+- Dragon Tail
+- X-Scissor
+- Shadow Claw
+
+=== Marlon — Unova Gym Leader (Pokémon Black 2) ===
+
+Wailord @ Splash Plate
+Ability: Water Veil
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Scald
+- Ice Beam
+- Rain Dance
+- Earthquake
+
+Mantine @ Sky Plate
+Ability: Swift Swim
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Air Slash
+- Ice Beam
+- Scald
+- Confuse Ray
+
+Carracosta @ Sitrus Berry
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Rock Slide
+- Shell Smash
+- Scald
+- Crunch
+
+Jellicent @ Meadow Plate
+Ability: Cursed Body
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Energy Ball
+- Recover
+- Scald
+- Shadow Ball
+
+=== Shauntal — Unova Elite Four (Pokémon Black 2) ===
+
+Cofagrigus @ Leftovers
+Ability: Cursed Body
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+IVs: 0 Atk
+Modest Nature
+- Shadow Ball
+- Will-O-Wisp
+- Energy Ball
+- Psychic
+
+Gengar @ Expert Belt
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Shadow Ball
+- Focus Blast
+- Sludge Bomb
+- Dark Pulse
+
+Froslass @ Wise Glasses
+Ability: Snow Cloak
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Psychic
+- Shadow Ball
+- Blizzard
+- Ice Shard
+
+Drifblim @ Choice Specs
+Ability: Unburden
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Shadow Ball
+- Psychic
+- Acrobatics
+- Thunder
+
+Golurk @ Muscle Band
+Ability: Iron Fist
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Shadow Punch
+- Earthquake
+- Hammer Arm
+- Stone Edge
+
+Chandelure @ Choice Scarf
+Ability: Flame Body
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Fire Blast
+- Shadow Ball
+- Energy Ball
+- Psychic
+
+=== Marshal — Unova Elite Four (Pokémon Black 2) ===
+
+Throh @ Choice Band
+Ability: Guts
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Superpower
+- Stone Edge
+- Earthquake
+- Payback
+
+Sawk @ Muscle Band
+Ability: Sturdy
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Close Combat
+- Stone Edge
+- Retaliate
+- Poison Jab
+
+Lucario @ Wise Glasses
+Ability: Inner Focus
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Aura Sphere
+- Dragon Pulse
+- Extreme Speed
+- Shadow Ball
+
+Mienshao @ Eject Button
+Ability: Regenerator
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- High Jump Kick
+- Acrobatics
+- U-turn
+- Fake Out
+
+Machamp @ Expert Belt
+Ability: No Guard
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Dynamic Punch
+- Stone Edge
+- Dual Chop
+- Thunder Punch
+
+Conkeldurr @ Flame Orb
+Ability: Sheer Force
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Hammer Arm
+- Bulk Up
+- Stone Edge
+- Earthquake
+
+=== Grimsley — Unova Elite Four (Pokémon Black 2) ===
+
+Honchkrow @ Scope Lens
+Ability: Insomnia
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Night Slash
+- Psychic
+- Aerial Ace
+- Haze
+
+Scrafty @ Leftovers
+Ability: Moxie
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- High Jump Kick
+- Head Smash
+- Crunch
+- Poison Jab
+
+Krookodile @ Muscle Band
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Rock Slide
+- Earthquake
+- Crunch
+- Outrage
+
+Houndoom @ Wise Glasses
+Ability: Flash Fire
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Sludge Bomb
+- Thunder Fang
+- Fire Blast
+- Crunch
+
+Tyranitar @ Smooth Rock
+Ability: Sand Stream
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Dark Pulse
+- Stone Edge
+- Fire Blast
+- Earthquake
+
+Bisharp @ Quick Claw
+Ability: Defiant
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Guillotine
+- Night Slash
+- X-Scissor
+- Aerial Ace
+
+=== Caitlin — Unova Elite Four (Pokémon Black 2) ===
+
+Musharna @ Light Clay
+Ability: Synchronize
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Reflect
+- Charge Beam
+- Dream Eater
+- Hypnosis
+
+Alakazam @ Expert Belt
+Ability: Synchronize
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Shadow Ball
+- Focus Blast
+- Psychic
+- Charge Beam
+
+Gothitelle @ Wise Glasses
+Ability: Competitive
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Psychic
+- Flatter
+- Shadow Ball
+- Thunderbolt
+
+Gallade @ Muscle Band
+Ability: Steadfast
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Close Combat
+- Night Slash
+- Leaf Blade
+- Psycho Cut
+
+Reuniclus @ Leftovers
+Ability: Magic Guard
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+IVs: 0 Atk
+Modest Nature
+- Psychic
+- Thunder
+- Recover
+- Focus Blast
+
+Metagross @ Life Orb
+Ability: Clear Body
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Zen Headbutt
+- Bullet Punch
+- Earthquake
+- Hammer Arm
+
+=== Iris — Unova Champion (Pokémon Black 2) ===
+
+Hydreigon @ Wise Glasses
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Fire Blast
+- Focus Blast
+- Dragon Pulse
+- Surf
+
+Salamence @ Life Orb
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Fire Blast
+- Earthquake
+- Draco Meteor
+- Crunch
+
+Archeops @ Choice Band
+Ability: Moxie
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Acrobatics
+- Stone Edge
+- Dragon Claw
+- Endeavor
+
+Aggron @ Muscle Band
+Ability: Rock Head
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Earthquake
+- Double-Edge
+- Head Smash
+- Autotomize
+
+Lapras @ Splash Plate
+Ability: Water Absorb
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Hydro Pump
+- Blizzard
+- Thunder
+- Sing
+
+Haxorus @ Focus Sash
+Ability: Mold Breaker
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Earthquake
+- Guillotine
+- Outrage
+- Dragon Dance
+
+=== Hugh — Unova Rival (Pokémon Black 2) ===
+
+Unfezant @ Scope Lens
+Ability: Big Pecks
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Giga Impact
+- Aerial Ace
+- U-turn
+- Swagger
+
+Simipour @ Choice Band
+Ability: Torrent
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Rock Slide
+- Focus Blast
+- Acrobatics
+- Surf
+
+Bouffalant @ Muscle Band
+Ability: Sap Sipper
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Head Charge
+- Wild Charge
+- Megahorn
+- Earthquake
+
+Flygon @ Choice Scarf
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Earthquake
+- Fire Blast
+- Draco Meteor
+- Stone Edge
+
+Eelektross @ Leftovers
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Wild Charge
+- Flamethrower
+- Dragon Claw
+- Crunch
+
+Emboar @ Focus Sash
+Ability: Blaze
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Fire Blast
+- Head Smash
+- Hammer Arm
+- Scald
+
+=== Ghetsis — Unova Team Boss (Pokémon Black 2) ===
+
+Cofagrigus @ Leftovers
+Ability: Cursed Body
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+IVs: 0 Atk
+Calm Nature
+- Shadow Ball
+- Psychic
+- Protect
+- Toxic
+
+Seismitoad @ Punching Glove
+Ability: Poison Touch
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Muddy Water
+- Earthquake
+- Drain Punch
+- Sludge Wave
+
+Eelektross @ Choice Scarf
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Thunderbolt
+- Flamethrower
+- Acrobatics
+- Crunch
+
+Drapion @ Dread Plate
+Ability: Sniper
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Night Slash
+- Earthquake
+- Poison Fang
+- X-Scissor
+
+Toxicroak @ Fist Plate
+Ability: Dry Skin
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Brick Break
+- Shadow Ball
+- Sucker Punch
+- Poison Jab
+
+Hydreigon @ Life Orb
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Dragon Rush
+- Crunch
+- Rock Slide
+- Frustration
+
+=== N — Unova Trainer (Pokémon Black 2) ===
+
+Zekrom @ Zap Plate
+Ability: Teravolt
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Fusion Bolt
+- Imprison
+- Dragon Claw
+- Zen Headbutt
+
+Carracosta @ Choice Band
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Stone Edge
+- Aqua Jet
+- Crunch
+- Dragon Claw
+
+Vanilluxe @ Icicle Plate
+Ability: Ice Body
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Blizzard
+- Hail
+- Flash Cannon
+- Frost Breath
+
+Archeops @ Choice Scarf
+Ability: Moxie
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Stone Edge
+- Acrobatics
+- Dragon Claw
+- Crunch
+
+Zoroark @ Choice Specs
+Ability: Illusion
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Flamethrower
+- Focus Blast
+- Night Slash
+- Retaliate
+
+Klinklang @ Iron Plate
+Ability: Clear Body
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Flash Cannon
+- Metal Sound
+- Hyper Beam
+- Thunderbolt
+
+=== Steven Stone — Hoenn Champion (Pokémon Black 2) ===
+
+Metagross @ Punching Glove
+Ability: Clear Body
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Zen Headbutt
+- Hammer Arm
+- Earthquake
+- Bullet Punch
+
+Aggron @ Air Balloon
+Ability: Sturdy
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Head Smash
+- Avalanche
+- Earthquake
+- Metal Burst
+
+Excadrill @ Focus Sash
+Ability: Sand Rush
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Earthquake
+- Rock Slide
+- X-Scissor
+- Sandstorm
+
+Archeops @ Sitrus Berry
+Ability: Moxie
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Head Smash
+- Acrobatics
+- Earthquake
+- Quick Attack
+
+Cradily @ Expert Belt
+Ability: Overcoat
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Stone Edge
+- Seed Bomb
+- Earthquake
+- Sandstorm
+
+Armaldo @ White Herb
+Ability: Battle Armor
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- X-Scissor
+- Rock Blast
+- Earthquake
+- Superpower
+
+############################################
+##### Generation 6 — Pokémon Y #####
+############################################
+
+=== Viola — Kalos Gym Leader (Pokémon Y) ===
+
+Surskit @ Eviolite
+Ability: Swift Swim
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Quick Attack
+- Bubble
+- Water Sport
+
+Vivillon @ Insect Plate
+Ability: Shield Dust
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Harden
+- Infestation
+- Tackle
+
+=== Grant — Kalos Gym Leader (Pokémon Y) ===
+
+Amaura @ Eviolite
+Ability: Snow Warning
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Aurora Beam
+- Rock Tomb
+- Thunder Wave
+- Take Down
+
+Tyrunt @ Stone Plate
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Rock Tomb
+- Bite
+- Stomp
+
+=== Korrina — Kalos Gym Leader (Pokémon Y) ===
+
+Mienfoo @ Eviolite
+Ability: Inner Focus
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Power-Up Punch
+- Fake Out
+- Double Slap
+
+Machoke @ Punching Glove
+Ability: Guts
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Power-Up Punch
+- Rock Tomb
+- Leer
+
+Hawlucha @ Fist Plate
+Ability: Unburden
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Flying Press
+- Hone Claws
+- Power-Up Punch
+
+=== Ramos — Kalos Gym Leader (Pokémon Y) ===
+
+Jumpluff @ Meadow Plate
+Ability: Chlorophyll
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Grass Knot
+- Acrobatics
+- Leech Seed
+
+Weepinbell @ Eviolite
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Grass Knot
+- Acid
+- Poison Powder
+- Gastro Acid
+
+Gogoat @ Miracle Seed
+Ability: Sap Sipper
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Grass Knot
+- Bulldoze
+- Take Down
+
+=== Clemont — Kalos Gym Leader (Pokémon Y) ===
+
+Emolga @ Zap Plate
+Ability: Static
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Volt Switch
+- Quick Attack
+- Aerial Ace
+
+Magneton @ Eviolite
+Ability: Sturdy
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Thunderbolt
+- Electric Terrain
+- Mirror Shot
+
+Heliolisk @ Wise Glasses
+Ability: Dry Skin
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Thunderbolt
+- Quick Attack
+- Grass Knot
+
+=== Valerie — Kalos Gym Leader (Pokémon Y) ===
+
+Mawile @ Dread Plate
+Ability: Hyper Cutter
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Feint Attack
+- Crunch
+- Iron Defense
+
+Mr. Mime @ Light Clay
+Ability: Soundproof
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Light Screen
+- Reflect
+- Psychic
+- Dazzling Gleam
+
+Sylveon @ Silk Scarf
+Ability: Fairy Aura
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Dazzling Gleam
+- Quick Attack
+- Swift
+- Charm
+
+=== Olympia — Kalos Gym Leader (Pokémon Y) ===
+
+Sigilyph @ Light Clay
+Ability: Magic Guard
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Psychic
+- Air Slash
+- Light Screen
+- Reflect
+
+Slowking @ Mind Plate
+Ability: Own Tempo
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Psychic
+- Calm Mind
+- Power Gem
+- Yawn
+
+Meowstic @ Wise Glasses
+Ability: Infiltrator
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Psychic
+- Calm Mind
+- Fake Out
+- Shadow Ball
+
+=== Wulfric — Kalos Gym Leader (Pokémon Y) ===
+
+Abomasnow @ Icy Rock
+Ability: Snow Warning
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Ice Beam
+- Ice Shard
+- Energy Ball
+
+Cryogonal @ Icicle Plate
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Ice Beam
+- Confuse Ray
+- Flash Cannon
+- Hail
+
+Avalugg @ Never-Melt Ice
+Ability: Ice Body
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Avalanche
+- Crunch
+- Curse
+- Gyro Ball
+
+=== Malva — Kalos Elite Four (Pokémon Y) ===
+
+Pyroar @ Silk Scarf
+Ability: Punk Rock
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Hyper Voice
+- Flamethrower
+- Wild Charge
+- Noble Roar
+
+Torkoal @ Earth Plate
+Ability: White Smoke
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Curse
+- Earthquake
+- Stone Edge
+- Flame Wheel
+
+Chandelure @ Flame Plate
+Ability: Flame Body
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Flamethrower
+- Shadow Ball
+- Confuse Ray
+- Confide
+
+Talonflame @ Choice Band
+Ability: Flame Body
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Brave Bird
+- Quick Attack
+- Flare Blitz
+- Flail
+
+=== Siebold — Kalos Elite Four (Pokémon Y) ===
+
+Clawitzer @ Choice Specs
+Ability: Torrent
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Water Pulse
+- Dark Pulse
+- Dragon Pulse
+- Aura Sphere
+
+Gyarados @ Splash Plate
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Waterfall
+- Ice Fang
+- Earthquake
+- Dragon Dance
+
+Starmie @ Light Clay
+Ability: Natural Cure
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Dazzling Gleam
+- Psychic
+- Surf
+- Light Screen
+
+Barbaracle @ Choice Band
+Ability: Sniper
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Cross Chop
+- Stone Edge
+- Razor Shell
+- X-Scissor
+
+=== Wikstrom — Kalos Elite Four (Pokémon Y) ===
+
+Klefki @ Pixie Plate
+Ability: Prankster
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Dazzling Gleam
+- Flash Cannon
+- Torment
+- Spikes
+
+Probopass @ Choice Specs
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+IVs: 0 Atk
+Modest Nature
+- Earth Power
+- Power Gem
+- Discharge
+- Flash Cannon
+
+Scizor @ Punching Glove
+Ability: Technician
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Bullet Punch
+- X-Scissor
+- Iron Head
+- Night Slash
+
+Aegislash-Blade @ Fist Plate
+Ability: Full Metal Body
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- King's Shield
+- Sacred Sword
+- Shadow Claw
+- Iron Head
+
+=== Drasna — Kalos Elite Four (Pokémon Y) ===
+
+Dragalge @ Choice Specs
+Ability: Poison Touch
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+IVs: 0 Atk
+Modest Nature
+- Dragon Pulse
+- Surf
+- Sludge Bomb
+- Thunderbolt
+
+Druddigon @ Choice Band
+Ability: Rough Skin
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Dragon Tail
+- Revenge
+- Retaliate
+- Chip Away
+
+Altaria @ Pixie Plate
+Ability: Natural Cure
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Moonblast
+- Dragon Pulse
+- Cotton Guard
+- Sing
+
+Noivern @ Choice Scarf
+Ability: Infiltrator
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Air Slash
+- Dragon Pulse
+- Flamethrower
+- Super Fang
+
+=== Diantha — Kalos Champion (Pokémon Y) ===
+
+Hawlucha @ Fist Plate
+Ability: Unburden
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Swords Dance
+- Flying Press
+- X-Scissor
+- Poison Jab
+
+Tyrantrum @ Choice Band
+Ability: Rock Head
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Head Smash
+- Earthquake
+- Dragon Claw
+- Crunch
+
+Aurorus @ Icy Rock
+Ability: Snow Warning
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+IVs: 0 Atk
+Bold Nature
+- Thunder
+- Blizzard
+- Light Screen
+- Reflect
+
+Gourgeist @ Spooky Plate
+Ability: Insomnia
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Trick-or-Treat
+- Phantom Force
+- Seed Bomb
+- Shadow Sneak
+
+Goodra @ Choice Specs
+Ability: Sap Sipper
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Dragon Pulse
+- Muddy Water
+- Fire Blast
+- Focus Blast
+
+Gardevoir @ Choice Scarf
+Ability: Trace
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Moonblast
+- Psychic
+- Shadow Ball
+- Thunderbolt
+
+=== Serena — Kalos Rival (Pokémon Y) ===
+
+Meowstic @ Choice Specs
+Ability: Keen Eye
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Psychic
+- Fake Out
+- Disarming Voice
+- Shadow Ball
+
+Flareon @ Flame Plate
+Ability: Flash Fire
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Fire Blast
+- Quick Attack
+- Bite
+
+Altaria @ Draco Plate
+Ability: Natural Cure
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Dragon Pulse
+- Dazzling Gleam
+- Confide
+
+Absol @ Silk Scarf
+Ability: Pressure
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Slash
+- Quick Attack
+- Swords Dance
+- Night Slash
+
+Greninja @ Loaded Dice
+Ability: Torrent
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Dark Pulse
+- Ice Beam
+- Water Shuriken
+
+=== Lysandre — Kalos Team Boss (Pokémon Y) ===
+
+Mienshao @ Fist Plate
+Ability: Inner Focus
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Swords Dance
+- High Jump Kick
+- Acrobatics
+
+Honchkrow @ Choice Band
+Ability: Insomnia
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Night Slash
+- Aerial Ace
+- Retaliate
+- Steel Wing
+
+Pyroar @ Silk Scarf
+Ability: Punk Rock
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Hyper Voice
+- Fire Blast
+- Dark Pulse
+
+Gyarados @ Choice Scarf
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Aqua Tail
+- Earthquake
+- Iron Head
+- Outrage
+
+#####################################################
+##### Generation 7 — Pokémon Ultra Moon #####
+#####################################################
+
+=== Hala — Alola Kahuna (Pokémon Ultra Moon) ===
+
+Machop @ Eviolite
+Ability: Guts
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Karate Chop
+- Revenge
+- Focus Energy
+
+Makuhita @ Loaded Dice
+Ability: Thick Fat
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Arm Thrust
+- Sand Attack
+- Fake Out
+
+Crabrawler @ Punching Glove
+Ability: Iron Fist
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Pursuit
+- Power-Up Punch
+- Leer
+
+=== Nanu — Alola Kahuna (Pokémon Ultra Moon) ===
+
+Sableye @ Stone Plate
+Ability: Keen Eye
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Power Gem
+- Shadow Ball
+- Fake Out
+
+Krokorok @ Eviolite
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Crunch
+- Assurance
+- Swagger
+- Earthquake
+
+Persian-Alola @ Wise Glasses
+Ability: Technician
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Power Gem
+- Fake Out
+- Dark Pulse
+
+=== Hapu — Alola Kahuna (Pokémon Ultra Moon) ===
+
+Golurk @ Punching Glove
+Ability: No Guard
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Hammer Arm
+- Earthquake
+- Shadow Punch
+- Stealth Rock
+
+Gastrodon @ Splash Plate
+Ability: Water Absorb
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+IVs: 0 Atk
+Modest Nature
+- Muddy Water
+- Mud Bomb
+- Recover
+
+Flygon @ Earth Plate
+Ability: Levitate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Modest Nature
+- Earth Power
+- Dragon Breath
+
+Mudsdale @ Loaded Dice
+Ability: Stamina
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Heavy Slam
+- Earthquake
+- Double Kick
+- Payback
+
+=== Molayne — Alola Elite Four (Pokémon Ultra Moon) ===
+
+Klefki @ Light Clay
+Ability: Prankster
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Spikes
+- Thunder Wave
+- Flash Cannon
+- Reflect
+
+Bisharp @ Eviolite
+Ability: Defiant
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Night Slash
+- Iron Head
+- X-Scissor
+- Poison Jab
+
+Magnezone @ Iron Plate
+Ability: Sturdy
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Flash Cannon
+- Thunderbolt
+- Tri Attack
+- Screech
+
+Metagross @ Punching Glove
+Ability: Clear Body
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Hammer Arm
+- Meteor Mash
+- Bullet Punch
+- Zen Headbutt
+
+Dugtrio-Alola @ Choice Band
+Ability: Sand Veil
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Earthquake
+- Iron Head
+- Sucker Punch
+- Stone Edge
+
+=== Olivia — Alola Elite Four (Pokémon Ultra Moon) ===
+
+Armaldo @ Choice Band
+Ability: Battle Armor
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Crush Claw
+- X-Scissor
+- Stone Edge
+- Liquidation
+
+Cradily @ Choice Scarf
+Ability: Overcoat
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Stone Edge
+- Seed Bomb
+- Sludge Wave
+- Earth Power
+
+Gigalith @ Smooth Rock
+Ability: Sand Stream
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Stone Edge
+- Earthquake
+- Iron Head
+- Throat Chop
+
+Probopass @ Choice Specs
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+IVs: 0 Atk
+Modest Nature
+- Earth Power
+- Power Gem
+- Dazzling Gleam
+- Flash Cannon
+
+Lycanroc-Midnight @ Punching Glove
+Ability: Keen Eye
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Crunch
+- Stone Edge
+- Fire Punch
+- Rock Climb
+
+=== Acerola — Alola Elite Four (Pokémon Ultra Moon) ===
+
+Banette @ Choice Band
+Ability: Insomnia
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Shadow Claw
+- Sucker Punch
+- Infestation
+- Shadow Sneak
+
+Drifblim @ Spooky Plate
+Ability: Unburden
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Shadow Ball
+- Thunderbolt
+- Psychic
+- Will-O-Wisp
+
+Dhelmise @ Choice Scarf
+Ability: No Guard
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Phantom Force
+- Heavy Slam
+- Earthquake
+- Power Whip
+
+Froslass @ Choice Specs
+Ability: Snow Cloak
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Blizzard
+- Shadow Ball
+- Thunderbolt
+- Ice Shard
+
+Palossand @ Wise Glasses
+Ability: Sand Veil
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+IVs: 0 Atk
+Modest Nature
+- Shadow Ball
+- Earth Power
+- Sludge Bomb
+- Giga Drain
+
+=== Kahili — Alola Elite Four (Pokémon Ultra Moon) ===
+
+Braviary @ Silk Scarf
+Ability: Sheer Force
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Crush Claw
+- Brave Bird
+- Superpower
+- Scary Face
+
+Hawlucha @ Loaded Dice
+Ability: Mold Breaker
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Flying Press
+- Throat Chop
+- Dual Chop
+- Poison Jab
+
+Oricorio @ Wise Glasses
+Ability: Prankster
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Revelation Dance
+- Teeter Dance
+- Air Slash
+- Feather Dance
+
+Mandibuzz @ Dread Plate
+Ability: Big Pecks
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+IVs: 0 Atk
+Calm Nature
+- Snarl
+- Air Slash
+- Roost
+- Toxic
+
+Toucannon @ Choice Band
+Ability: Skill Link
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Bullet Seed
+- Rock Blast
+- Beak Blast
+- Brick Break
+
+=== Kukui — Alola Champion (Pokémon Ultra Moon) ===
+
+Lycanroc @ Stone Plate
+Ability: Keen Eye
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Stone Edge
+- Accelerock
+- Crunch
+- Stealth Rock
+
+Ninetales-Alola @ Icicle Plate
+Ability: Snow Cloak
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Dazzling Gleam
+- Blizzard
+- Ice Shard
+- Safeguard
+
+Braviary @ Silk Scarf
+Ability: Keen Eye
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+Bold Nature
+- Crush Claw
+- Brave Bird
+- Tailwind
+- Whirlwind
+
+Magnezone @ Zap Plate
+Ability: Sturdy
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Thunderbolt
+- Flash Cannon
+- Thunder Wave
+- Mirror Coat
+
+Snorlax @ Choice Band
+Ability: Thick Fat
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Body Slam
+- Crunch
+- Heavy Slam
+- High Horsepower
+
+Incineroar @ Choice Scarf
+Ability: Blaze
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Flare Blitz
+- Darkest Lariat
+- Outrage
+- Cross Chop
+
+=== Hau — Alola Rival (Pokémon Ultra Moon) ===
+
+Raichu-Alola @ Choice Specs
+Ability: Static
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Thunderbolt
+- Quick Attack
+- Psychic
+- Focus Blast
+
+Flareon @ Flame Plate
+Ability: Flash Fire
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Flare Blitz
+- Quick Attack
+- Charm
+- Baby-Doll Eyes
+
+Tauros @ Choice Band
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Zen Headbutt
+- Iron Head
+- Earthquake
+- Double-Edge
+
+Noivern @ Choice Scarf
+Ability: Infiltrator
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+- Dragon Pulse
+- Air Slash
+- Dark Pulse
+- Super Fang
+
+Crabominable @ Punching Glove
+Ability: Iron Fist
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Power-Up Punch
+- Ice Hammer
+- Stone Edge
+- Dizzy Punch
+
+Primarina @ Splash Plate
+Ability: Torrent
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Sparkling Aria
+- Moonblast
+- Hyper Voice
+
+=== Lusamine — Alola President (Pokémon Ultra Moon) ===
+
+Clefable @ Pixie Plate
+Ability: Magic Guard
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Moonblast
+- Charm
+- Psychic
+- Hyper Voice
+
+Lilligant @ Meadow Plate
+Ability: Own Tempo
+Level: 50
+EVs: 252 HP / 130 Def / 128 SpD
+IVs: 0 Atk
+Bold Nature
+- Petal Dance
+- Teeter Dance
+- Stun Spore
+
+Lopunny @ Punching Glove
+Ability: Limber
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Dizzy Punch
+- Thunder Punch
+- Ice Punch
+- Fire Punch
+
+Milotic @ Choice Specs
+Ability: Competitive
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Hydro Pump
+- Icy Wind
+- Flail
+- Dragon Pulse
+
+Bewear @ Loaded Dice
+Ability: Guts
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Zen Headbutt
+- Drain Punch
+- Take Down
+- Dual Chop
+
+=== Guzma — Alola Team Boss (Pokémon Ultra Moon) ===
+
+Golisopod @ Choice Band
+Ability: Swarm
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Sucker Punch
+- Waterfall
+- First Impression
+- Brick Break
+
+Vikavolt @ Choice Specs
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpA
+IVs: 0 Atk
+Modest Nature
+- Flash Cannon
+- Thunderbolt
+- Bug Buzz
+- Energy Ball
+
+Pinsir @ Choice Scarf
+Ability: Mold Breaker
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Throat Chop
+- Storm Throw
+- X-Scissor
+- Stone Edge
+
+Masquerain @ Sky Plate
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+IVs: 0 Atk
+Timid Nature
+- Air Slash
+- Bug Buzz
+- Ice Beam
+- Energy Ball
+
+Scizor @ Punching Glove
+Ability: Technician
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- X-Scissor
+- Iron Head
+- Night Slash
+- Bullet Punch
+
+
+###################################################
+##### Special Trainers #####
+###################################################
+
+=== Morimoto — Game Freak Developer (Pokémon Sun/Moon) ===
+
+Kangaskhan @ Kangaskhanite
+Ability: Scrappy
+Level: 50
+EVs: 252 HP / 252 Atk / 4 Spe
+Adamant Nature
+- Fake Out
+- Double-Edge
+- Sucker Punch
+- Earthquake
+
+Jolteon @ Choice Specs
+Ability: Volt Absorb
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Thunderbolt
+- Volt Switch
+- Shadow Ball
+- Hyper Voice
+
+Vaporeon @ Leftovers
+Ability: Water Absorb
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Scald
+- Rest
+- Protect
+- Ice Beam
+
+Flareon @ Life Orb
+Ability: Guts
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Flare Blitz
+- Superpower
+- Facade
+- Quick Attack
+
+Machamp @ Assault Vest
+Ability: No Guard
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Dynamic Punch
+- Knock Off
+- Ice Punch
+- Stone Edge
+
+Dragonite @ Choice Band
+Ability: Multiscale
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Outrage
+- Extreme Speed
+- Earthquake
+- Fire Punch
+
+=== Explorers — Wigglytuff Guild (Pokémon Mystery Dungeon: Explorers of Sky) ===
+
+Wigglytuff @ Leftovers
+Ability: Competitive
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Hyper Voice
+- Fire Blast
+- Rest
+- Protect
+
+Chatot @ Focus Sash
+Ability: Tangled Feet
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Boomburst
+- Heat Wave
+- Nasty Plot
+- Roost
+
+Grovyle @ Life Orb
+Ability: Overgrow
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Leaf Blade
+- X-Scissor
+- Aerial Ace
+- Detect
+
+Dusknoir @ Leftovers
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 252 SpD / 4 Def
+Careful Nature
+- Shadow Sneak
+- Will-O-Wisp
+- Pain Split
+- Ice Punch
+
+Celebi @ Sitrus Berry
+Ability: Natural Cure
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Giga Drain
+- Psychic
+- Recover
+- Nasty Plot
+
+Dialga @ Adamant Crystal
+Ability: Pressure
+Level: 50
+EVs: 4 Def / 252 SpA / 252 Spe
+Modest Nature
+IVs: 0 Atk
+- Draco Meteor
+- Flash Cannon
+- Fire Blast
+- Thunder
+
+=== Team Charm — Exploration Team (Pokémon Mystery Dungeon: Explorers of Sky) ===
+
+Medicham @ Life Orb
+Ability: Pure Power
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- High Jump Kick
+- Zen Headbutt
+- Ice Punch
+- Poison Jab
+
+Gardevoir @ Choice Specs
+Ability: Trace
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Moonblast
+- Psychic
+- Shadow Ball
+- Focus Blast
+
+Lopunny @ Lopunnite
+Ability: Limber
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Return
+- High Jump Kick
+- Ice Punch
+- Quick Attack
+
+Tsareena @ Leftovers
+Ability: Leaf Guard
+Level: 50
+EVs: 252 HP / 252 Atk / 4 Spe
+Adamant Nature
+- Trop Kick
+- Rapid Spin
+- Knock Off
+- Synthesis
+
+Gothitelle @ Leftovers
+Ability: Shadow Tag
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Psychic
+- Thunder Wave
+- Calm Mind
+- Substitute
+
+Salazzle @ Choice Specs
+Ability: Corrosion
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Sludge Wave
+- Fire Blast
+- Dragon Pulse
+- Toxic
+
+=== Team Skull — Skull Grunts (Pokémon Sun/Moon) ===
+
+Zubat @ Eviolite
+Ability: Infiltrator
+Level: 50
+EVs: 252 HP / 4 Def / 252 Spe
+Jolly Nature
+- Brave Bird
+- Poison Fang
+- Defog
+- Toxic
+
+Koffing @ Black Sludge
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Sludge Bomb
+- Flamethrower
+- Toxic
+- Haze
+
+Skuntank @ Black Sludge
+Ability: Keen Eye
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Night Slash
+- Poison Jab
+- Sucker Punch
+- Taunt
+
+Arbok @ Black Sludge
+Ability: Intimidate
+Level: 50
+EVs: 252 HP / 252 Atk / 4 Spe
+Adamant Nature
+- Gunk Shot
+- Earthquake
+- Coil
+- Glare
+
+Weavile @ Choice Band
+Ability: Pressure
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Knock Off
+- Ice Punch
+- Ice Shard
+- Low Kick
+
+Drapion @ Black Sludge
+Ability: Sniper
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Knock Off
+- Poison Jab
+- Earthquake
+- Swords Dance
+
+=== Shaun — Veteran (Pokémon Black/White) ===
+
+Gyarados @ Life Orb
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Waterfall
+- Earthquake
+- Ice Fang
+- Dragon Dance
+
+Excadrill @ Choice Band
+Ability: Mold Breaker
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Earthquake
+- Iron Head
+- Rock Slide
+- X-Scissor
+
+Crobat @ Black Sludge
+Ability: Infiltrator
+Level: 50
+EVs: 252 HP / 4 Def / 252 Spe
+Jolly Nature
+- Air Slash
+- Cross Poison
+- Defog
+- Roost
+
+Druddigon @ Rocky Helmet
+Ability: Rough Skin
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Glare
+- Dragon Tail
+- Earthquake
+- Superpower
+
+Gigalith @ Leftovers
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Stealth Rock
+- Stone Edge
+- Earthquake
+- Explosion
+
+Snorlax @ Leftovers
+Ability: Thick Fat
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Careful Nature
+- Body Slam
+- Curse
+- Rest
+- Earthquake
+
+=== Ingo — Subway Boss (Pokémon Black/White) ===
+
+Crustle @ White Herb
+Ability: Weak Armor
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Shell Smash
+- Rock Slide
+- X-Scissor
+- Earthquake
+
+Klinklang @ Leftovers
+Ability: Clear Body
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Shift Gear
+- Gear Grind
+- Wild Charge
+- Return
+
+Garbodor @ Black Sludge
+Ability: Weak Armor
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Gunk Shot
+- Seed Bomb
+- Toxic Spikes
+- Drain Punch
+
+Excadrill @ Choice Scarf
+Ability: Mold Breaker
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Earthquake
+- Iron Head
+- Rock Slide
+- Rapid Spin
+
+Haxorus @ Life Orb
+Ability: Mold Breaker
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Dragon Dance
+- Outrage
+- Earthquake
+- Poison Jab
+
+Chandelure @ Choice Specs
+Ability: Flash Fire
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Shadow Ball
+- Fire Blast
+- Energy Ball
+- Trick
+
+=== Emmet — Subway Boss (Pokémon Black/White) ===
+
+Eelektross @ Assault Vest
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Wild Charge
+- Knock Off
+- Superpower
+- Fire Punch
+
+Archeops @ Life Orb
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Acrobatics
+- Earthquake
+- Stone Edge
+- U-turn
+
+Escavalier @ Assault Vest
+Ability: Overcoat
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- X-Scissor
+- Iron Head
+- Knock Off
+- Drill Run
+
+Galvantula @ Focus Sash
+Ability: Compound Eyes
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Thunder
+- Bug Buzz
+- Sticky Web
+- Energy Ball
+
+Conkeldurr @ Flame Orb
+Ability: Guts
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Drain Punch
+- Hammer Arm
+- Knock Off
+- Ice Punch
+
+Durant @ Choice Band
+Ability: Hustle
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Iron Head
+- X-Scissor
+- Superpower
+- Stone Edge
+
+=== Kellyn — Top Ranger (Pokémon Ranger: Shadows of Almia) ===
+
+Lucario @ Life Orb
+Ability: Inner Focus
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Close Combat
+- Bullet Punch
+- Ice Punch
+- Swords Dance
+
+Plusle @ Focus Sash
+Ability: Lightning Rod
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Nasty Plot
+- Thunderbolt
+- Grass Knot
+- Baton Pass
+
+Minun @ Focus Sash
+Ability: Volt Absorb
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Nasty Plot
+- Thunderbolt
+- Grass Knot
+- Encore
+
+Spiritomb @ Leftovers
+Ability: Infiltrator
+Level: 50
+EVs: 252 HP / 252 SpD / 4 Def
+Careful Nature
+- Sucker Punch
+- Pursuit
+- Will-O-Wisp
+- Foul Play
+
+Empoleon @ Leftovers
+Ability: Torrent
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Scald
+- Flash Cannon
+- Rest
+- Stealth Rock
+
+Manaphy @ Leftovers
+Ability: Hydration
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Scald
+- Tail Glow
+- Rest
+- Ice Beam
+
+=== Dahlia — Arcade Star (Pokémon Platinum) ===
+
+Dusknoir @ Leftovers
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 252 SpD / 4 Def
+Careful Nature
+- Shadow Sneak
+- Fire Punch
+- Will-O-Wisp
+- Pain Split
+
+Ludicolo @ Life Orb
+Ability: Swift Swim
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+IVs: 0 Atk
+- Hydro Pump
+- Giga Drain
+- Ice Beam
+- Fake Out
+
+Medicham @ Assault Vest
+Ability: Pure Power
+Level: 50
+EVs: 252 HP / 252 Atk / 4 Spe
+Adamant Nature
+- High Jump Kick
+- Ice Punch
+- Thunder Punch
+- Zen Headbutt
+
+Togekiss @ Leftovers
+Ability: Serene Grace
+Level: 50
+EVs: 252 HP / 4 SpD / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Air Slash
+- Dazzling Gleam
+- Aura Sphere
+- Roost
+
+Blaziken @ Life Orb
+Ability: Speed Boost
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Flare Blitz
+- High Jump Kick
+- Knock Off
+- Swords Dance
+
+Zapdos @ Leftovers
+Ability: Static
+Level: 50
+EVs: 252 HP / 4 SpD / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Thunderbolt
+- Heat Wave
+- Roost
+- Volt Switch
+
+=== Darach — Castle Valet (Pokémon Platinum) ===
+
+Staraptor @ Choice Band
+Ability: Reckless
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Brave Bird
+- Close Combat
+- U-turn
+- Facade
+
+Houndoom @ Life Orb
+Ability: Flash Fire
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Fire Blast
+- Dark Pulse
+- Sludge Bomb
+- Nasty Plot
+
+Bisharp @ Life Orb
+Ability: Defiant
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Knock Off
+- Iron Head
+- Night Slash
+- Swords Dance
+
+Gallade @ Life Orb
+Ability: Justified
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Close Combat
+- Psycho Cut
+- Knock Off
+- Swords Dance
+
+Empoleon @ Choice Scarf
+Ability: Torrent
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Modest Nature
+IVs: 0 Atk
+- Hydro Pump
+- Flash Cannon
+- Ice Beam
+- Grass Knot
+
+Entei @ Choice Band
+Ability: Inner Focus
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Sacred Fire
+- Extreme Speed
+- Stone Edge
+- Iron Head
+
+=== Palmer — Tower Tycoon (Pokémon Platinum) ===
+
+Dragonite @ Leftovers
+Ability: Multiscale
+Level: 50
+EVs: 252 HP / 4 Def / 252 Spe
+Adamant Nature
+- Dragon Dance
+- Outrage
+- Earthquake
+- Roost
+
+Milotic @ Leftovers
+Ability: Competitive
+Level: 50
+EVs: 252 HP / 4 SpA / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Scald
+- Recover
+- Toxic
+- Ice Beam
+
+Rhyperior @ Choice Band
+Ability: Reckless
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Earthquake
+- Rock Wrecker
+- Megahorn
+- Ice Punch
+
+Heatran @ Leftovers
+Ability: Flash Fire
+Level: 50
+EVs: 252 HP / 4 SpD / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Magma Storm
+- Earth Power
+- Taunt
+- Stealth Rock
+
+Regigigas @ Choice Band
+Ability: Slow Start
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Return
+- Knock Off
+- Ice Punch
+- Thunder Punch
+
+Cresselia @ Leftovers
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Moonlight
+- Psychic
+- Moonblast
+- Toxic
+
+=== Tucker — Dome Ace (Pokémon Emerald) ===
+
+Swampert @ Leftovers
+Ability: Torrent
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Waterfall
+- Earthquake
+- Ice Punch
+- Stealth Rock
+
+Charizard @ Choice Specs
+Ability: Blaze
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Fire Blast
+- Air Slash
+- Focus Blast
+- Roost
+
+Sceptile @ Life Orb
+Ability: Overgrow
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Leaf Storm
+- Dragon Pulse
+- Focus Blast
+- Giga Drain
+
+Salamence @ Choice Scarf
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Outrage
+- Earthquake
+- Fire Blast
+- Dragon Claw
+
+Metagross @ Choice Band
+Ability: Clear Body
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Meteor Mash
+- Zen Headbutt
+- Earthquake
+- Ice Punch
+
+Latias @ Leftovers
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 4 SpD / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Calm Mind
+- Dragon Pulse
+- Psychic
+- Recover
+
+=== Greta — Arena Tycoon (Pokémon Emerald) ===
+
+Heracross @ Choice Scarf
+Ability: Moxie
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Close Combat
+- Megahorn
+- Knock Off
+- Stone Edge
+
+Umbreon @ Leftovers
+Ability: Synchronize
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Foul Play
+- Moonlight
+- Protect
+- Toxic
+
+Shedinja @ Focus Sash
+Ability: Wonder Guard
+Level: 50
+EVs: 252 Atk / 252 Spe / 4 SpD
+Adamant Nature
+- Swords Dance
+- Shadow Sneak
+- X-Scissor
+- Will-O-Wisp
+
+Gengar @ Choice Specs
+Ability: Cursed Body
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Shadow Ball
+- Sludge Wave
+- Focus Blast
+- Trick
+
+Breloom @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Mach Punch
+- Bullet Seed
+- Stun Spore
+- Swords Dance
+
+Articuno @ Leftovers
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 4 SpA / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Freeze-Dry
+- Roost
+- Substitute
+- Toxic
+
+=== Noland — Factory Head (Pokémon Emerald) ===
+
+Pinsir @ Pinsirite
+Ability: Hyper Cutter
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Return
+- Close Combat
+- Earthquake
+- Swords Dance
+
+Ninjask @ Focus Sash
+Ability: Speed Boost
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Baton Pass
+- X-Scissor
+- Aerial Ace
+- Swords Dance
+
+Machamp @ Leftovers
+Ability: Guts
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Dynamic Punch
+- Rock Slide
+- Knock Off
+- Bulk Up
+
+Venusaur @ Leftovers
+Ability: Chlorophyll
+Level: 50
+EVs: 252 HP / 4 SpA / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Giga Drain
+- Sludge Bomb
+- Sleep Powder
+- Synthesis
+
+Manectric @ Choice Scarf
+Ability: Lightning Rod
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Thunderbolt
+- Volt Switch
+- Overheat
+- Signal Beam
+
+Articuno @ Choice Specs
+Ability: Pressure
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Blizzard
+- Hurricane
+- Freeze-Dry
+- Ancient Power
+
+=== Thorton — Factory Head (Pokémon Platinum) ===
+
+Bronzong @ Leftovers
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Stealth Rock
+- Gyro Ball
+- Earthquake
+- Toxic
+
+Magnezone @ Choice Specs
+Ability: Magnet Pull
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Thunderbolt
+- Flash Cannon
+- Volt Switch
+- Toxic
+
+Regigigas @ Life Orb
+Ability: Slow Start
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Thunder Punch
+- Fire Punch
+- Ice Punch
+- Zen Headbutt
+
+Tyranitar @ Choice Scarf
+Ability: Sand Stream
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Stone Edge
+- Earthquake
+- Crunch
+- Ice Punch
+
+Ursaring @ Choice Band
+Ability: Guts
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Facade
+- Superpower
+- Earthquake
+- Ice Punch
+
+Electivire @ Expert Belt
+Ability: Motor Drive
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Wild Charge
+- Ice Punch
+- Cross Chop
+- Earthquake
+
+=== Spenser — Palace Maven (Pokémon Emerald) ===
+
+Venusaur @ Black Sludge
+Ability: Overgrow
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Seed Bomb
+- Earthquake
+- Sludge Bomb
+- Synthesis
+
+Crobat @ Choice Band
+Ability: Infiltrator
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Air Slash
+- Cross Poison
+- U-turn
+- Super Fang
+
+Slaking @ Choice Band
+Ability: Truant
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Giga Impact
+- Earthquake
+- Facade
+- Double-Edge
+
+Lapras @ Leftovers
+Ability: Water Absorb
+Level: 50
+EVs: 252 HP / 4 SpA / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Surf
+- Freeze-Dry
+- Perish Song
+- Protect
+
+Arcanine @ Choice Band
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Flare Blitz
+- Extreme Speed
+- Wild Charge
+- Crunch
+
+Suicune @ Leftovers
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 4 SpA / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Scald
+- Calm Mind
+- Rest
+- Ice Beam
+
+=== Lucy — Pike Queen (Pokémon Emerald) ===
+
+Seviper @ Life Orb
+Ability: Infiltrator
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Coil
+- Poison Fang
+- Earthquake
+- Sucker Punch
+
+Milotic @ Leftovers
+Ability: Competitive
+Level: 50
+EVs: 252 HP / 4 Def / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Scald
+- Recover
+- Toxic
+- Dragon Tail
+
+Shuckle @ Mental Herb
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Stealth Rock
+- Toxic
+- Protect
+- Rest
+
+Steelix @ Leftovers
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Iron Head
+- Earthquake
+- Stealth Rock
+- Toxic
+
+Gyarados @ Choice Band
+Ability: Intimidate
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Waterfall
+- Earthquake
+- Ice Fang
+- Crunch
+
+Nihilego @ Choice Specs
+Ability: Beast Boost
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Power Gem
+- Sludge Wave
+- Thunderbolt
+- Psychic
+
+=== RuzLaposa — Nobody (In His Own Head) ===
+
+Kartana @ Focus Sash
+Ability: Beast Boost
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Leaf Blade
+- Sacred Sword
+- Smart Strike
+- Swords Dance
+
+Honchkrow @ Choice Band
+Ability: Moxie
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Aerial Ace
+- Sucker Punch
+- Superpower
+- Pursuit
+
+Nihilego @ Life Orb
+Ability: Beast Boost
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Power Gem
+- Sludge Wave
+- Thunderbolt
+- Psychic
+
+Shaymin @ Leftovers
+Ability: Natural Cure
+Level: 50
+EVs: 252 HP / 4 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Seed Flare
+- Earth Power
+- Air Slash
+- Synthesis
+
+Marshadow @ Life Orb
+Ability: Technician
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Close Combat
+- Ice Punch
+- Bulk Up
+
+Darkrai @ Life Orb
+Ability: Bad Dreams
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Dark Pulse
+- Ice Beam
+- Nasty Plot
+- Focus Blast
+
+=== Wolfey — World Champion (IRL) ===
+
+Incineroar @ Sitrus Berry
+Ability: Intimidate
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Flare Blitz
+- Knock Off
+- Fake Out
+- U-turn
+
+Amoonguss @ Rocky Helmet
+Ability: Regenerator
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Spore
+- Sludge Bomb
+- Giga Drain
+- Clear Smog
+
+Gengar @ Focus Sash
+Ability: Cursed Body
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Shadow Ball
+- Sludge Wave
+- Focus Blast
+- Destiny Bond
+
+Celesteela @ Leftovers
+Ability: Beast Boost
+Level: 50
+EVs: 252 HP / 4 SpA / 252 SpD
+Calm Nature
+IVs: 0 Atk
+- Leech Seed
+- Protect
+- Flamethrower
+- Air Slash
+
+Tapu Koko @ Choice Specs
+Ability: Electric Surge
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Thunderbolt
+- Dazzling Gleam
+- Volt Switch
+- Grass Knot
+
+Rayquaza @ Life Orb
+Ability: Air Lock
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Dragon Ascent
+- Earthquake
+- Extreme Speed
+- Swords Dance
+
+=== Summer — Pokemon Ranger (Pokémon Ranger: Guardian Signs) ===
+
+Pichu @ Eviolite
+Ability: Static
+Level: 50
+EVs: 252 HP / 4 SpD / 252 Spe
+Jolly Nature
+- Volt Tackle
+- Fake Out
+- Iron Tail
+- Encore
+
+Garchomp @ Life Orb
+Ability: Rough Skin
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Jolly Nature
+- Earthquake
+- Outrage
+- Fire Fang
+- Swords Dance
+
+Metagross @ Choice Band
+Ability: Clear Body
+Level: 50
+EVs: 4 HP / 252 Atk / 252 Spe
+Adamant Nature
+- Meteor Mash
+- Zen Headbutt
+- Earthquake
+- Bullet Punch
+
+Raikou @ Choice Specs
+Ability: Pressure
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Thunderbolt
+- Volt Switch
+- Aura Sphere
+- Shadow Ball
+
+Latias @ Leftovers
+Ability: Levitate
+Level: 50
+EVs: 252 HP / 4 SpD / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Calm Mind
+- Dragon Pulse
+- Psyshock
+- Recover
+
+Mewtwo @ Life Orb
+Ability: Pressure
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Psystrike
+- Ice Beam
+- Aura Sphere
+- Recover
+
+
+###################################################
+##### Luz's Place #####
+###################################################
+
+=== Sir Meowfred — Resident Cat Butler (Luz's Place) ===
+
+Arceus @ Chople Berry
+Ability: Multitype
+Level: 50
+EVs: 240 HP / 252 Atk / 16 Spe
+Adamant Nature
+- Swords Dance
+- Extreme Speed
+- Shadow Claw
+- Recover
+
+Groudon-Primal @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 100 SpD / 156 Spe
+Adamant Nature
+- Rock Polish
+- Swords Dance
+- Precipice Blades
+- Stone Edge
+
+Kyogre-Primal @ Blue Orb
+Ability: Primordial Sea
+Level: 50
+EVs: 4 Def / 252 SpA / 252 Spe
+Modest Nature
+IVs: 0 Atk
+- Water Spout
+- Calm Mind
+- Origin Pulse
+- Ice Beam
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 32 Def / 224 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Stealth Rock
+- Photon Geyser
+- Heat Wave
+- Power Gem
+
+Salamence-Mega @ Salamencite
+Ability: Aerilate
+Level: 50
+EVs: 252 Atk / 4 Def / 252 Spe
+Jolly Nature
+- Defog
+- Double-Edge
+- Roost
+- Facade
+
+Xerneas @ Power Herb
+Ability: Fairy Aura
+Level: 50
+EVs: 168 Def / 252 SpA / 88 Spe
+Modest Nature
+- Geomancy
+- Moonblast
+- Thunder
+- Focus Blast

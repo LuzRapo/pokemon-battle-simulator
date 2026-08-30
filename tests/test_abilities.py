@@ -6,7 +6,7 @@ from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.mechanics.priority import effective_speed
 from battle_sim.models.actions import Action, ActionType
-from battle_sim.models.log_events import DoesNotAffect
+from battle_sim.models.log_events import CantAct, DoesNotAffect
 from battle_sim.models.moves import MoveSet, MoveSlot
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.stats import BaseStats, EVs, IVs
@@ -172,6 +172,25 @@ def test_levitate_ignores_spikes():
     switch = Action(action=ActionType.SWITCH_OUT, switch_in=b2)
     step(state, {0: USE_SWORDS_DANCE, 1: switch})
     assert b2.live_stats.HP == b2.stat_totals.HP
+
+
+def test_wonder_guard_blocks_anything_short_of_super_effective():
+    ice_beam = get_move("Ice Beam")  # neutral (1x) against Bug/Ghost
+    attacker = _mk("A", moves=MoveSet(ice_beam, TACKLE, EMBER, SWORDS_DANCE))
+    defender = _mk("B", types=(Type.BUG, Type.GHOST), ability=Ability.WONDER_GUARD)
+    state = _battle([attacker], [defender])
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert defender.live_stats.HP == defender.stat_totals.HP
+
+
+def test_wonder_guard_lets_super_effective_hits_through():
+    shadow_ball = get_move("Shadow Ball")  # super effective (2x) against Ghost
+    attacker = _mk("A", moves=MoveSet(shadow_ball, TACKLE, EMBER, SWORDS_DANCE))
+    defender = _mk("B", types=(Type.BUG, Type.GHOST), ability=Ability.WONDER_GUARD)
+    state = _battle([attacker], [defender])
+    use_shadow_ball = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+    step(state, {0: use_shadow_ball, 1: USE_SWORDS_DANCE})
+    assert defender.live_stats.HP < defender.stat_totals.HP
 
 
 def test_sturdy_survives_ohko_at_full_hp():
@@ -1403,3 +1422,43 @@ def test_tickle_through_the_full_engine_respects_hyper_cutter():
     step(state, {0: USE_FIRST, 1: USE_SPLASH})
     assert cut.stat_stages.ATTACK == 0
     assert cut.stat_stages.DEFENCE == -1
+
+
+def test_truant_acts_the_switch_in_turn_then_loafs_every_other_turn():
+    truant = _mk("Slaking", ability=Ability.TRUANT)
+    defender = _mk("B", moves=IDLE_MOVES)
+    state = _battle([truant], [defender])
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    assert hp > defender.live_stats.HP  # free to act the turn it switches in
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    assert hp == defender.live_stats.HP  # loafs the very next turn
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    assert hp > defender.live_stats.HP  # then acts again
+
+
+def test_truant_logs_that_it_is_loafing_when_it_skips():
+    truant = _mk(ability=Ability.TRUANT)
+    state = _battle([truant], [_mk("B", moves=IDLE_MOVES)])
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    log = step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    assert any(isinstance(entry, CantAct) and entry.reason == "loafing" for entry in log)
+
+
+def test_a_fresh_switch_in_can_act_immediately_even_mid_loaf():
+    """`volatiles.clear()` on switch-out resets Truant, so the replacement is never born loafing."""
+    truant = _mk("Slaking", ability=Ability.TRUANT)
+    bench = _mk("Backup", ability=Ability.TRUANT)
+    defender = _mk("B", moves=IDLE_MOVES)
+    state = _battle([truant, bench], [defender])
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})  # truant acts, then would loaf next
+    step(state, {0: Action(action=ActionType.SWITCH_OUT, switch_in=bench), 1: USE_SPLASH})
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    assert hp > defender.live_stats.HP

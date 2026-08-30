@@ -10,7 +10,7 @@ jobs:
           fail_on_error: "true"
           filter_mode: "nofilter"
           mypy_flags: "--ignore-missing-imports"
-          setup_command: "pip install mypy==1.18.2 pydantic loguru pytest streamlit==1.57.0"
+          setup_command: "pip install mypy==1.18.2 pydantic loguru pytest streamlit==1.57.0 numpy onnxruntime"
           setup_method: install
           tool_name: "mypy check"
   ruff:

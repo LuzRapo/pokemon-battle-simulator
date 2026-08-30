@@ -17,4 +17,8 @@ build/
 *.csv
 *.env
 sample_teams/
+random_teams/
 battles/
+replay_cache/
+*.npz
+*.onnx

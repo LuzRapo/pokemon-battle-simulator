@@ -51,6 +51,7 @@ def run_battle(
     seed: int = 0,
     max_turns: int = 1000,
     prior: SetPrior | None = None,
+    belief_candidates: tuple[int, int] | None = None,
 ) -> BattleResult:
     metagame = prior if prior is not None else SetPrior.from_teams([team_a, team_b])
     preview_of_b = [metagame.preview(spec.species, spec.level) for spec in team_b]
@@ -61,15 +62,22 @@ def run_battle(
     )
     state = BattleState(sides=sides, rng=RNG(seed=seed))
     players = (player_a, player_b)
-    observer = BattleObserver(state, metagame)
+    observer = BattleObserver(state, metagame, belief_candidates)
     for i, player in enumerate(players):
         if isinstance(player, Determinizing):
             player.bind_belief_sampler(partial(observer.sample_view, i))
 
+    def switch_chooser(live: BattleState, side_index: int) -> Action:
+        # Both sides are bots and always have an answer ready — a pivot switch resolves the instant
+        # it's forced, exactly as the games do, rather than waiting for the rest of the turn. Reads
+        # through the belief view, same as every other decision this side makes.
+        view = observer.view(side_index)
+        return players[side_index].choose_action(view, side_index, legal_actions(live, side_index))
+
     logs: list[BattleLog] = []
     while state.outcome is None and state.turn < max_turns:
         actions = {i: players[i].choose_action(observer.view(i), i, legal_actions(state, i)) for i in (0, 1)}
-        logs.append(step(state, actions))
+        logs.append(step(state, actions, switch_chooser=switch_chooser))
         observer.ingest(logs[-1])
         for i in (0, 1):
             side = state.sides[i]

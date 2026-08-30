@@ -1,20 +1,34 @@
+import random
+from pathlib import Path
+
+import pytest
+
+from battle_sim.database.loader import get_move
 from battle_sim.engine import legal_actions, step
+from battle_sim.evolution import load_weights
 from battle_sim.matchup import MatchupPlayer, MatchupWeights
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, SideState
+from battle_sim.models.actions import Action, ActionType
+from battle_sim.models.moves import MoveSet, MoveSlot
+from battle_sim.models.pokemon import Pokemon
+from battle_sim.models.stats import BaseStats, EVs, IVs
 from battle_sim.observation import SetPrior
 from battle_sim.players import BasicPlayer
 from battle_sim.runner import run_battle
 from battle_sim.search import (
+    PositionWeights,
     SearchPlayer,
     SearchProfile,
     clone_for_search,
+    column_equilibrium,
     evaluate_position,
+    exploit_mixture,
     gated_mixture,
     solve_zero_sum,
 )
 from battle_sim.teams import build_pokemon, parse_showdown_team
-from battle_sim.utils import Hazards, Outcome
+from battle_sim.utils import Ability, Hazards, Item, Nature, Outcome, Type
 from tests.test_teams import USER_SAMPLE_TEAM
 
 TEAM = parse_showdown_team(USER_SAMPLE_TEAM).specs
@@ -56,14 +70,14 @@ def test_clone_carries_the_public_position():
 
 def test_evaluate_position_prefers_material_and_wins():
     state = _battle_state()
-    even = evaluate_position(state, 0, MatchupWeights())
+    even = evaluate_position(state, 0, PositionWeights())
     state.sides[1].team[1].apply_damage(10**6)  # one of theirs faints
-    ahead = evaluate_position(state, 0, MatchupWeights())
+    ahead = evaluate_position(state, 0, PositionWeights())
     assert ahead > even
     state.outcome = Outcome.P1_WIN
-    won = evaluate_position(state, 0, MatchupWeights())
+    won = evaluate_position(state, 0, PositionWeights())
     assert won > ahead + 50
-    assert evaluate_position(state, 1, MatchupWeights()) < -50
+    assert evaluate_position(state, 1, PositionWeights()) < -50
 
 
 def test_solve_zero_sum_finds_the_dominant_strategy():
@@ -102,6 +116,60 @@ def test_zero_remaining_budget_falls_back_to_the_myopic_choice():
     assert searcher.choose_action(state, 0, actions) == myopic.choose_action(state, 0, actions)
 
 
+def test_genome_prior_breaks_a_near_tie_toward_the_real_attack():
+    """A full-HP-adjacent Rest and a real attack can come out near-indistinguishable to the
+    search's own payoff estimate once the position looks lost regardless — genome_prior is what's
+    supposed to hand that near-tie to the myopic scorer, which correctly knows one of them does
+    nothing. Reproduces a real observed game (a Snorlax that spent three straight turns on a
+    failing Rest against a Quiver Dance Volcarona it could no longer meaningfully out-heal) with
+    the actual deployed champion genome — an untrained/default genome has no real ranking for
+    genome_prior to blend in, so this needs the real weights to mean anything.
+    """
+    weights = load_weights(Path("champions/random-a-myopic-tuned.json"))
+    snorlax = Pokemon(
+        name="Snorlax",
+        nickname="Snorlax",
+        level=50,
+        base_stats=BaseStats(HP=160, ATTACK=110, DEFENCE=65, SP_ATTACK=65, SP_DEFENCE=110, SPEED=30),
+        effort_values=EVs(HP=252, DEFENCE=252, SP_DEFENCE=4),
+        individual_values=IVs(),
+        types=(Type.NORMAL, None),
+        moves=MoveSet(get_move("Amnesia"), get_move("Snore"), get_move("Rest"), get_move("Body Slam")),
+        nature=Nature.BOLD,
+        ability=Ability.IMMUNITY,
+        item=Item.CHESTO_BERRY,
+    )
+    volcarona = Pokemon(
+        name="Volcarona",
+        nickname="Volcarona",
+        level=50,
+        base_stats=BaseStats(HP=85, ATTACK=60, DEFENCE=65, SP_ATTACK=135, SP_DEFENCE=105, SPEED=100),
+        effort_values=EVs(ATTACK=52, DEFENCE=145, SP_ATTACK=80, SP_DEFENCE=84, SPEED=103),
+        individual_values=IVs(HP=26, ATTACK=27, DEFENCE=23, SP_ATTACK=13, SP_DEFENCE=6, SPEED=5),
+        types=(Type.BUG, Type.FIRE),
+        moves=MoveSet(get_move("Giga Drain"), get_move("Flamethrower"), get_move("Roost"), get_move("Quiver Dance")),
+        nature=Nature.LONELY,
+        ability=Ability.FLAME_BODY,
+        item=Item.SITRUS_BERRY,
+    )
+    volcarona.stat_stages.SP_ATTACK = 3
+    volcarona.stat_stages.SP_DEFENCE = 3
+    volcarona.stat_stages.SPEED = 3
+    volcarona.live_stats.HP = 119  # not full, but bulky enough that chip damage barely moves the estimate
+
+    state = BattleState(sides=(SideState(team=[volcarona]), SideState(team=[snorlax])), rng=RNG(seed=0))
+    actions = [
+        Action(action=ActionType.USE_MOVE, target=move.target, move=slot)
+        for slot, move in zip(MoveSlot, snorlax.moves.to_list(), strict=False)
+    ]
+    body_slam = actions[3]
+
+    for seed in range(8):
+        player = SearchPlayer(weights, profile=SearchProfile(budget=30))
+        player._rng = random.Random(seed)
+        assert player.choose_action(state, 1, actions) == body_slam
+
+
 def test_search_player_runs_at_a_large_budget():
     prior = SetPrior.from_teams([TEAM])
     player = SearchPlayer(profile=SearchProfile(budget=700))
@@ -131,3 +199,35 @@ def test_determinization_battles_deterministically():
     first = run_battle(TEAM, TEAM, SearchPlayer(profile=profile), BasicPlayer(), seed=4, prior=prior)
     second = run_battle(TEAM, TEAM, SearchPlayer(profile=profile), BasicPlayer(), seed=4, prior=prior)
     assert (first.outcome, first.turns, first.survivors) == (second.outcome, second.turns, second.survivors)
+
+
+def test_exploiting_a_predictable_opponent_beats_answering_their_equilibrium():
+    """Row 1 is the equilibrium-safe answer; row 0 punishes a column player who always plays left."""
+    matrix = [[4.0, -4.0], [1.0, 1.0]]
+    assert gated_mixture(matrix)[1] == 1.0
+    predictable = exploit_mixture(matrix, predicted=[1.0, 0.0], exploit_p=1.0)
+    assert predictable[0] == 1.0
+
+
+def test_exploit_p_of_zero_answers_the_equilibrium_mixture():
+    matrix = [[4.0, -4.0], [1.0, 1.0]]
+    assert exploit_mixture(matrix, predicted=[1.0, 0.0], exploit_p=0.0) == [0.0, 1.0]
+
+
+def test_column_equilibrium_is_a_distribution_over_their_actions():
+    column = column_equilibrium([[1.0, -1.0], [-1.0, 1.0]])
+    assert len(column) == 2
+    assert sum(column) == pytest.approx(1.0)
+    assert 0.3 < column[0] < 0.7
+
+
+def test_the_predicted_column_is_a_distribution_shaped_by_the_opponent_model():
+    """What the opponent model buys: a read on which of their replies is actually coming."""
+    state = _battle_state()
+    actions = legal_actions(state, 1)[:4]
+    attacking = SearchPlayer(opponent_model=MatchupWeights(hko_progress=10.0))._predicted_column(state, 0, actions)
+    averse = SearchPlayer(opponent_model=MatchupWeights(hko_progress=-10.0))._predicted_column(state, 0, actions)
+    assert sum(attacking) == pytest.approx(1.0)
+    assert all(weight > 0 for weight in attacking)  # a softmax never rules a reply out entirely
+    hardest_hit = max(range(len(actions)), key=lambda i: attacking[i])
+    assert averse[hardest_hit] < attacking[hardest_hit]

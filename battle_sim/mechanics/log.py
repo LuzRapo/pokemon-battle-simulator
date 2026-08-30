@@ -30,6 +30,8 @@ from battle_sim.models.log_events import (
     FlashFireAbsorbed,
     FlashFireActivated,
     FormeChanged,
+    FutureAttackLands,
+    FutureAttackQueued,
     HazardAbsorbed,
     HazardDamage,
     HazardsCleared,
@@ -87,6 +89,7 @@ from battle_sim.models.log_events import (
     WeatherSetByAbility,
     WhiteHerbRestored,
     WishMade,
+    ZMoveUnleashed,
 )
 from battle_sim.utils import ExtraStatus, Outcome, Status
 
@@ -150,6 +153,11 @@ _CANT_ACT_TEXT: dict[str, str] = {
     "paralysis": "is paralyzed and couldn't move!",
     "confused": "is confused…",
     "recharge": "must recharge!",
+    "loafing": "is loafing around!",
+}
+_FUTURE_ATTACK_QUEUED_TEXT: dict[str, str] = {
+    "Future Sight": "foresaw an attack!",
+    "Doom Desire": "chose Doom Desire as its destiny!",
 }
 _STATUS_CLEARED_TEXT: dict[str, str] = {
     "thawed": "thawed out!",
@@ -194,6 +202,8 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"P{side + 1} withdrew {withdrew} and sent out {sent_out}!"
         case SelfSwitchPending(side, pokemon):
             return f"{_label(side, pokemon)} is switching out!"
+        case ZMoveUnleashed(side, pokemon, move):
+            return f"{_label(side, pokemon)} unleashed {move}!"
         case MoveUsed(side, pokemon, move):
             return f"{_label(side, pokemon)} used {move}!"
         case MoveMissed():
@@ -306,6 +316,10 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)} was revived and is ready to fight again!"
         case WishMade(side, pokemon):
             return f"{_label(side, pokemon)} made a wish!"
+        case FutureAttackQueued(side, pokemon, move):
+            return f"{_label(side, pokemon)} {_FUTURE_ATTACK_QUEUED_TEXT.get(move, 'foresaw an attack!')}"
+        case FutureAttackLands(side, pokemon, move):
+            return f"{_label(side, pokemon)} took the {move} attack!"
         case Transformed(side, pokemon, into):
             return f"{_label(side, pokemon)} transformed into {into}!"
         case ItemRemoved(side, pokemon, item):

@@ -171,6 +171,8 @@ _CODED_EFFECTS: dict[str, tuple[MoveEffect, ...]] = {
     "trick": (CodedEffect(kind=CodedMoveKind.TRICK),),
     "switcheroo": (CodedEffect(kind=CodedMoveKind.TRICK),),
     "skillswap": (CodedEffect(kind=CodedMoveKind.SKILL_SWAP),),
+    "futuresight": (CodedEffect(kind=CodedMoveKind.FUTURE_SIGHT),),
+    "doomdesire": (CodedEffect(kind=CodedMoveKind.FUTURE_SIGHT),),
     "ruination": (FixedDamageEffect(amount_formula="HALF_TARGET_HP", set_amount=None),),
     "superfang": (FixedDamageEffect(amount_formula="HALF_TARGET_HP", set_amount=None),),
     "endeavor": (FixedDamageEffect(amount_formula="ENDEAVOR", set_amount=None),),
@@ -181,6 +183,18 @@ _CODED_EFFECTS: dict[str, tuple[MoveEffect, ...]] = {
 # Revival Blessing's selfSwitch in data only drives PS's revive prompt; the user stays in.
 # Shed Tail's switch and substitute are both handled by its coded effect.
 _SUPPRESS_SELF_SWITCH = frozenset({"revivalblessing", "shedtail"})
+# Generation 9 halved the PP on the recovery moves and the vendor dex carries those values, but this
+# format is gen 7: a Blissey gets sixteen Soft-Boileds, not eight. Only moves whose vendor PP
+# actually disagrees with gen 7 are listed, so an unlisted move keeps whatever the dex says.
+_GEN7_PP: dict[str, int] = {
+    "recover": 10,
+    "roost": 10,
+    "softboiled": 10,
+    "milkdrink": 10,
+    "slackoff": 10,
+    "rest": 10,
+    "shoreup": 10,
+}
 _SUPPRESS_VOLATILE = frozenset({"shedtail"})
 
 _EXCLUDE_NONSTANDARD_SPECIES = frozenset({"CAP", "Custom"})
@@ -239,6 +253,8 @@ def _adapt_species(raw: RawSpeciesData) -> BaseSpecies:
         height_m=raw.height_m,
         weight_kg=raw.weight_kg,
         fully_evolved=not raw.evos,
+        base_species=raw.base_species,
+        required_item=raw.required_item,
     )
 
 
@@ -261,7 +277,9 @@ def _build_boost_effect(
 
 
 # Damaging moves whose base power is 0 in data because it lives in a PS callback (engine/power.py).
-_FORMULA_POWER_MOVES = frozenset({"lowkick", "grassknot", "heavyslam", "heatcrash", "electroball", "beatup"})
+_FORMULA_POWER_MOVES = frozenset(
+    {"lowkick", "grassknot", "heavyslam", "heatcrash", "electroball", "beatup", "gyroball"}
+)
 
 
 def _damage_effects(raw: RawMoveData, category: Category) -> list[MoveEffect]:
@@ -412,7 +430,7 @@ def _adapt_move(raw: RawMoveData, diag: LoaderDiagnostics) -> Move | None:
         category=category,
         accuracy_probability=_accuracy(raw.accuracy),
         priority=PriorityLevel(raw.priority),
-        pp=raw.pp,
+        pp=_GEN7_PP.get(normalize_id(raw.name), raw.pp),
         target=target,
         effects=tuple(effects),
         self_switch=bool(raw.self_switch) and normalize_id(raw.name) not in _SUPPRESS_SELF_SWITCH,
@@ -422,6 +440,8 @@ def _adapt_move(raw: RawMoveData, diag: LoaderDiagnostics) -> Move | None:
         slicing=bool(raw.flags.get("slicing")),
         sound=bool(raw.flags.get("sound")),
         punching=bool(raw.flags.get("punch")),
+        biting=bool(raw.flags.get("bite")),
+        pulse=bool(raw.flags.get("pulse")),
         wind=bool(raw.flags.get("wind")),
         bullet=bool(raw.flags.get("bullet")),
         healing=bool(raw.flags.get("heal")),
@@ -431,6 +451,7 @@ def _adapt_move(raw: RawMoveData, diag: LoaderDiagnostics) -> Move | None:
         recharges=raw.self_effects is not None and raw.self_effects.volatile_status == "mustrecharge",
         force_switch=raw.force_switch,
         typeless=raw.struggle_recoil,  # only Struggle; its typelessness lives in PS code (onEffectiveness -> 0)
+        has_crash_damage=raw.has_crash_damage,
     )
 
 
@@ -447,6 +468,28 @@ def get_all_species() -> dict[str, BaseSpecies]:
         if raw.num is None or raw.base_stats is None:
             continue
         result[key] = _adapt_species(raw)
+    return result
+
+
+@cache
+def get_all_z_moves() -> dict[str, Move]:
+    """Z-Crystal id -> the Z-move it unleashes.
+
+    Deliberately a separate table from `get_all_moves`: a Z-move is never an ordinary move slot, so
+    letting it into the main pool would make it selectable in team building. The 18 generic type
+    Z-moves arrive with placeholder data (`basePower: 1`, and a `category` that ignores whichever
+    base move triggered them) — `zmoves.z_move_for` supplies both from the base move instead.
+    """
+    raw_data = json.loads((_VENDOR_DIR / "moves.json").read_text())
+    diag = LoaderDiagnostics()
+    result: dict[str, Move] = {}
+    for entry in raw_data.values():
+        raw = RawMoveData.model_validate(entry)
+        if not isinstance(raw.is_z, str) or raw.is_max is not None:
+            continue
+        move = _adapt_move(raw, diag)
+        if move is not None:
+            result[raw.is_z] = move
     return result
 
 

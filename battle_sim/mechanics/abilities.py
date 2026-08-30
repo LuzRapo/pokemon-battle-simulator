@@ -40,7 +40,7 @@ from battle_sim.models.log_events import (
     TypeChanged,
     WeatherSetByAbility,
 )
-from battle_sim.models.moves import DamageEffect
+from battle_sim.models.moves import DamageEffect, Move
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.type_matchups import type_effectiveness
 from battle_sim.utils import Ability, Category, ExtraStatus, Hazards, Item, Stats, Status, Terrain, Type, Weather
@@ -140,6 +140,17 @@ def _bind_levitate(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
         return HandlerResult(cancel=True, updated_payload={"absorbed": True, "immune_reason": "levitate"})
 
     bus.on(Event.ON_BEFORE_MOVE, avoid_ground, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.WONDER_GUARD)
+def _bind_wonder_guard(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    def block_non_super_effective(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or type_effectiveness(payload["move_type"], pokemon.types) >= 2:
+            return None
+        context.log.add(DoesNotAffect(side=payload["defender_index"], pokemon=pokemon.nickname))
+        return HandlerResult(cancel=True, updated_payload={"absorbed": True, "immune_reason": "wonder_guard"})
+
+    bus.on(Event.ON_BEFORE_MOVE, block_non_super_effective, priority=EventPriority.ABILITY, owner=owner)
 
 
 @ability(Ability.SOUNDPROOF)
@@ -376,6 +387,10 @@ ABILITY_BINDERS[Ability.DROUGHT] = _bind_weather_setter(Ability.DROUGHT, Weather
 ABILITY_BINDERS[Ability.DRIZZLE] = _bind_weather_setter(Ability.DRIZZLE, Weather.RAIN)
 ABILITY_BINDERS[Ability.SAND_STREAM] = _bind_weather_setter(Ability.SAND_STREAM, Weather.SANDSTORM)
 ABILITY_BINDERS[Ability.SNOW_WARNING] = _bind_weather_setter(Ability.SNOW_WARNING, Weather.SNOW)
+# Primal Reversion weather. The real pair also cannot be overridden by ordinary weather moves;
+# that lock is not modelled, so a later Rain Dance still displaces harsh sun.
+ABILITY_BINDERS[Ability.PRIMORDIAL_SEA] = _bind_weather_setter(Ability.PRIMORDIAL_SEA, Weather.HEAVY_RAIN)
+ABILITY_BINDERS[Ability.DESOLATE_LAND] = _bind_weather_setter(Ability.DESOLATE_LAND, Weather.HARSH_SUN)
 
 
 def _bind_terrain_setter(kind: Ability, terrain: Terrain) -> AbilityBinder:
@@ -793,6 +808,11 @@ def _bind_download(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
 # -- Paradox abilities ----------------------------------------------------------
 
 _PARADOX_STATS = (Stats.ATTACK, Stats.DEFENCE, Stats.SP_ATTACK, Stats.SP_DEFENCE, Stats.SPEED)
+_SAND_FORCE_TYPES = (Type.ROCK, Type.GROUND, Type.STEEL)
+
+
+def _has_multiple_hits(move: Move) -> bool:
+    return any(isinstance(effect, DamageEffect) and effect.multi_hit is not None for effect in move.effects)
 
 
 def _best_stat(pokemon: Pokemon) -> Stats:
@@ -1511,6 +1531,73 @@ def _bind_flagged_power_boost(predicate_flag: str, mod_4096: int) -> AbilityBind
 
 
 ABILITY_BINDERS[Ability.IRON_FIST] = _bind_flagged_power_boost("punching", 4915)
+ABILITY_BINDERS[Ability.STRONG_JAW] = _bind_flagged_power_boost("biting", 6144)
+ABILITY_BINDERS[Ability.MEGA_LAUNCHER] = _bind_flagged_power_boost("pulse", 6144)
+
+
+@ability(Ability.TOUGH_CLAWS)
+def _bind_tough_claws(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Contact is a property of the hit, not the move: Protective Pads and a Punching Glove clear it."""
+
+    def boost(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is pokemon and payload["contact"]:
+            payload.setdefault("power_mods_4096", []).append(5325)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.SAND_FORCE)
+def _bind_sand_force(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    def boost(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is not pokemon or payload["move_type"] not in _SAND_FORCE_TYPES:
+            return None
+        if effective_weather(context.battle) is Weather.SANDSTORM:
+            payload.setdefault("power_mods_4096", []).append(5325)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.LIGHTNING_ROD)
+def _bind_lightning_rod(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    def absorb_electric(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or payload["move_type"] is not Type.ELECTRIC:
+            return None
+        delta = pokemon.change_stat_stage(Stats.SP_ATTACK, 1)
+        if delta > 0:
+            context.log.add(
+                StatStageChanged(
+                    side=payload["defender_index"],
+                    pokemon=pokemon.nickname,
+                    stat=Stats.SP_ATTACK,
+                    delta=delta,
+                    requested=1,
+                    source="lightning_rod",
+                )
+            )
+        return HandlerResult(cancel=True, updated_payload={"absorbed": True, "immune_reason": "lightning_rod"})
+
+    bus.on(Event.ON_BEFORE_MOVE, absorb_electric, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.PARENTAL_BOND)
+def _bind_parental_bond(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Approximated as a flat 1.25x rather than a real second strike.
+
+    The true ability adds a second hit at 25% power, which totals exactly 1.25x on a single-hit
+    damaging move — so total damage is right. What this does NOT reproduce: breaking a Substitute
+    and then striking, rolling secondary effects twice, and being blocked twice by Sturdy or a Focus
+    Sash. Modelling that needs the dynamic-extra-hit machinery `DamageEffect.multi_hit` doesn't have.
+    """
+
+    def boost(context: EventContext, payload: Payload) -> HandlerResult | None:
+        move = context.move
+        if context.actor is pokemon and move is not None and not _has_multiple_hits(move):
+            payload.setdefault("power_mods_4096", []).append(5120)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost, priority=EventPriority.ABILITY, owner=owner)
 
 
 @ability(Ability.PUNK_ROCK)

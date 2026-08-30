@@ -99,6 +99,25 @@ def test_takes_the_guaranteed_ko():
     assert chosen.move is MoveSlot.FIRST
 
 
+def test_a_guaranteed_fail_scores_as_a_no_op_not_a_fantasy_ko():
+    """Dream Eater into an awake target always fails — it must not outscore a move that actually
+    connects just because its raw power looks like a lethal hit."""
+    dream_eater = get_move("Dream Eater")
+    charge_beam = get_move("Charge Beam")
+    attacker = _mk("A", moves=MoveSet(dream_eater, charge_beam, SPLASH, SPLASH))
+    defender = _mk("B")  # awake by default
+    state = _battle([attacker], [defender])
+
+    scored = {
+        action.move: score
+        for score, action in MatchupPlayer().score_actions(state, 0, [_use(MoveSlot.FIRST), _use(MoveSlot.SECOND)])
+    }
+    assert scored[MoveSlot.FIRST] < scored[MoveSlot.SECOND]  # Dream Eater must lose to Charge Beam, a real attack
+
+    chosen = MatchupPlayer().choose_action(state, 0, [_use(MoveSlot.FIRST), _use(MoveSlot.SECOND)])
+    assert chosen.move is MoveSlot.SECOND
+
+
 def test_prefers_super_effective_damage():
     state = _battle([_mk("A")], [_mk("B", types=(Type.GRASS, None))])
     actions = [_use(MoveSlot.FIRST), _use(MoveSlot.SECOND)]

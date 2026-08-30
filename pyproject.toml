@@ -13,11 +13,21 @@ dependencies = [
     "loguru>=0.7.3",
 ]
 
+# Only `battle_sim.replays` needs these, and nothing in the engine imports it. Keeping them out of
+# the runtime set is what lets a consumer that just wants battles — the Discord bot — install ~15MB
+# instead of ~136MB, since onnxruntime and its protobuf/flatbuffers tail dominate the install.
+[project.optional-dependencies]
+replays = [
+    "numpy>=2.1.0",
+    "onnxruntime>=1.20.0",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["battle_sim"]
 
 [dependency-groups]
 dev = [
+    "pokemon-battle-simulator[replays]",
     "mypy>=1.18.2",
     "pytest>=8.4.2",
     "ruff>=0.13.2",
@@ -25,6 +35,18 @@ dev = [
     "pre-commit>=4.3.0",
     "streamlit>=1.57.0",
 ]
+ml = [
+    "torch>=2.5.0",
+    "onnxscript>=0.2.0",
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 target-version = "py312"
@@ -71,8 +93,15 @@ extend-immutable-calls = [
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# torch's bundled stubs crash mypy's incremental cache writer ("Cannot serialize TypeGuardedType
+# instance") on some mypy/torch version pairs; caching brings no real benefit at this repo's size.
+cache_dir = "/dev/null"
 
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = "onnxruntime.*"
+ignore_missing_imports = true

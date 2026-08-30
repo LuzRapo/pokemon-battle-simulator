@@ -55,6 +55,7 @@ class RawMoveData(BaseModel):
     force_switch: bool = Field(default=False, alias="forceSwitch")
     stalling_move: bool = Field(default=False, alias="stallingMove")
     struggle_recoil: bool = Field(default=False, alias="struggleRecoil")
+    has_crash_damage: bool = Field(default=False, alias="hasCrashDamage")
     is_nonstandard: str | None = Field(default=None, alias="isNonstandard")
     is_z: bool | str | None = Field(default=None, alias="isZ")
     is_max: bool | str | None = Field(default=None, alias="isMax")
@@ -78,6 +79,7 @@ class RawSpeciesData(BaseModel):
     evos: list[str] = Field(default_factory=list)
     forme: str | None = None
     base_species: str | None = Field(default=None, alias="baseSpecies")
+    required_item: str | None = Field(default=None, alias="requiredItem")
     battle_only: str | list[str] | None = Field(default=None, alias="battleOnly")
     is_nonstandard: str | None = Field(default=None, alias="isNonstandard")
     is_cosmetic_forme: bool = Field(default=False, alias="isCosmeticForme")

@@ -6,6 +6,7 @@ from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.effects import EffectRegistry, register_active
 from battle_sim.mechanics.events import EventBus
 from battle_sim.models.actions import Action
+from battle_sim.models.moves import Move
 from battle_sim.models.pokemon import FormSnapshot, Pokemon
 from battle_sim.utils import Ability, BattleFormat, Hazards, Outcome, PseudoWeather, Terrain, Weather
 
@@ -31,6 +32,11 @@ class SideState(BaseModel):
     wish_turns: int = Field(default=0, ge=0)
     healing_wish_pending: bool = False  # the next pokemon sent in is fully restored
     pending_substitute: int = Field(default=0, ge=0)  # Shed Tail: the substitute passed to the replacement
+    has_mega_evolved: bool = False  # once per battle per side, and it never reverts
+    has_used_z_move: bool = False  # the crystal is spent after one use
+    future_sight_attacker: Pokemon | None = None  # who queued it, for damage calc when it lands
+    future_sight_move: Move | None = None  # Future Sight or Doom Desire, snapshotted at use
+    future_sight_turns: int = Field(default=0, ge=0)  # counts down to 0, mirroring wish_turns
 
     @model_validator(mode="after")
     def _check_active_indices(self) -> "SideState":

@@ -29,6 +29,7 @@ def _execute_switch(state: BattleState, side_index: int, action: Action, log: Ba
     outgoing.disabled_slot = None
     outgoing.locked_slot = None
     outgoing.charging_slot = None
+    outgoing.rolling_hits = 0
     if outgoing.status is Status.TOXIC:
         outgoing.status_turns = 0
     unregister_active(state.bus, state.effects, outgoing)
@@ -37,6 +38,7 @@ def _execute_switch(state: BattleState, side_index: int, action: Action, log: Ba
     outgoing.paradox_boost = None
     outgoing.paradox_from_booster = False
     log.add(Switched(side=side_index, withdrew=outgoing.nickname, sent_out=incoming.nickname))
+    incoming.turns_active = 0
     register_active(state.bus, state.effects, incoming)
     if Ability.NEUTRALIZING_GAS in (outgoing.ability, incoming.ability):
         _sync_neutralizing_gas(state)

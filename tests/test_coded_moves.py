@@ -2,6 +2,7 @@
 
 from battle_sim.database.loader import get_move
 from battle_sim.engine import apply_forced_switch, legal_actions, step
+from battle_sim.engine.power import ROLLING_LOCK_TURNS
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.models.actions import Action, ActionType
@@ -88,6 +89,16 @@ def test_stored_power_scales_with_boosts():
     assert boosted > flat > 0
 
 
+_SLOW_STATS = BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=10)
+_FAST_STATS = BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=300)
+
+
+def test_gyro_ball_hits_harder_the_slower_the_user_is_next_to_its_target():
+    against_fast = _duel(_mk(first="Gyro Ball", base_stats=_SLOW_STATS), _mk(base_stats=_FAST_STATS))
+    against_slow = _duel(_mk(first="Gyro Ball", base_stats=_SLOW_STATS), _mk(base_stats=_SLOW_STATS))
+    assert against_fast > against_slow > 0
+
+
 def test_knock_off_removes_the_item_and_hits_harder_for_it():
     bare = _duel(_mk(first="Knock Off"), _mk())
     holder = _mk(item=Item.LEFTOVERS)
@@ -109,6 +120,70 @@ def test_sucker_punch_hits_an_attacking_target():
     hp = defender.live_stats.HP
     step(state, {0: USE_FIRST, 1: USE_TACKLE_2})
     assert hp > defender.live_stats.HP
+
+
+def test_fake_out_only_works_on_the_switch_in_turn():
+    attacker = _mk(first="Fake Out")
+    defender = _mk()
+    state = _battle([attacker], [defender])
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert hp > defender.live_stats.HP  # works the turn it switches in
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert hp == defender.live_stats.HP  # every turn after, it fails
+
+
+def test_first_impression_only_works_on_the_switch_in_turn():
+    attacker = _mk(first="First Impression")
+    defender = _mk()
+    state = _battle([attacker], [defender])
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert hp > defender.live_stats.HP  # works the turn it switches in
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert hp == defender.live_stats.HP  # every turn after, it fails
+
+
+def test_first_impression_works_again_after_switching_back_in():
+    attacker = _mk(first="First Impression")
+    bench = _mk("Bench")
+    defender = _mk()
+    state = _battle([attacker, bench], [defender])
+
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})  # spend the switch-in turn
+    step(state, {0: Action(action=ActionType.SWITCH_OUT, switch_in=bench), 1: USE_SPLASH_4})
+    step(state, {0: Action(action=ActionType.SWITCH_OUT, switch_in=attacker), 1: USE_SPLASH_4})  # fresh stint
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert hp > defender.live_stats.HP  # works again on the new switch-in
+
+
+def test_dream_eater_fails_unless_the_target_is_asleep():
+    awake = _mk()
+    state = _battle([_mk(first="Dream Eater")], [awake])
+    hp = awake.live_stats.HP
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert hp == awake.live_stats.HP
+
+
+def test_dream_eater_drains_from_a_sleeping_target():
+    asleep = _mk(status=Status.SLEEP)
+    asleep.status_turns = 3  # stays asleep even if it acts first this turn
+    attacker = _mk(first="Dream Eater")
+    attacker.live_stats.HP -= 20
+    state = _battle([attacker], [asleep])
+    hp = asleep.live_stats.HP
+    hp_before_drain = attacker.live_stats.HP
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert hp > asleep.live_stats.HP
+    assert hp_before_drain < attacker.live_stats.HP
 
 
 def test_body_press_attacks_with_defence():
@@ -230,6 +305,54 @@ def test_healing_wish_faints_the_user_and_restores_the_replacement():
     apply_forced_switch(state, 0, Action(action=ActionType.SWITCH_OUT, switch_in=partner))
     assert partner.live_stats.HP == partner.stat_totals.HP
     assert partner.status is Status.NONE
+
+
+def test_future_sight_lands_two_turns_after_it_is_used_not_immediately():
+    defender = _mk()
+    state = _battle([_mk(first="Future Sight")], [defender])
+    hp = defender.live_stats.HP
+
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert hp == defender.live_stats.HP  # nothing on the turn it is used
+
+    step(state, {0: USE_SPLASH_4, 1: USE_SPLASH_4})
+    assert hp == defender.live_stats.HP  # nor the turn after that
+
+    step(state, {0: USE_SPLASH_4, 1: USE_SPLASH_4})
+    assert hp > defender.live_stats.HP  # lands at the end of the second turn after use
+
+
+def test_future_sight_hits_whoever_is_in_that_slot_when_it_lands_even_a_switched_in_replacement():
+    replacement = _mk("R")
+    state = _battle([_mk(first="Future Sight")], [_mk(), replacement])
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    step(state, {0: USE_SPLASH_4, 1: Action(action=ActionType.SWITCH_OUT, switch_in=replacement)})
+    hp = replacement.live_stats.HP
+    step(state, {0: USE_SPLASH_4, 1: USE_SPLASH_4})
+    assert hp > replacement.live_stats.HP
+
+
+def test_a_second_future_sight_fails_while_one_is_already_pending():
+    attacker = _mk(first="Future Sight")
+    state = _battle([attacker], [_mk()])
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    turns_after_first_use = state.sides[1].future_sight_turns
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})  # a second attempt while one is already queued
+    # the retry must not have restarted the countdown — it only ticks down by the residual phase
+    assert state.sides[1].future_sight_turns == turns_after_first_use - 1
+
+
+def test_future_sight_queues_despite_a_currently_immune_target_and_checks_type_on_landing():
+    """The type match is only known for certain once it actually lands: the target could switch."""
+    dark_mon = _mk(types=(Type.DARK, None))
+    state = _battle([_mk(first="Future Sight")], [dark_mon])
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert state.sides[1].future_sight_turns > 0  # queued rather than failing outright
+
+    step(state, {0: USE_SPLASH_4, 1: USE_SPLASH_4})
+    hp = dark_mon.live_stats.HP
+    step(state, {0: USE_SPLASH_4, 1: USE_SPLASH_4})
+    assert hp == dark_mon.live_stats.HP  # Dark is immune to Psychic, so it does nothing once it lands
 
 
 def test_curse_by_a_ghost_afflicts_the_target():
@@ -530,3 +653,55 @@ def test_zero_to_hero_transforms_on_switch_out():
     step(state, {0: Action(action=ActionType.SWITCH_OUT, switch_in=partner), 1: USE_SPLASH_4})
     assert palafin.name == "Palafin-Hero"
     assert palafin.base_stats == get_species("Palafin-Hero").base_stats
+
+
+def _rolling_duel() -> tuple[Pokemon, Pokemon, BattleState]:
+    """A Rollout user against a wall too bulky to faint, so a whole run fits in one battle."""
+    attacker = _mk(first="Rollout")
+    defender = _mk(base_stats=BaseStats(HP=255, ATTACK=100, DEFENCE=255, SP_ATTACK=100, SP_DEFENCE=100, SPEED=1))
+    return attacker, defender, _battle([attacker], [defender])
+
+
+def _roll(turns: int) -> list[int]:
+    """Damage from each of `turns` consecutive Rollouts, the target topped up between them."""
+    attacker, defender, state = _rolling_duel()
+    dealt = []
+    for _ in range(turns):
+        defender.live_stats.HP = defender.stat_totals.HP
+        step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+        dealt.append(defender.stat_totals.HP - defender.live_stats.HP)
+    return dealt
+
+
+def test_rollout_doubles_with_every_connected_hit():
+    """30 -> 60 -> 120 -> 240 -> 480: the ramp is the entire point of the move."""
+    dealt = _roll(4)
+    assert all(later > earlier for earlier, later in zip(dealt, dealt[1:], strict=False)), dealt
+    assert dealt[3] >= 6 * dealt[0], f"four hits should be roughly eight times the first: {dealt}"
+
+
+def test_rollout_commits_the_user_until_the_run_ends():
+    attacker, _, state = _rolling_duel()
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert ExtraStatus.LOCKED_MOVE in attacker.volatiles
+    assert [a.move for a in legal_actions(state, 0)] == [MoveSlot.FIRST]  # no switching out of a rollout
+
+
+def test_a_finished_rollout_leaves_no_fatigue_and_starts_over():
+    """Unlike Outrage, a Rollout that runs its course carries no confusion — and the ramp resets."""
+    attacker, defender, state = _rolling_duel()
+    for _ in range(ROLLING_LOCK_TURNS):
+        defender.live_stats.HP = defender.stat_totals.HP
+        step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    assert ExtraStatus.CONFUSION not in attacker.volatiles
+    assert ExtraStatus.LOCKED_MOVE not in attacker.volatiles
+    assert attacker.rolling_hits == 0
+
+
+def test_a_different_move_resets_the_rollout_ramp():
+    attacker, _, state = _rolling_duel()
+    step(state, {0: USE_FIRST, 1: USE_SPLASH_4})
+    attacker.volatiles.pop(ExtraStatus.LOCKED_MOVE)  # let it choose freely again
+    attacker.locked_slot = None
+    step(state, {0: USE_TACKLE_2, 1: USE_SPLASH_4})
+    assert attacker.rolling_hits == 0

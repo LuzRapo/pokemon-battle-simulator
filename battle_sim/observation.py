@@ -37,7 +37,7 @@ from battle_sim.models.log_events import (
     WhiteHerbRestored,
 )
 from battle_sim.models.moves import MoveSlot
-from battle_sim.models.pokemon import Pokemon
+from battle_sim.models.pokemon import BelievedSet, Pokemon
 from battle_sim.models.spec import PokemonSpec
 from battle_sim.teams import build_pokemon
 from battle_sim.utils import CHOICE_ITEMS, Ability, Item
@@ -67,6 +67,7 @@ _SOURCE_ABILITIES: dict[str, Ability] = {
     "well_baked_body": Ability.WELL_BAKED_BODY,
 }
 _CONSUMED_SOURCES = frozenset({"weakness_policy", "seed"})
+_BELIEF_CANDIDATES = 12  # posterior sets kept per pokemon; the rest of the tail cannot move an expectation
 
 
 @dataclass
@@ -124,11 +125,40 @@ class SetPrior:
         drawn = rng.choices([spec for spec, _ in consistent], weights=[count for _, count in consistent])[0]
         return self._reconcile(drawn, knowledge)
 
+    def posterior(self, species: str, knowledge: Knowledge) -> list[tuple[float, PokemonSpec]]:
+        """Every reveal-consistent set with its normalised posterior weight, heaviest first.
+
+        The belief a threat estimate should average over, rather than the single modal set
+        `believe` returns for simulation.
+        """
+        consistent = self._consistent(species, knowledge)
+        total = sum(count for _, count in consistent)
+        return [(count / total, self._reconcile(spec, knowledge)) for spec, count in consistent]
+
     def _consistent(self, species: str, knowledge: Knowledge) -> list[tuple[PokemonSpec, int]]:
-        """The candidates tied at the best consistency score, still in frequency order."""
+        """Candidates matching every reveal, in frequency order; the closest ones if none match all.
+
+        Hard filtering is what makes the weights a posterior: a candidate contradicted by a revealed
+        move is not merely ranked lower, it is impossible. The relaxed fallback covers sets the prior
+        genuinely cannot represent — an illegal-looking reveal from Transform, or a species whose
+        corpus sets all predate the move — where an empty belief would be worse than a loose one.
+        """
         candidates = self._candidates[get_species(species).name]  # a missing species means the prior can't cover
+        matching = [(spec, count) for spec, count in candidates if self._matches(spec, knowledge)]
+        if matching:
+            return matching
         best = max(self._consistency(candidate, knowledge) for candidate, _ in candidates)
         return [(spec, count) for spec, count in candidates if self._consistency(spec, knowledge) == best]
+
+    def _matches(self, candidate: PokemonSpec, knowledge: Knowledge) -> bool:
+        """Whether a candidate set is consistent with every revealed fact."""
+        if not knowledge.moves.issubset(candidate.moves):
+            return False
+        if knowledge.ability is not None and candidate.ability is not knowledge.ability:
+            return False
+        if knowledge.item_gone:
+            return True  # a gone item rules nothing out: what was knocked off is what we never saw
+        return knowledge.item is None or candidate.item is knowledge.item
 
     def _consistency(self, candidate: PokemonSpec, knowledge: Knowledge) -> int:
         score = sum(1 for move in knowledge.moves if move in candidate.moves)
@@ -155,6 +185,28 @@ class SetPrior:
         return candidate.model_copy(update={"moves": moves, "ability": ability, "item": item})
 
 
+def believed_sets(
+    prior: SetPrior, species: str, knowledge: Knowledge, candidates: int = _BELIEF_CANDIDATES
+) -> tuple[BelievedSet, ...]:
+    """The posterior over one opposing pokemon's set, trimmed to the candidates worth averaging over.
+
+    The tail past `candidates` is renormalised away rather than kept: threat is an expectation
+    evaluated at every search leaf, and a candidate holding a percent of the mass cannot move it
+    enough to pay for its damage calculations.
+    """
+    weighted = prior.posterior(species, knowledge)[:candidates]
+    total = sum(weight for weight, _ in weighted)
+    return tuple(
+        BelievedSet(
+            weight=weight / total,
+            moves=tuple(get_move(name) for name in spec.moves),
+            item=Item.NONE if knowledge.item_gone else spec.item,
+            ability=spec.ability,
+        )
+        for weight, spec in weighted
+    )
+
+
 @dataclass
 class _View:
     version: int
@@ -166,9 +218,17 @@ class _View:
 class BattleObserver:
     """Accumulates reveals from battle logs and serves each side the battle as it sees it."""
 
-    def __init__(self, state: BattleState, prior: SetPrior):
+    def __init__(self, state: BattleState, prior: SetPrior, belief_candidates: tuple[int, int] | None = None):
+        """`belief_candidates` caps each viewer's set posterior independently.
+
+        Per viewer because that is what makes a belief model measurable: two sides differing only
+        in how many candidate sets they average over can be run against each other in one battle,
+        where same-seed side pairs cancel team and roll variance. A cap of 1 is the degenerate
+        model that commits to the single likeliest set.
+        """
         self._state = state
         self._prior = prior
+        self._belief_candidates = belief_candidates or (_BELIEF_CANDIDATES, _BELIEF_CANDIDATES)
         for side in state.sides:
             nicknames = [mon.nickname for mon in side.team]
             if len(set(nicknames)) != len(nicknames):
@@ -363,10 +423,13 @@ class BattleObserver:
             else:
                 if previous is not None:
                     self._retired.append(previous.believed[index])  # pin: cache keys are id()s, never reused
-                spec = self._prior.believe(self._preview_species[opponent][mon.nickname], knowledge)
+                preview = self._preview_species[opponent][mon.nickname]
+                spec = self._prior.believe(preview, knowledge)
                 # The current forme is public; the set behind it is still the prior's guess.
                 update = {"species": mon.name, "nickname": mon.nickname, "level": mon.level}
-                believed.append(build_pokemon(spec.model_copy(update=update)))
+                guess = build_pokemon(spec.model_copy(update=update))
+                guess.believed_sets = believed_sets(self._prior, preview, knowledge, self._belief_candidates[viewer])
+                believed.append(guess)
             mon_versions.append(knowledge.version)
         state = self._assemble(viewer, believed)
         return _View(version=self._versions[opponent], state=state, believed=believed, mon_versions=mon_versions)

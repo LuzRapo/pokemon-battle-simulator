@@ -1,6 +1,7 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from enum import Enum, auto
 from functools import partial
+from pathlib import Path
 
 from battle_sim.engine import apply_forced_switch, legal_actions, step
 from battle_sim.evolution import Team
@@ -9,6 +10,7 @@ from battle_sim.mechanics.battle import BattleState
 from battle_sim.mechanics.log import BattleLog, render_text
 from battle_sim.models.actions import Action
 from battle_sim.observation import BattleObserver, SetPrior
+from battle_sim.platform_log import Origin, log_battle, log_matchup
 from battle_sim.runner import Determinizing, Player, build_side
 from battle_sim.teams import build_pokemon, export_to_showdown
 
@@ -31,7 +33,19 @@ class InteractiveBattle:
         prior: SetPrior,
         seed: int,
         human_order: Sequence[int],
+        record: Path | None = None,
+        trainer: str = "human",
     ):
+        """`record` is the platform log both teams are written to before the first turn.
+
+        Before, because a battle abandoned halfway still tells us what a person chose to bring,
+        and that is the half of the record a set prior is built from.
+        """
+        if record is not None:
+            log_matchup(record, trainer, "boss", (tuple(human_team), tuple(ai_team)), (Origin.HUMAN, Origin.GENERATED))
+        self._record = record
+        self._trainer = trainer
+        self._seed = seed
         preview_of_human = [prior.preview(spec.species, spec.level) for spec in human_team]
         ai_order = ai.choose_order(ai_team, preview_of_human)
         self.state = BattleState(
@@ -65,17 +79,39 @@ class InteractiveBattle:
     def options(self) -> list[Action]:
         return legal_actions(self.state, HUMAN)
 
-    def submit(self, action: Action) -> None:
-        """Advance the battle with the human's action for the current phase."""
+    def submit(self, action: Action, pivot_reply: Action | None = None) -> None:
+        """Advance the battle with the human's action for the current phase.
+
+        `pivot_reply` is who should come in if `action` turns out to force a same-turn switch (a
+        self-switch move connecting) — decided up front, the same way the AI always answers, since
+        nobody can be asked mid-resolution. A fast pivot now protects its user exactly like the AI's
+        always has, provided the caller collected a reply; without one (or outside Phase.CHOOSE, or
+        a switch forced by something other than this move, e.g. Eject Button) it is left for
+        `Phase.REPLACE`, same as before this existed.
+        """
         phase = self.phase
         if phase is Phase.OVER:
             raise ValueError("The battle is over; nothing left to submit.")
         if phase is Phase.CHOOSE:
             ai_action = self._ai.choose_action(self.observer.view(AI), AI, legal_actions(self.state, AI))
-            self._log(step(self.state, {HUMAN: action, AI: ai_action}))
+            chooser = self._switch_chooser(pivot_reply)
+            self._log(step(self.state, {HUMAN: action, AI: ai_action}, switch_chooser=chooser))
         else:
             self._log(apply_forced_switch(self.state, HUMAN, action))
         self._resolve_ai_replacements()
+        if self._record is not None and self.state.outcome is not None:
+            log_battle(self._record, self._trainer, "boss", self._seed, self.state.outcome, self.state.turn)
+
+    def _switch_chooser(self, pivot_reply: Action | None) -> Callable[[BattleState, int], Action | None]:
+        """The AI answers a mid-turn pivot switch on the spot; the human's own reply is whatever
+        `submit` was given for this action, decided before either side's move was known."""
+
+        def chooser(state: BattleState, side_index: int) -> Action | None:
+            if side_index == AI:
+                return self._ai.choose_action(self.observer.view(AI), AI, legal_actions(state, AI))
+            return pivot_reply
+
+        return chooser
 
     def _resolve_ai_replacements(self) -> None:
         """The runner's replacement loop, but only for the AI; the human's wait for the interface.

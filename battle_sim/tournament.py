@@ -16,7 +16,7 @@ from battle_sim.matchup import MatchupPlayer, MatchupWeights
 from battle_sim.observation import SetPrior
 from battle_sim.players import BasicPlayer
 from battle_sim.runner import Player, run_battle
-from battle_sim.search import SearchPlayer, SearchProfile
+from battle_sim.search import SearchPlayer, SearchProfile, gated_mixture, row_values
 
 type PairSpec = tuple[Team, Team, int]  # (team a, team b, seed) — one same-seed side pair
 
@@ -92,6 +92,28 @@ def _ranking(labels: Sequence[str], pairings: Sequence[Pairing]) -> str:
     return "\n".join(lines)
 
 
+def _nash_ranking(labels: Sequence[str], pairings: Sequence[Pairing]) -> str:
+    """Strength against the field's *equilibrium* mixture rather than its flat average.
+
+    Mean-vs-field is the statistic non-transitivity breaks: it rewards beating whoever happens to be
+    in the pool, so padding the field with agents that one entrant farms inflates that entrant. This
+    matrix has real cycles (a > b > c > a), so a flat mean has no fixed meaning. Scoring against the
+    equilibrium mixture instead asks the question that survives cycles — how does this agent do
+    against the toughest distribution of opponents the pool can field — and it reuses the same
+    zero-sum solver the search already runs on payoff matrices.
+    """
+    margins = {(p.a, p.b): p.margin for p in pairings} | {(p.b, p.a): 1 - p.margin for p in pairings}
+    matrix = [[0.0 if a == b else margins[a, b] - 0.5 for b in labels] for a in labels]
+    values = row_values(matrix)
+    mixture = gated_mixture(matrix)
+    ranked = sorted(zip(labels, values, mixture, strict=True), key=lambda row: row[1], reverse=True)
+    lines = [
+        f"  {rank + 1}. {label:<14} {value:+.4f}" + (f"   equilibrium weight {weight:.2f}" if weight > 0 else "")
+        for rank, (label, value, weight) in enumerate(ranked)
+    ]
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Round-robin: every genome, myopic and searching, vs every other.")
     parser.add_argument("champions", nargs="*", type=Path, help="champion weight JSONs (stock is always included)")
@@ -129,7 +151,8 @@ def main() -> None:
         rate = len(pairs) * 2 / (time.monotonic() - started)
         print(f"\n{label_a:>12} vs {label_b:<12} {margin:.3f} ± {ci:.3f}  ({rate:.1f}/s)")
     labels = [label for label, _ in players]
-    print(f"\nmean margin vs the field:\n{_ranking(labels, pairings)}")
+    print(f"\nstrength vs the field's equilibrium mixture (cycle-proof):\n{_nash_ranking(labels, pairings)}")
+    print(f"\nmean margin vs the field (flat average, distorted by cycles):\n{_ranking(labels, pairings)}")
     print(f"\nmargin matrix (row vs column):\n{_matrix(labels, pairings)}")
 
 

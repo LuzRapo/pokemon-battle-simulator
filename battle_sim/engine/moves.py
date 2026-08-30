@@ -4,7 +4,7 @@ from battle_sim.database.loader import get_move
 from battle_sim.engine.coded import _apply_coded
 from battle_sim.engine.damage_apply import _apply_damage, _apply_fixed_damage
 from battle_sim.engine.field_apply import _apply_field_effect, _apply_remove_hazards, _apply_side_condition
-from battle_sim.engine.power import coded_move_fails
+from battle_sim.engine.power import ROLLING_LOCK_TURNS, ROLLING_MOVES, coded_move_fails
 from battle_sim.engine.status_apply import _apply_stage_change, _apply_status
 from battle_sim.engine.switching import _force_random_switch
 from battle_sim.maths.damage import move_effectiveness
@@ -29,10 +29,12 @@ from battle_sim.models.log_events import (
     NoEffect,
     PpRestored,
     Protected,
+    RecoilDamage,
     ScreenFaded,
     SelfSwitchPending,
     StatusCleared,
     TauntBlocked,
+    ZMoveUnleashed,
 )
 from battle_sim.models.moves import (
     CodedEffect,
@@ -42,6 +44,7 @@ from battle_sim.models.moves import (
     InflictStatusEffect,
     Move,
     MoveEffect,
+    MoveSlot,
     PseudoWeatherEffect,
     RemoveHazardsEffect,
     SideConditionEffect,
@@ -51,10 +54,14 @@ from battle_sim.models.moves import (
 )
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.utils import Ability, Category, ExtraStatus, Item, Stats, Status, Target, Type, Weather
+from battle_sim.zmoves import z_move_for
 
 _DEFENDER_FACING_TARGETS = frozenset({Target.SINGLE_OPPONENT, Target.ALL_ADJACENT_ENEMIES, Target.ALL_ADJACENT})
 _CHOICE_ITEMS = frozenset({Item.CHOICE_BAND, Item.CHOICE_SPECS, Item.CHOICE_SCARF})
 _STRUGGLE = get_move("Struggle")
+# These carry a real DamageEffect for engine.residuals to apply two turns on (see CodedMoveKind.
+# FUTURE_SIGHT); the effect must not also land immediately on the turn the move is used.
+_DELAYED_DAMAGE_MOVES = frozenset({"Future Sight", "Doom Desire"})
 
 
 def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bottom in priority order; that IS the contract
@@ -116,6 +123,18 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
             attacker.pp[slot] = min(10, move.pp)
             log.add(PpRestored(side=side_index, pokemon=attacker.nickname, move=move.name))
 
+    if action.z_move and not side.has_used_z_move:
+        # Spent after the base move's PP is paid: a Z-move costs the slot it upgrades, not extra.
+        upgraded = z_move_for(attacker.item, move)
+        if upgraded is not None:
+            # The slot keeps its own move for logging: `BattleObserver` treats every MoveUsed name as
+            # a move that fills a slot, and a Z-move name fills none — believing one would make the
+            # opponent's set unbuildable. Using the Z-move still reveals the base move, which is the
+            # true inference anyway.
+            log.add(ZMoveUnleashed(side=side_index, pokemon=attacker.nickname, move=upgraded.name))
+            move = replace(upgraded, name=move.name)
+            side.has_used_z_move = True
+
     if ExtraStatus.TAUNT in attacker.volatiles and move.category is Category.STATUS:
         log.add(TauntBlocked(side=side_index, pokemon=attacker.nickname, move=move.name))
         return
@@ -132,6 +151,8 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
 
     log.add(MoveUsed(side=side_index, pokemon=attacker.nickname, move=move.name))
     attacker.last_move_slot = slot
+    if move.name not in ROLLING_MOVES:
+        attacker.rolling_hits = 0  # any other move ends the run, so the next Rollout starts from base
     if attacker.item in _CHOICE_ITEMS and attacker.choice_locked_move is None:
         attacker.choice_locked_move = action.move
 
@@ -176,10 +197,14 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
 
     if move.protectable and move.target in _DEFENDER_FACING_TARGETS and ExtraStatus.PROTECT in defender.volatiles:
         log.add(Protected(side=defender_index, pokemon=defender.nickname))
+        _break_rolling(attacker)
+        _apply_crash_damage(move, attacker, side_index, log)
         return
 
     if not _accuracy_check(move, attacker, defender, state.field, state.rng):
         log.add(MoveMissed())
+        _break_rolling(attacker)
+        _apply_crash_damage(move, attacker, side_index, log)
         return
 
     if not move.effects and not move.force_switch:
@@ -196,9 +221,15 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
             {"move_type": move.type, "category": move.category, "defender_index": defender_index},
         )
         if payload.get("absorbed", False):
+            _apply_crash_damage(move, attacker, side_index, log)
             return
-    if damaging and move_effectiveness(move, attacker, defender) == 0:
+    if (
+        damaging
+        and move.name not in _DELAYED_DAMAGE_MOVES  # effectiveness is checked fresh when it actually lands
+        and move_effectiveness(move, attacker, defender) == 0
+    ):
         log.add(NoEffect(side=defender_index, pokemon=defender.nickname))
+        _apply_crash_damage(move, attacker, side_index, log)
         return
 
     if move.name in _SCREEN_BREAKERS:
@@ -215,6 +246,8 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
     )
     log_before = len(log)
     for effect in move.effects:
+        if move.name in _DELAYED_DAMAGE_MOVES and isinstance(effect, DamageEffect):
+            continue  # the CodedEffect alongside it queues this for engine.residuals instead
         if defender.is_fainted() and _targets_defender(effect, move):
             continue  # self/side effects (boosts, hazard clearing) still apply after a KO
         _apply_effect(effect, move, attacker, side_index, defender, opponent_side, state, log, behind_substitute)
@@ -224,8 +257,11 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
 
     if len(log) == log_before:
         log.add(MoveFailed())
+        _apply_crash_damage(move, attacker, side_index, log)
         return
 
+    if move.name in ROLLING_MOVES:
+        _continue_rolling(attacker, slot)
     if move.recharges:
         attacker.volatiles[ExtraStatus.MUST_RECHARGE] = 1
     if move.self_destructs and not attacker.is_fainted():
@@ -236,6 +272,19 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
     if move.self_switch and not attacker.is_fainted() and has_healthy_bench:
         side.needs_switch = True
         log.add(SelfSwitchPending(side=side_index, pokemon=attacker.nickname))
+
+
+def _apply_crash_damage(move: Move, attacker: Pokemon, side_index: int, log: BattleLog) -> None:
+    """(High) Jump Kick: half the user's own max HP, rounded down, whenever the attack does not
+    land — blocked by Protect/Detect, a miss, absorbed by an ability, or any other failure — same as
+    every indirect source of damage, Magic Guard blocks it."""
+    if not move.has_crash_damage or attacker.ability is Ability.MAGIC_GUARD:
+        return
+    crash = max(1, attacker.stat_totals.HP // 2)
+    dealt = attacker.apply_damage(crash)
+    log.add(RecoilDamage(side=side_index, pokemon=attacker.nickname, amount=dealt))
+    if attacker.is_fainted():
+        log.add(Fainted(side=side_index, pokemon=attacker.nickname))
 
 
 def _sleep_talk_choice(attacker: Pokemon, rng: RNG) -> Move | None:
@@ -266,6 +315,50 @@ _TAUROS_BULL_TYPES: dict[str, Type] = {
     "Tauros-Paldea-Blaze": Type.FIRE,
     "Tauros-Paldea-Aqua": Type.WATER,
 }
+_JUDGMENT_PLATE_TYPES: dict[Item, Type] = {
+    Item.FIST_PLATE: Type.FIGHTING,
+    Item.SKY_PLATE: Type.FLYING,
+    Item.TOXIC_PLATE: Type.POISON,
+    Item.EARTH_PLATE: Type.GROUND,
+    Item.STONE_PLATE: Type.ROCK,
+    Item.INSECT_PLATE: Type.BUG,
+    Item.SPOOKY_PLATE: Type.GHOST,
+    Item.IRON_PLATE: Type.STEEL,
+    Item.FLAME_PLATE: Type.FIRE,
+    Item.SPLASH_PLATE: Type.WATER,
+    Item.MEADOW_PLATE: Type.GRASS,
+    Item.ZAP_PLATE: Type.ELECTRIC,
+    Item.MIND_PLATE: Type.PSYCHIC,
+    Item.ICICLE_PLATE: Type.ICE,
+    Item.DRACO_PLATE: Type.DRAGON,
+    Item.DREAD_PLATE: Type.DARK,
+    Item.PIXIE_PLATE: Type.FAIRY,
+}
+_MULTI_ATTACK_MEMORY_TYPES: dict[Item, Type] = {
+    Item.BUG_MEMORY: Type.BUG,
+    Item.DARK_MEMORY: Type.DARK,
+    Item.DRAGON_MEMORY: Type.DRAGON,
+    Item.ELECTRIC_MEMORY: Type.ELECTRIC,
+    Item.FAIRY_MEMORY: Type.FAIRY,
+    Item.FIGHTING_MEMORY: Type.FIGHTING,
+    Item.FIRE_MEMORY: Type.FIRE,
+    Item.FLYING_MEMORY: Type.FLYING,
+    Item.GHOST_MEMORY: Type.GHOST,
+    Item.GRASS_MEMORY: Type.GRASS,
+    Item.GROUND_MEMORY: Type.GROUND,
+    Item.ICE_MEMORY: Type.ICE,
+    Item.POISON_MEMORY: Type.POISON,
+    Item.PSYCHIC_MEMORY: Type.PSYCHIC,
+    Item.ROCK_MEMORY: Type.ROCK,
+    Item.STEEL_MEMORY: Type.STEEL,
+    Item.WATER_MEMORY: Type.WATER,
+}
+_TECHNO_BLAST_DRIVE_TYPES: dict[Item, Type] = {
+    Item.DOUSE_DRIVE: Type.WATER,
+    Item.SHOCK_DRIVE: Type.ELECTRIC,
+    Item.BURN_DRIVE: Type.FIRE,
+    Item.CHILL_DRIVE: Type.ICE,
+}
 
 
 def _move_type_override(move: Move, attacker: Pokemon, state: BattleState) -> Type | None:
@@ -277,6 +370,12 @@ def _move_type_override(move: Move, attacker: Pokemon, state: BattleState) -> Ty
         return _OGERPON_CUDGEL_TYPES.get(attacker.name, Type.GRASS)
     if move.name == "Raging Bull":
         return _TAUROS_BULL_TYPES.get(attacker.name)
+    if move.name == "Judgment":
+        return _JUDGMENT_PLATE_TYPES.get(attacker.item)
+    if move.name == "Multi-Attack":
+        return _MULTI_ATTACK_MEMORY_TYPES.get(attacker.item)
+    if move.name == "Techno Blast":
+        return _TECHNO_BLAST_DRIVE_TYPES.get(attacker.item)
     return None
 
 
@@ -324,10 +423,39 @@ def _apply_heal(effect: HealEffect, attacker: Pokemon, attacker_side_index: int,
         log.add(Healed(side=attacker_side_index, pokemon=attacker.nickname, amount=healed))
 
 
+def _continue_rolling(attacker: Pokemon, slot: MoveSlot) -> None:
+    """Bank a connected Rollout and commit the user to the run.
+
+    The lock is what pays for the doubling: the games give no way out of a Rollout once it is
+    rolling, and `legal_actions` reads `locked_slot` to enforce exactly that.
+    """
+    attacker.rolling_hits += 1
+    if ExtraStatus.LOCKED_MOVE not in attacker.volatiles:
+        attacker.volatiles[ExtraStatus.LOCKED_MOVE] = ROLLING_LOCK_TURNS
+        attacker.locked_slot = slot
+
+
+def _break_rolling(attacker: Pokemon) -> None:
+    """A miss or a Protect ends the run, power and commitment together."""
+    attacker.rolling_hits = 0
+    if attacker.locked_slot is not None and _is_rolling_slot(attacker):
+        del attacker.volatiles[ExtraStatus.LOCKED_MOVE]
+        attacker.locked_slot = None
+
+
+def _is_rolling_slot(attacker: Pokemon) -> bool:
+    if attacker.locked_slot is None or ExtraStatus.LOCKED_MOVE not in attacker.volatiles:
+        return False
+    locked = attacker.moves[attacker.locked_slot]
+    return locked is not None and locked.name in ROLLING_MOVES
+
+
 def _can_act(pokemon: Pokemon, side_index: int, rng: RNG, log: BattleLog, sleep_talking: bool = False) -> bool:
     if ExtraStatus.MUST_RECHARGE in pokemon.volatiles:
         del pokemon.volatiles[ExtraStatus.MUST_RECHARGE]
         log.add(CantAct(side=side_index, pokemon=pokemon.nickname, reason="recharge"))
+        return False
+    if pokemon.ability is Ability.TRUANT and not _truant_allows_acting(pokemon, side_index, log):
         return False
     if not _status_allows_acting(pokemon, side_index, rng, log, sleep_talking):
         return False
@@ -339,6 +467,17 @@ def _can_act(pokemon: Pokemon, side_index: int, rng: RNG, log: BattleLog, sleep_
     if pokemon.status is Status.PARALYSIS and rng.roll_chance(0.25):
         log.add(CantAct(side=side_index, pokemon=pokemon.nickname, reason="paralysis"))
         return False
+    return True
+
+
+def _truant_allows_acting(pokemon: Pokemon, side_index: int, log: BattleLog) -> bool:
+    """Truant alternates: loaf, then act, then loaf again. `volatiles.clear()` on switch-out means a
+    fresh stint always starts able to act, exactly as it does when Slaking is first sent out."""
+    if ExtraStatus.LOAFING in pokemon.volatiles:
+        del pokemon.volatiles[ExtraStatus.LOAFING]
+        log.add(CantAct(side=side_index, pokemon=pokemon.nickname, reason="loafing"))
+        return False
+    pokemon.volatiles[ExtraStatus.LOAFING] = 1
     return True
 
 

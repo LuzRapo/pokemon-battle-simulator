@@ -10,11 +10,14 @@
 
 from collections.abc import Callable
 
+from battle_sim.engine.damage_apply import _apply_damage
+from battle_sim.engine.power import ROLLING_MOVES
 from battle_sim.mechanics.battle import BattleState, SideState, effective_weather
 from battle_sim.mechanics.events import Event, EventBus, EventContext, HandlerResult, Payload, ResidualOrder
 from battle_sim.mechanics.log import BattleLog
 from battle_sim.models.log_events import (
     Fainted,
+    FutureAttackLands,
     Healed,
     LeechSeedSap,
     PseudoWeatherEnded,
@@ -28,6 +31,7 @@ from battle_sim.models.log_events import (
     VolatileInflicted,
     WeatherFaded,
 )
+from battle_sim.models.moves import DamageEffect
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.utils import Ability, ExtraStatus, Status, Terrain, Type, Weather
 
@@ -45,7 +49,7 @@ def _apply_residuals(state: BattleState, log: BattleLog) -> None:
             if active.is_fainted():
                 log.add(Fainted(side=side_index, pokemon=active.nickname))
             _tick_volatiles(active, side_index, log)
-        _tick_side_durations(side, side_index, log)
+        _tick_side_durations(state, side, side_index, log)
 
 
 def _ensure_core_residual_handlers(bus: EventBus) -> None:
@@ -189,8 +193,12 @@ def _locked_move(context: EventContext, payload: Payload) -> HandlerResult | Non
     active.volatiles[ExtraStatus.LOCKED_MOVE] -= 1
     if active.volatiles[ExtraStatus.LOCKED_MOVE] > 0:
         return None
+    locked = active.moves[active.locked_slot] if active.locked_slot is not None else None
     del active.volatiles[ExtraStatus.LOCKED_MOVE]
     active.locked_slot = None
+    active.rolling_hits = 0
+    if locked is not None and locked.name in ROLLING_MOVES:
+        return None  # Rollout runs its course without fatigue; only the rampage moves confuse
     if ExtraStatus.CONFUSION not in active.volatiles:  # fatigue (PS lockedmove onEnd)
         active.volatiles[ExtraStatus.CONFUSION] = context.rng.random_integer(2, 6)
         context.log.add(
@@ -263,16 +271,25 @@ def _tick_volatiles(active: Pokemon, side_index: int, log: BattleLog) -> None:
     _tick_countdown(active, side_index, ExtraStatus.SLOW_START, "slow_start_ended", log)
 
 
-def _tick_side_durations(side: SideState, side_index: int, log: BattleLog) -> None:
-    if side.wish_turns > 0:
-        side.wish_turns -= 1
-        if side.wish_turns == 0:
-            recipient = side.active_pokemon
-            if not recipient.is_fainted():
-                healed = recipient.apply_healing(side.wish_pending)
-                if healed > 0:
-                    log.add(Healed(side=side_index, pokemon=recipient.nickname, amount=healed))
-            side.wish_pending = 0
+def _tick_wish(side: SideState, side_index: int, log: BattleLog) -> None:
+    if side.wish_turns == 0:
+        return
+    side.wish_turns -= 1
+    if side.wish_turns == 0:
+        recipient = side.active_pokemon
+        if not recipient.is_fainted():
+            healed = recipient.apply_healing(side.wish_pending)
+            if healed > 0:
+                log.add(Healed(side=side_index, pokemon=recipient.nickname, amount=healed))
+        side.wish_pending = 0
+
+
+def _tick_side_durations(state: BattleState, side: SideState, side_index: int, log: BattleLog) -> None:
+    _tick_wish(side, side_index, log)
+    if side.future_sight_turns > 0:
+        side.future_sight_turns -= 1
+        if side.future_sight_turns == 0:
+            _resolve_future_sight(state, side, side_index, log)
     if side.tailwind_turns > 0:
         side.tailwind_turns -= 1
         if side.tailwind_turns == 0:
@@ -282,3 +299,25 @@ def _tick_side_durations(side: SideState, side_index: int, log: BattleLog) -> No
         if side.screens[screen] <= 0:
             del side.screens[screen]
             log.add(ScreenFaded(side=side_index, screen=screen))
+
+
+def _resolve_future_sight(state: BattleState, side: SideState, side_index: int, log: BattleLog) -> None:
+    """Land the queued hit on whoever is at this position now, using the attacker's current stats —
+    it may not be the same Pokemon that was here when Future Sight/Doom Desire was used."""
+    attacker = side.future_sight_attacker
+    move = side.future_sight_move
+    side.future_sight_attacker = None
+    side.future_sight_move = None
+    assert attacker is not None and move is not None  # only reached when the countdown hit zero
+    defender = side.active_pokemon
+    if defender.is_fainted():
+        return
+    attacker_side_index = 1 - side_index
+    effect = next(e for e in move.effects if isinstance(e, DamageEffect))
+    behind_substitute = (
+        ExtraStatus.SUBSTITUTE in defender.volatiles
+        and not move.bypass_substitute
+        and attacker.ability is not Ability.INFILTRATOR
+    )
+    log.add(FutureAttackLands(side=side_index, pokemon=defender.nickname, move=move.name))
+    _apply_damage(effect, move, attacker, attacker_side_index, defender, side, state, log, behind_substitute)

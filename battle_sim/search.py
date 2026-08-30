@@ -1,5 +1,6 @@
+import math
 import random
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from battle_sim.analysis import EDGE_CAP, exchange_edge, hazard_pressure
@@ -7,7 +8,7 @@ from battle_sim.engine import apply_forced_switch, legal_actions, step
 from battle_sim.matchup import MatchupPlayer, MatchupWeights
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
-from battle_sim.models.actions import Action
+from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.moves import MoveSet
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.spec import PokemonSpec
@@ -18,6 +19,34 @@ from battle_sim.utils import Outcome, Status
 _MAX_DEPTH = 8
 _WIN_VALUE = 100.0  # dwarfs every positional term; material on top keeps "win bigger" preferred
 _MIX_FLOOR = 0.1  # post-averaging dust below this never gets sampled
+_TIE_TOLERANCE = 1e-9  # rows this close to the best are the same row as far as a payoff estimate knows
+
+type LeafEvaluator = Callable[[BattleState, int], float]
+
+
+@dataclass(frozen=True)
+class PositionWeights:
+    """The coefficients `evaluate_position` needs, split out from the action-scoring genome.
+
+    `MatchupWeights` was serving two unrelated jobs: ranking actions inside one choice set, and
+    valuing a position on an absolute scale. Those want different numbers — a coefficient can be
+    unidentifiable for ranking (a feature constant across the choice set cancels in a softmax) while
+    being live and load-bearing here. Fitting the shared vector to observed play therefore poisoned
+    the leaf evaluator with values that were never constrained by the objective. Defaults derive
+    from the genome, so an evolved champion behaves exactly as before.
+    """
+
+    exchange_edge: float = 0.6
+    hazard_value: float = 0.6
+    timer_value: float = 0.5
+
+    @classmethod
+    def from_matchup(cls, weights: MatchupWeights) -> "PositionWeights":
+        return cls(
+            exchange_edge=weights.exchange_edge,
+            hazard_value=weights.hazard_value,
+            timer_value=weights.timer_value,
+        )
 
 
 @dataclass(frozen=True)
@@ -29,6 +58,14 @@ class SearchProfile:
     root_k: int = 5
     chance_samples: int = 2
     determinizations: int = 1
+    switch_tax: float = 0.15  # what a switch must earn to be worth the free turn it concedes
+    exploit_p: float = 0.0  # weight on the opponent's predicted policy vs their equilibrium mixture
+    predict_temperature: float = 1.0  # how sharp that prediction is; -> 0 predicts their best action outright
+    # How much of the genome's own ranking is blended into the searched payoffs. 1.0 (equal say to
+    # the search's own payoff) is the smallest weight that reliably breaks near-ties the search
+    # can't otherwise separate in its own favor — see `with_genome_prior`; 0.5 measurably left some
+    # of them unresolved (e.g. a full-HP Rest sampled about as often as a real attack against it).
+    genome_prior: float = 1.0
 
 
 def clone_for_search(state: BattleState, seed: int) -> BattleState:
@@ -72,6 +109,8 @@ def _clone_side(side: SideState, mapping: dict[int, Pokemon]) -> SideState:
         wish_turns=side.wish_turns,
         healing_wish_pending=side.healing_wish_pending,
         pending_substitute=side.pending_substitute,
+        has_mega_evolved=side.has_mega_evolved,  # without this every lookahead line would mega again
+        has_used_z_move=side.has_used_z_move,  # likewise: one Z-move per line, not per node
     )
 
 
@@ -89,7 +128,7 @@ def _clone_pokemon(mon: Pokemon, mapping: dict[int, Pokemon]) -> Pokemon:
     return clone
 
 
-def evaluate_position(state: BattleState, side_index: int, weights: MatchupWeights) -> float:
+def evaluate_position(state: BattleState, side_index: int, weights: PositionWeights) -> float:
     """State value in units of pokemon: material differential plus gene-weighted position."""
     material = _material(state.sides[side_index]) - _material(state.sides[1 - side_index])
     if state.outcome is not None:
@@ -162,11 +201,74 @@ def gated_mixture(matrix: list[list[float]], iterations: int = 256) -> list[floa
     return [weight / total for weight in gated]
 
 
-def row_values(matrix: list[list[float]], iterations: int = 256) -> list[float]:
-    """Each row's expected value against the column player's equilibrium mixture."""
+def column_equilibrium(matrix: list[list[float]], iterations: int = 256) -> list[float]:
+    """The column player's equilibrium mixture: their own solve of the game they are losing."""
     transposed = [[-matrix[i][j] for i in range(len(matrix))] for j in range(len(matrix[0]))]
     column, _ = solve_zero_sum(transposed, iterations)
+    return column
+
+
+def row_values(matrix: list[list[float]], iterations: int = 256) -> list[float]:
+    """Each row's expected value against the column player's equilibrium mixture."""
+    return _values_against(matrix, column_equilibrium(matrix, iterations))
+
+
+def _values_against(matrix: list[list[float]], column: Sequence[float]) -> list[float]:
     return [sum(weight * cell for weight, cell in zip(column, row, strict=True)) for row in matrix]
+
+
+def with_genome_prior(
+    matrix: list[list[float]], my_actions: Sequence[Action], scores: dict[int, float], weight: float
+) -> list[list[float]]:
+    """Blend the genome's own ranking into the payoffs, so what the search cannot separate falls its way.
+
+    A depth-limited payoff estimate can only resolve differences bigger than its own noise, and
+    below that its ordering is arbitrary — which is how an Arceus recovers into a losing race, or a
+    Miltank with one attack left spends five turns on a move that cannot do anything. Both were
+    ranked correctly by the genome and overturned by the search on margins under 0.05. Adding a
+    fraction of the genome's score to every cell in a row leaves any real searched edge intact and
+    hands the near-ties to the scorer that knows an attack from an inert move.
+    """
+    if weight <= 0:
+        return matrix
+    return [
+        [cell + weight * scores[id(action)] for cell in row] for row, action in zip(matrix, my_actions, strict=True)
+    ]
+
+
+def taxed(matrix: list[list[float]], my_actions: Sequence[Action], switch_tax: float) -> list[list[float]]:
+    """The payoff matrix with a standing charge on switching.
+
+    Switching hands the opponent a free turn, and a search that prices it at nothing will shuffle
+    two pokemon back and forth forever when neither attacking nor advancing looks better — which is
+    exactly what happens against an evasive staller, where attacks miss and switching resets the
+    toxic counter, so doing nothing scores best on every axis the evaluator can see. The tax is what
+    makes a switch have to *earn* its turn; a genuine pivot clears it easily.
+    """
+    if switch_tax <= 0:
+        return matrix
+    return [
+        [value - switch_tax if action.action is ActionType.SWITCH_OUT else value for value in row]
+        for action, row in zip(my_actions, matrix, strict=True)
+    ]
+
+
+def exploit_mixture(matrix: list[list[float]], predicted: Sequence[float], exploit_p: float) -> list[float]:
+    """Best response to an opponent who plays their predicted policy `exploit_p` of the time.
+
+    Equilibrium play is unexploitable and therefore leaves value on the table against anyone who
+    is not playing equilibrium — which is every human and most bots. Blending their predicted
+    policy into the column we answer buys that value back, and `exploit_p` is the dial: 0 is pure
+    equilibrium, 1 is a naive best response that a deliberate opponent could farm. The blend is
+    the practical form of a restricted Nash response, not its linear program: we hold the
+    adversarial part fixed at the equilibrium mixture rather than letting it re-optimise.
+    """
+    equilibrium = column_equilibrium(matrix)
+    blended = [(1 - exploit_p) * eq + exploit_p * guess for eq, guess in zip(equilibrium, predicted, strict=True)]
+    values = _values_against(matrix, blended)
+    best = max(values)
+    tied = [1.0 if value >= best - _TIE_TOLERANCE else 0.0 for value in values]
+    return [weight / sum(tied) for weight in tied]
 
 
 class _BudgetExhausted(Exception):
@@ -176,9 +278,31 @@ class _BudgetExhausted(Exception):
 class SearchPlayer:
     """The MatchupWeights genome driving a budgeted lookahead; a bigger budget is a smarter player."""
 
-    def __init__(self, weights: MatchupWeights = MatchupWeights(), profile: SearchProfile = SearchProfile(budget=64)):
+    def __init__(
+        self,
+        weights: MatchupWeights = MatchupWeights(),
+        profile: SearchProfile = SearchProfile(budget=64),
+        leaf_evaluator: LeafEvaluator | None = None,
+        position_weights: PositionWeights | None = None,
+        opponent_model: MatchupWeights | None = None,
+    ):
+        """`leaf_evaluator` replaces `evaluate_position`'s *non-terminal* scoring only — a resolved
+        outcome always goes through the hardcoded win/draw/loss handling below, since a learned
+        evaluator trained on live decision points never saw a post-game state during training.
+
+        `position_weights` defaults to the genome's own values, so an evolved champion is unchanged.
+        Pass it explicitly when the genome was fitted for action ranking rather than position value.
+
+        `opponent_model` is the genome we believe the *opponent* scores actions with — the job the
+        replay-fitted weights are actually good at, having lost badly as a policy. Without one the
+        search answers the equilibrium mixture, which is unexploitable and therefore never punishes
+        a predictable opponent; `SearchProfile.exploit_p` decides how far to trust it.
+        """
         self.weights = weights
+        self.position_weights = position_weights or PositionWeights.from_matchup(weights)
         self.profile = profile
+        self._opponent_model = MatchupPlayer(opponent_model) if opponent_model is not None else None
+        self._leaf_evaluator = leaf_evaluator
         self._mine = MatchupPlayer(weights)  # prunes my actions; keeps its per-battle cache
         self._theirs = MatchupPlayer(weights)  # prunes the opponent's, with a separate cache
         self._rollout = MatchupPlayer(weights)  # forced replacements inside simulated lines
@@ -187,6 +311,11 @@ class SearchPlayer:
         self._spent = 0
         self._sim_index = 0
         self._extend = False  # faint extensions joined the current iteration; off for the depth-1 safety net
+
+    def _leaf_value(self, state: BattleState, side_index: int) -> float:
+        if state.outcome is not None or self._leaf_evaluator is None:
+            return evaluate_position(state, side_index, self.position_weights)
+        return self._leaf_evaluator(state, side_index)
 
     def bind_belief_sampler(self, sampler: BeliefSampler) -> None:
         self._sampler = sampler
@@ -213,6 +342,7 @@ class SearchPlayer:
         if my_side.needs_switch or my_side.active_pokemon.is_fainted():
             return self._forced_choice(state, side_index, my_scored, fallback)
         my_actions = _top(my_scored, self.profile.root_k)
+        genome_scores = {id(action): score for score, action in my_scored}
         views = self._views(state)
         pruned = [(view, self._their_actions(view, side_index)) for view in views]
         mixture: list[float] | None = None
@@ -221,13 +351,16 @@ class SearchPlayer:
             # chance_samples simulations: violent positions must never silently degrade to the myopic fallback.
             self._extend = depth > 1
             try:
-                strategies = [self._view_strategy(v, side_index, my_actions, theirs, depth) for v, theirs in pruned]
+                strategies = [
+                    self._view_strategy(v, side_index, my_actions, theirs, depth, genome_scores) for v, theirs in pruned
+                ]
             except _BudgetExhausted:
                 break
             mixture = [sum(column) / len(strategies) for column in zip(*strategies, strict=True)]
         if mixture is None:
             return fallback
-        return self._sample(my_actions, mixture)
+        best_index = max(range(len(mixture)), key=lambda i: mixture[i])
+        return my_actions[best_index]
 
     def action_values(self, state: BattleState, side_index: int, actions: Sequence[Action]) -> list[float]:
         """One value per offered action — unpruned, in evaluate_position units — for grading decisions.
@@ -243,8 +376,7 @@ class SearchPlayer:
         my_side = state.sides[side_index]
         if my_side.needs_switch or my_side.active_pokemon.is_fainted():
             return [
-                evaluate_position(self._simulate_switch(state, side_index, action), side_index, self.weights)
-                for _, action in scored
+                self._leaf_value(self._simulate_switch(state, side_index, action), side_index) for _, action in scored
             ]
         their_actions = self._their_actions(state, side_index)
         my_actions = list(actions)
@@ -257,7 +389,7 @@ class SearchPlayer:
                 )
             except _BudgetExhausted:
                 break
-            values = row_values(matrix)
+            values = row_values(taxed(matrix, my_actions, self.profile.switch_tax))
         return values if values is not None else [score for score, _ in scored]
 
     def _views(self, state: BattleState) -> list[BattleState]:
@@ -274,10 +406,39 @@ class SearchPlayer:
         return _top(scored, self.profile.top_k)
 
     def _view_strategy(
-        self, view: BattleState, side_index: int, my_actions: list[Action], their_actions: list[Action], depth: int
+        self,
+        view: BattleState,
+        side_index: int,
+        my_actions: list[Action],
+        their_actions: list[Action],
+        depth: int,
+        scores: dict[int, float],
     ) -> list[float]:
         matrix = self._payoff_matrix(view, side_index, my_actions, their_actions, depth, self.profile.chance_samples)
+        matrix = taxed(matrix, my_actions, self.profile.switch_tax)
+        matrix = with_genome_prior(matrix, my_actions, scores, self.profile.genome_prior)
+        if self.profile.exploit_p > 0 and self._opponent_model is not None:
+            predicted = self._predicted_column(view, side_index, their_actions)
+            return exploit_mixture(matrix, predicted, self.profile.exploit_p)
         return gated_mixture(matrix)
+
+    def _predicted_column(self, view: BattleState, side_index: int, their_actions: Sequence[Action]) -> list[float]:
+        """What we expect the opponent to actually play, as a distribution over the matrix columns.
+
+        Temperature 1 is right for a genome fitted as a conditional logit, whose scores already
+        live on the scale where exponentiating them gives the choice probability. A genome tuned
+        for ranking does not: its scores are spread far too narrowly, and softmaxing them raw
+        returns something close to uniform, which predicts nothing. Sharpen for those.
+        """
+        assert self._opponent_model is not None  # only reached from the exploit branch
+        scored = self._opponent_model.score_actions(view, 1 - side_index, their_actions)
+        by_action = {id(action): score for score, action in scored}
+        temperature = self.profile.predict_temperature
+        scores = [by_action[id(action)] / temperature for action in their_actions]
+        highest = max(scores)
+        weights = [math.exp(score - highest) for score in scores]  # shifted: exp overflows on raw scores
+        total = sum(weights)
+        return [weight / total for weight in weights]
 
     def _sample[T](self, options: Sequence[T], mixture: Sequence[float]) -> T:
         """One draw from the mixture with dust floored away; the max weight always survives the floor."""
@@ -292,13 +453,22 @@ class SearchPlayer:
     def _forced_choice(
         self, state: BattleState, side_index: int, scored: list[tuple[float, Action]], fallback: Action
     ) -> Action:
-        """Mid-turn replacement: a unilateral one-ply lookahead over the offered switches."""
+        """Mid-turn replacement: a unilateral one-ply lookahead over the offered switches.
+
+        The leaf value's only per-candidate signal is `exchange_edge`, a ceil()-quantised turns
+        differential (see `_switch_features`'s docstring) that regularly ties switch-ins with very
+        different real matchups — an immunity and a 2x weakness against the same attacker land in
+        the same bucket as often as not. The myopic switch score already carries the finer,
+        unquantised signal built for exactly that blind spot (`incoming_damage_taken`,
+        `incoming_outspeeds`, ...), so it breaks the tie here the same way it breaks near-ties
+        during search, via `with_genome_prior`.
+        """
         if self.profile.budget < len(scored):
             return fallback
         best_value, best = -float("inf"), fallback
-        for _, action in scored:
+        for genome_score, action in scored:
             clone = self._simulate_switch(state, side_index, action)
-            value = evaluate_position(clone, side_index, self.weights)
+            value = self._leaf_value(clone, side_index) + self.profile.genome_prior * genome_score
             if value > best_value:
                 best_value, best = value, action
         return best
@@ -337,15 +507,18 @@ class SearchPlayer:
             side_index: _remap(my_action, state, clone, side_index),
             1 - side_index: _remap(their_action, state, clone, 1 - side_index),
         }
-        step(clone, actions)
+        # A pivot's switch is resolved the instant it's forced, same as the runner does for a real
+        # battle — otherwise the rollout would see the pivot's original mon take a hit that, in a
+        # real game, its replacement takes instead, and undervalue pivoting out of a bad matchup.
+        step(clone, actions, switch_chooser=lambda st, i: self._rollout.choose_action(st, i, legal_actions(st, i)))
         self._settle(clone)
         if clone.outcome is not None:
-            return evaluate_position(clone, side_index, self.weights)
+            return self._leaf_value(clone, side_index)
         if depth > 1:
             return self._node_value(clone, side_index, depth - 1)
         if self._extend and _fainted_count(clone) > fainted:
             return self._node_value(clone, side_index, 1)  # horizon extension: never evaluate mid-KO-exchange
-        return evaluate_position(clone, side_index, self.weights)
+        return self._leaf_value(clone, side_index)
 
     def _node_value(self, state: BattleState, side_index: int, depth: int) -> float:
         mine = MatchupPlayer(self.weights)  # per-node evaluators: clone sides never repeat

@@ -16,6 +16,7 @@ _ABILITY_SHOWDOWN_NAMES: dict[Ability, str] = {
     Ability.SAND_STREAM: "Sand Stream",
     Ability.SNOW_WARNING: "Snow Warning",
     Ability.LEVITATE: "Levitate",
+    Ability.WONDER_GUARD: "Wonder Guard",
     Ability.STURDY: "Sturdy",
     Ability.FLASH_FIRE: "Flash Fire",
     Ability.VOLT_ABSORB: "Volt Absorb",
@@ -183,6 +184,20 @@ _ABILITY_SHOWDOWN_NAMES: dict[Ability, str] = {
     Ability.AURA_BREAK: "Aura Break",
     Ability.SYNCHRONIZE: "Synchronize",
     Ability.SLOW_START: "Slow Start",
+    # Abilities introduced by Mega Evolution / Primal Reversion formes
+    Ability.TOUGH_CLAWS: "Tough Claws",
+    Ability.STRONG_JAW: "Strong Jaw",
+    Ability.MEGA_LAUNCHER: "Mega Launcher",
+    Ability.PARENTAL_BOND: "Parental Bond",
+    Ability.SAND_FORCE: "Sand Force",
+    Ability.AERILATE: "Aerilate",
+    Ability.PIXILATE: "Pixilate",
+    Ability.REFRIGERATE: "Refrigerate",
+    Ability.PRIMORDIAL_SEA: "Primordial Sea",
+    Ability.DESOLATE_LAND: "Desolate Land",
+    Ability.LIGHTNING_ROD: "Lightning Rod",
+    Ability.HEALER: "Healer",
+    Ability.TRUANT: "Truant",
 }
 _ABILITY_BY_SHOWDOWN_NAME: dict[str, Ability] = {
     normalize_id(name): ability for ability, name in _ABILITY_SHOWDOWN_NAMES.items()
@@ -292,8 +307,114 @@ _ITEM_SHOWDOWN_NAMES: dict[Item, str] = {
     Item.ROCK_MEMORY: "Rock Memory",
     Item.STEEL_MEMORY: "Steel Memory",
     Item.WATER_MEMORY: "Water Memory",
+    Item.DOUSE_DRIVE: "Douse Drive",
+    Item.SHOCK_DRIVE: "Shock Drive",
+    Item.BURN_DRIVE: "Burn Drive",
+    Item.CHILL_DRIVE: "Chill Drive",
+    # Mega Stones: held by the matching species to Mega Evolve; inert on anything else
+    Item.ABOMASITE: "Abomasite",
+    Item.ABSOLITE: "Absolite",
+    Item.AERODACTYLITE: "Aerodactylite",
+    Item.AGGRONITE: "Aggronite",
+    Item.ALAKAZITE: "Alakazite",
+    Item.ALTARIANITE: "Altarianite",
+    Item.AMPHAROSITE: "Ampharosite",
+    Item.AUDINITE: "Audinite",
+    Item.BANETTITE: "Banettite",
+    Item.BEEDRILLITE: "Beedrillite",
+    Item.BLASTOISINITE: "Blastoisinite",
+    Item.BLAZIKENITE: "Blazikenite",
+    Item.CAMERUPTITE: "Cameruptite",
+    Item.CHARIZARDITE_X: "Charizardite X",
+    Item.CHARIZARDITE_Y: "Charizardite Y",
+    Item.DIANCITE: "Diancite",
+    Item.GALLADITE: "Galladite",
+    Item.GARCHOMPITE: "Garchompite",
+    Item.GARDEVOIRITE: "Gardevoirite",
+    Item.GENGARITE: "Gengarite",
+    Item.GLALITITE: "Glalitite",
+    Item.GYARADOSITE: "Gyaradosite",
+    Item.HERACRONITE: "Heracronite",
+    Item.HOUNDOOMINITE: "Houndoominite",
+    Item.KANGASKHANITE: "Kangaskhanite",
+    Item.LATIASITE: "Latiasite",
+    Item.LATIOSITE: "Latiosite",
+    Item.LOPUNNITE: "Lopunnite",
+    Item.LUCARIONITE: "Lucarionite",
+    Item.MANECTITE: "Manectite",
+    Item.MAWILITE: "Mawilite",
+    Item.MEDICHAMITE: "Medichamite",
+    Item.METAGROSSITE: "Metagrossite",
+    Item.MEWTWONITE_X: "Mewtwonite X",
+    Item.MEWTWONITE_Y: "Mewtwonite Y",
+    Item.PIDGEOTITE: "Pidgeotite",
+    Item.PINSIRITE: "Pinsirite",
+    Item.SABLENITE: "Sablenite",
+    Item.SALAMENCITE: "Salamencite",
+    Item.SCEPTILITE: "Sceptilite",
+    Item.SCIZORITE: "Scizorite",
+    Item.SHARPEDONITE: "Sharpedonite",
+    Item.SLOWBRONITE: "Slowbronite",
+    Item.STEELIXITE: "Steelixite",
+    Item.SWAMPERTITE: "Swampertite",
+    Item.TYRANITARITE: "Tyranitarite",
+    Item.VENUSAURITE: "Venusaurite",
+    # Primal Reversion orbs
+    Item.BLUE_ORB: "Blue Orb",
+    Item.RED_ORB: "Red Orb",
+    # Z-Crystals: one Z-move per battle
+    Item.ALORAICHIUM_Z: "Aloraichium Z",
+    Item.BUGINIUM_Z: "Buginium Z",
+    Item.DARKINIUM_Z: "Darkinium Z",
+    Item.DECIDIUM_Z: "Decidium Z",
+    Item.DRAGONIUM_Z: "Dragonium Z",
+    Item.ELECTRIUM_Z: "Electrium Z",
+    Item.FAIRIUM_Z: "Fairium Z",
+    Item.FIGHTINIUM_Z: "Fightinium Z",
+    Item.FIRIUM_Z: "Firium Z",
+    Item.FLYINIUM_Z: "Flyinium Z",
+    Item.GHOSTIUM_Z: "Ghostium Z",
+    Item.GRASSIUM_Z: "Grassium Z",
+    Item.GROUNDIUM_Z: "Groundium Z",
+    Item.ICIUM_Z: "Icium Z",
+    Item.INCINIUM_Z: "Incinium Z",
+    Item.KOMMONIUM_Z: "Kommonium Z",
+    Item.LUNALIUM_Z: "Lunalium Z",
+    Item.LYCANIUM_Z: "Lycanium Z",
+    Item.MARSHADIUM_Z: "Marshadium Z",
+    Item.MEWNIUM_Z: "Mewnium Z",
+    Item.MIMIKIUM_Z: "Mimikium Z",
+    Item.NORMALIUM_Z: "Normalium Z",
+    Item.POISONIUM_Z: "Poisonium Z",
+    Item.PSYCHIUM_Z: "Psychium Z",
+    Item.ROCKIUM_Z: "Rockium Z",
+    Item.SOLGANIUM_Z: "Solganium Z",
+    Item.STEELIUM_Z: "Steelium Z",
+    Item.ULTRANECROZIUM_Z: "Ultranecrozium Z",
+    Item.EEVIUM_Z: "Eevium Z",
+    Item.PIKANIUM_Z: "Pikanium Z",
+    Item.PIKASHUNIUM_Z: "Pikashunium Z",
+    Item.PRIMARIUM_Z: "Primarium Z",
+    Item.SNORLIUM_Z: "Snorlium Z",
+    Item.TAPUNIUM_Z: "Tapunium Z",
+    Item.WATERIUM_Z: "Waterium Z",
 }
 _ITEM_BY_SHOWDOWN_NAME: dict[str, Item] = {normalize_id(name): item for item, name in _ITEM_SHOWDOWN_NAMES.items()}
+
+
+def ability_from_showdown(name: str) -> Ability:
+    """The `Ability` a Showdown ability name maps to; unmapped names are ones we don't model yet."""
+    return _ABILITY_BY_SHOWDOWN_NAME.get(normalize_id(name), Ability.NONE)
+
+
+def item_from_showdown(name: str) -> Item | None:
+    return _ITEM_BY_SHOWDOWN_NAME.get(normalize_id(name))
+
+
+def item_showdown_name(item: Item) -> str:
+    """Item.NONE and anything we hold but never name maps to the empty string."""
+    return _ITEM_SHOWDOWN_NAMES.get(item, "")
+
 
 _STAT_KEYS: dict[str, str] = {
     "HP": "HP",

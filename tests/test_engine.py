@@ -22,6 +22,7 @@ from battle_sim.models.log_events import (
     MultiHitSummary,
     NoEffect,
     Protected,
+    RecoilDamage,
     ResidualDamage,
     StatStageChanged,
     StatusInflicted,
@@ -36,6 +37,7 @@ from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.stats import BaseStats, EVs, IVs
 from battle_sim.models.type_matchups import TypePair
 from battle_sim.utils import (
+    Ability,
     ExtraStatus,
     Hazards,
     Item,
@@ -398,6 +400,59 @@ def test_pivot_move_does_not_set_flag_if_no_bench():
     use_u_turn = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
     step(state, {0: use_u_turn, 1: USE_SWORDS_DANCE})
     assert state.sides[0].needs_switch is False
+
+
+def test_a_switch_chooser_resolves_a_pivot_before_the_opponent_hits():
+    """Real games send U-turn's user out immediately: a still-pending opponent move must hit the
+    replacement, not the mon that just pivoted out."""
+    u_turn = get_move("U-turn")
+    attacker = _mk("A", moves=MoveSet(u_turn, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)
+    bench = _mk("A2")
+    defender = _mk("B")
+    state = _battle([attacker, bench], [defender])
+    use_u_turn = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+    switch_to_bench = Action(action=ActionType.SWITCH_OUT, switch_in=bench)
+
+    step(state, {0: use_u_turn, 1: USE_TACKLE}, switch_chooser=lambda s, i: switch_to_bench if i == 0 else None)
+
+    assert attacker.live_stats.HP == attacker.stat_totals.HP  # never took the Tackle
+    assert bench.live_stats.HP < bench.stat_totals.HP  # the replacement did instead
+    assert state.sides[0].active_pokemon is bench
+    assert state.sides[0].needs_switch is False
+
+
+def test_without_a_switch_chooser_the_pivot_switch_stays_deferred():
+    """Backward compatible for every caller that does not opt in: left for the caller's own
+    post-turn replacement loop, same as a faint always has been."""
+    u_turn = get_move("U-turn")
+    attacker = _mk("A", moves=MoveSet(u_turn, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)
+    bench = _mk("A2")
+    defender = _mk("B")
+    state = _battle([attacker, bench], [defender])
+    use_u_turn = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+
+    step(state, {0: use_u_turn, 1: USE_TACKLE})
+
+    assert attacker.live_stats.HP < attacker.stat_totals.HP  # still took the Tackle
+    assert bench.live_stats.HP == bench.stat_totals.HP
+    assert state.sides[0].active_pokemon is attacker
+    assert state.sides[0].needs_switch is True
+
+
+def test_a_switch_chooser_that_declines_defers_that_side_same_as_no_chooser():
+    """A side that cannot answer synchronously (a human waiting on a Discord button) returns None
+    and keeps today's behavior for exactly that switch, while other sides can still resolve live."""
+    u_turn = get_move("U-turn")
+    attacker = _mk("A", moves=MoveSet(u_turn, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)
+    bench = _mk("A2")
+    defender = _mk("B")
+    state = _battle([attacker, bench], [defender])
+    use_u_turn = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+
+    step(state, {0: use_u_turn, 1: USE_TACKLE}, switch_chooser=lambda s, i: None)
+
+    assert attacker.live_stats.HP < attacker.stat_totals.HP
+    assert state.sides[0].needs_switch is True
 
 
 def test_apply_forced_switch_clears_needs_switch_flag():
@@ -1188,8 +1243,10 @@ def test_residual_order_items_recover_before_status_chip():
 
 PROTECT = get_move("Protect")
 SUBSTITUTE = get_move("Substitute")
+HIGH_JUMP_KICK = get_move("High Jump Kick")
 USE_PROTECT = Action(action=ActionType.USE_MOVE, target=Target.SELF, move=MoveSlot.FIRST)
 USE_SUBSTITUTE = Action(action=ActionType.USE_MOVE, target=Target.SELF, move=MoveSlot.FIRST)
+USE_HIGH_JUMP_KICK = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
 
 
 def _mk_with(move, nickname: str = "X", **kwargs) -> Pokemon:
@@ -1203,6 +1260,49 @@ def test_protect_blocks_damaging_move():
     log = step(state, {0: USE_PROTECT, 1: USE_TACKLE})
     assert a.live_stats.HP == a.stat_totals.HP
     assert any(isinstance(entry, Protected) for entry in log)
+
+
+def test_high_jump_kick_crashes_for_half_max_hp_against_protect():
+    a = _mk_with(HIGH_JUMP_KICK, "A")
+    b = _mk_with(PROTECT, "B")
+    state = _battle([a], [b])
+    log = step(state, {0: USE_HIGH_JUMP_KICK, 1: USE_PROTECT})
+    assert any(isinstance(entry, Protected) for entry in log)
+    assert a.live_stats.HP == a.stat_totals.HP - a.stat_totals.HP // 2
+    assert any(isinstance(entry, RecoilDamage) and entry.pokemon == "A" for entry in log)
+
+
+def test_high_jump_kick_crash_damage_is_blocked_by_magic_guard():
+    a = _mk_with(HIGH_JUMP_KICK, "A")
+    a.ability = Ability.MAGIC_GUARD
+    b = _mk_with(PROTECT, "B")
+    state = _battle([a], [b])
+    step(state, {0: USE_HIGH_JUMP_KICK, 1: USE_PROTECT})
+    assert a.live_stats.HP == a.stat_totals.HP
+
+
+def test_high_jump_kick_crashes_on_a_miss_too():
+    crash_count = 0
+    trials = 60
+    for seed in range(trials):
+        a = _mk_with(HIGH_JUMP_KICK, "A")
+        b = _mk("B")
+        state = _battle([a], [b], seed=seed)
+        log = step(state, {0: USE_HIGH_JUMP_KICK, 1: USE_SWORDS_DANCE})
+        if any(isinstance(entry, MoveMissed) for entry in log):
+            assert a.live_stats.HP == a.stat_totals.HP - a.stat_totals.HP // 2
+            crash_count += 1
+    assert crash_count >= 3, f"Expected some misses across {trials} seeds, got {crash_count}"
+
+
+def test_high_jump_kick_crash_damage_can_faint_its_own_user():
+    a = _mk_with(HIGH_JUMP_KICK, "A")
+    a.live_stats.HP = 1
+    b = _mk_with(PROTECT, "B")
+    state = _battle([a], [b])
+    log = step(state, {0: USE_HIGH_JUMP_KICK, 1: USE_PROTECT})
+    assert a.is_fainted()
+    assert any(isinstance(entry, Fainted) and entry.pokemon == "A" for entry in log)
 
 
 def test_protect_blocks_status_move():

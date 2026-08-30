@@ -26,6 +26,7 @@ type StatChangeSource = Literal[
     "sticky_web",
     "speed_boost",
     "motor_drive",
+    "lightning_rod",
     "moxie",
     "weak_armor",
     "stamina",
@@ -47,7 +48,7 @@ type StatChangeSource = Literal[
     "chilling_neigh",
     "as_one_glastrier",
 ]
-type CantActReason = Literal["frozen", "asleep", "flinch", "paralysis", "confused", "recharge"]
+type CantActReason = Literal["frozen", "asleep", "flinch", "paralysis", "confused", "recharge", "loafing"]
 type StatusClearance = Literal[
     "thawed",
     "woke",
@@ -88,6 +89,15 @@ class SelfSwitchPending:
 
 @dataclass(frozen=True, slots=True)
 class MoveUsed:
+    side: int
+    pokemon: str
+    move: str
+
+
+@dataclass(frozen=True, slots=True)
+class ZMoveUnleashed:
+    """The Z-move a slot was upgraded into; the MoveUsed that follows still names the slot's move."""
+
     side: int
     pokemon: str
     move: str
@@ -395,6 +405,20 @@ class WishMade:
 
 
 @dataclass(frozen=True, slots=True)
+class FutureAttackQueued:
+    side: int
+    pokemon: str
+    move: str
+
+
+@dataclass(frozen=True, slots=True)
+class FutureAttackLands:
+    side: int
+    pokemon: str
+    move: str
+
+
+@dataclass(frozen=True, slots=True)
 class Transformed:
     side: int
     pokemon: str
@@ -650,6 +674,7 @@ type LogEntry = (
     Switched
     | SelfSwitchPending
     | MoveUsed
+    | ZMoveUnleashed
     | MoveMissed
     | MoveFailed
     | TauntBlocked
@@ -694,6 +719,8 @@ type LogEntry = (
     | CourtChanged
     | Revived
     | WishMade
+    | FutureAttackQueued
+    | FutureAttackLands
     | Transformed
     | ChargingUp
     | ItemRemoved

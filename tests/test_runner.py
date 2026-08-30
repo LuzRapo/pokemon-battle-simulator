@@ -43,6 +43,37 @@ class BadOrder(FirstLegal):
         return [0, 0, 1]
 
 
+class PivotOutThenFirstLegal(FirstLegal):
+    """U-turn the instant it's legal; every other decision (including who replaces it) is FirstLegal's."""
+
+    def choose_action(self, state: BattleState, side_index: int, actions: Sequence[Action]) -> Action:
+        active = state.sides[side_index].active_pokemon
+        for candidate in actions:
+            if candidate.action is ActionType.USE_MOVE and candidate.move is not None:
+                move = active.moves[candidate.move]
+                if move is not None and move.name == "U-turn":
+                    return candidate
+        return super().choose_action(state, side_index, actions)
+
+
+def test_run_battle_lets_a_faster_pivot_protect_its_user():
+    """End-to-end through the real driver: U-turn's user must never take the opponent's same-turn
+    hit — the mon that switches in does, exactly as it would in a real game."""
+    pivot_team = [
+        PokemonSpec(species="Staraptor", moves=["U-turn", "Brave Bird", "Quick Attack", "Double-Edge"]),
+        PokemonSpec(species="Blissey", moves=["Seismic Toss", "Soft-Boiled", "Thunder Wave", "Toxic"]),
+    ]
+    slow_attacker = [PokemonSpec(species="Chansey", moves=["Tackle", "Seismic Toss", "Soft-Boiled", "Thunder Wave"])]
+
+    result = run_battle(pivot_team, slow_attacker, PivotOutThenFirstLegal(), FirstLegal(), seed=0, max_turns=1)
+
+    assert len(result.logs) == 1  # resolved inside the one step() call; no post-turn replacement needed
+    lines = result.logs[0].rendered()
+    assert any("withdrew Staraptor and sent out Blissey" in line for line in lines)
+    assert any("Blissey took" in line and "damage" in line for line in lines)
+    assert not any("Staraptor took" in line for line in lines)
+
+
 def test_run_battle_reaches_an_outcome():
     result = run_battle(TEAM_A, TEAM_B, FirstLegal(), FirstLegal(), seed=0)
     assert isinstance(result, BattleResult)

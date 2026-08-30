@@ -103,6 +103,30 @@ def test_infer_item_gives_eviolite_to_not_fully_evolved_species():
         assert _infer_item(species, ["tackle"], random.Random(seed)) is Item.EVIOLITE
 
 
+@pytest.mark.parametrize(
+    ("species", "drive"),
+    [
+        ("Genesect-Douse", Item.DOUSE_DRIVE),
+        ("Genesect-Shock", Item.SHOCK_DRIVE),
+        ("Genesect-Burn", Item.BURN_DRIVE),
+        ("Genesect-Chill", Item.CHILL_DRIVE),
+    ],
+)
+def test_genesect_drive_formes_always_hold_their_matching_drive(species: str, drive: Item) -> None:
+    for seed in range(10):
+        assert random_set(species, random.Random(seed)).item is drive
+
+
+def test_base_genesect_is_not_forced_into_a_drive():
+    for seed in range(10):
+        assert random_set("Genesect", random.Random(seed)).item not in (
+            Item.DOUSE_DRIVE,
+            Item.SHOCK_DRIVE,
+            Item.BURN_DRIVE,
+            Item.CHILL_DRIVE,
+        )
+
+
 def test_infer_item_picks_a_bulky_item_for_a_tank_stat_spread():
     stats = BaseStats(HP=150, ATTACK=30, DEFENCE=120, SP_ATTACK=30, SP_DEFENCE=120, SPEED=30)
     species = _species(stats)

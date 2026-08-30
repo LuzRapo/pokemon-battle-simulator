@@ -8,6 +8,7 @@ from battle_sim.models.log_events import (
     AbilitiesSwapped,
     AllStatsReset,
     CourtChanged,
+    FutureAttackQueued,
     Healed,
     ItemRemoved,
     ItemsSwapped,
@@ -94,6 +95,8 @@ def _apply_coded(  # noqa: C901 — a flat dispatch over every coded move kind
             _trick(attacker, attacker_side_index, defender, state, log)
         case CodedMoveKind.SKILL_SWAP:
             _skill_swap(attacker, attacker_side_index, defender, state, log)
+        case CodedMoveKind.FUTURE_SIGHT:
+            _future_sight(move, attacker, attacker_side_index, state, log)
 
 
 def _rest(attacker: Pokemon, side_index: int, log: BattleLog) -> None:
@@ -247,3 +250,19 @@ def _skill_swap(
     rewire_active(state.bus, state.effects, attacker)
     rewire_active(state.bus, state.effects, defender)
     log.add(AbilitiesSwapped(side=attacker_side_index, pokemon=attacker.nickname))
+
+
+def _future_sight(move: Move, attacker: Pokemon, attacker_side_index: int, state: BattleState, log: BattleLog) -> None:
+    """Queue the hit against whichever position was targeted; engine.residuals lands it two turns on.
+
+    Only one can be pending against a position at a time (PS: a second use just fails), so this is a
+    no-op — and so adds nothing to the log, which is what makes `_execute_move` report the failure —
+    when one is already queued.
+    """
+    target_side = state.sides[1 - attacker_side_index]
+    if target_side.future_sight_turns > 0:
+        return
+    target_side.future_sight_attacker = attacker
+    target_side.future_sight_move = move
+    target_side.future_sight_turns = 3
+    log.add(FutureAttackQueued(side=attacker_side_index, pokemon=attacker.nickname, move=move.name))

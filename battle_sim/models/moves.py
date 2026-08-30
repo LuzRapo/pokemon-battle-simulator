@@ -110,6 +110,7 @@ class CodedMoveKind(Enum):
     KNOCK_OFF_ITEM = auto()
     TRICK = auto()
     SKILL_SWAP = auto()
+    FUTURE_SIGHT = auto()  # Future Sight / Doom Desire: queued now, lands two turns later
 
 
 @dataclass(frozen=True)
@@ -150,6 +151,8 @@ class Move:
     slicing: bool = False  # PS flag `slicing`: boosted by Sharpness
     sound: bool = False  # PS flag `sound`: Liquid Voice / Punk Rock
     punching: bool = False  # PS flag `punch`: boosted by Iron Fist
+    biting: bool = False  # PS flag `bite`: boosted by Strong Jaw
+    pulse: bool = False  # PS flag `pulse`: boosted by Mega Launcher
     wind: bool = False  # PS flag `wind`: absorbed by Wind Rider
     bullet: bool = False  # PS flag `bullet`: blocked by Bulletproof
     healing: bool = False  # PS flag `heal`: Triage priority
@@ -158,6 +161,7 @@ class Move:
     self_destructs: bool = False  # PS `selfdestruct`: the user faints on use (Explosion, Memento)
     recharges: bool = False  # PS `mustrecharge` self-volatile: the next turn is lost
     force_switch: bool = False  # PS `forceSwitch`: phazing (Whirlwind, Roar, Dragon Tail)
+    has_crash_damage: bool = False  # PS `hasCrashDamage`: (High) Jump Kick — half the user's max HP if it fails
 
 
 class MoveSlot(Enum):

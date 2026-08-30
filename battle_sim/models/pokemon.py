@@ -25,6 +25,21 @@ class FormSnapshot:
     pp: dict[MoveSlot, int]
 
 
+@dataclass(frozen=True)
+class BelievedSet:
+    """One candidate set an opponent's pokemon might be running, with its posterior weight.
+
+    Threat estimation over a *believed* attacker has to average the damage each candidate set
+    could deal, not take the best move of a set nobody holds: the union of a species' role
+    movepool credits coverage no single four-move set owns (see `analysis.posterior_threat`).
+    """
+
+    weight: float
+    moves: tuple[Move, ...]
+    item: Item
+    ability: Ability
+
+
 class Pokemon(BaseModel):
     name: str
     nickname: str
@@ -50,6 +65,8 @@ class Pokemon(BaseModel):
     last_hit_taken: int = Field(default=0, ge=0)  # damage from the most recent hit this turn (Counter family)
     last_hit_category: Category | None = None
     eject_pending: bool = False  # an Eject Pack waits for the action to resolve before pulling the holder
+    turns_active: int = Field(default=0, ge=0)  # whole turns since this stint's switch-in (Fake Out)
+    believed_sets: tuple[BelievedSet, ...] | None = None  # None: this side's set is known, not believed
 
     live_stats: LiveStats = Field(default_factory=lambda: LiveStats())
     stat_stages: StatStages = Field(default_factory=lambda: StatStages())
@@ -64,6 +81,7 @@ class Pokemon(BaseModel):
     disabled_slot: MoveSlot | None = None
     locked_slot: MoveSlot | None = None  # Outrage-style rampage
     charging_slot: MoveSlot | None = None  # two-turn move committed last turn
+    rolling_hits: int = Field(default=0, ge=0)  # consecutive Rollout/Ice Ball connections; each doubles the power
 
     @cached_property
     def stat_totals(self) -> StatTotals:
