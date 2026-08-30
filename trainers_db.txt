@@ -5888,8 +5888,8 @@ IVs: 0 Atk
 
 === Sir Meowfred — Resident Cat Butler (Luz's Place) ===
 
-Mewtwo-Mega-Y @ Mewtwonite Y
-Ability: Insomnia
+Mewtwo @ Mewtwonite Y
+Ability: Pressure
 Level: 50
 EVs: 4 Def / 252 SpA / 252 Spe
 Timid Nature
