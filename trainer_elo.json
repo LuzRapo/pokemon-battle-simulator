@@ -76,7 +76,6 @@
     "Iris \u2014 Unova Champion": 2239.95,
     "Hugh \u2014 Unova Rival": 1978.47,
     "Ghetsis \u2014 Unova Team Boss": 1986.6,
-    "N \u2014 Unova Trainer": 2026.83,
     "Steven Stone \u2014 Hoenn Champion": 2052.34,
     "Viola \u2014 Kalos Gym Leader": 289.0,
     "Grant \u2014 Kalos Gym Leader": 708.95,
@@ -124,7 +123,8 @@
     "RuzLaposa \u2014 Nobody": 2439.37,
     "Wolfey \u2014 World Champion": 2260.36,
     "Summer \u2014 Pokemon Ranger": 2301.59,
-    "Sir Meowfred \u2014 Resident Cat Butler": 2381.8
+    "Sir Meowfred \u2014 Resident Cat Butler": 2381.8,
+    "Prince N \u2014 Unova Trainer": 2026.83
   },
   "games_played": {
     "Brock \u2014 Kanto Gym Leader": 239,
@@ -198,7 +198,6 @@
     "Iris \u2014 Unova Champion": 250,
     "Hugh \u2014 Unova Rival": 255,
     "Ghetsis \u2014 Unova Team Boss": 254,
-    "N \u2014 Unova Trainer": 251,
     "Steven Stone \u2014 Hoenn Champion": 254,
     "Viola \u2014 Kalos Gym Leader": 238,
     "Grant \u2014 Kalos Gym Leader": 242,
@@ -246,6 +245,7 @@
     "RuzLaposa \u2014 Nobody": 245,
     "Wolfey \u2014 World Champion": 249,
     "Summer \u2014 Pokemon Ranger": 245,
-    "Sir Meowfred \u2014 Resident Cat Butler": 246
+    "Sir Meowfred \u2014 Resident Cat Butler": 246,
+    "Prince N \u2014 Unova Trainer": 251
   }
 }
