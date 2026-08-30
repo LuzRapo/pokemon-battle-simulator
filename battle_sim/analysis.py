@@ -1,10 +1,11 @@
 import math
 from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Final
 
 from battle_sim.engine.damage_apply import _fixed_amount
-from battle_sim.engine.power import effective_power, payload_overrides
+from battle_sim.engine.power import effective_power, move_type_override, payload_overrides
 from battle_sim.maths.damage import calculate_damage
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, SideState
@@ -35,6 +36,13 @@ def damage_range(move: Move, attacker: Pokemon, defender: Pokemon, state: Battle
             return 0, 0
         amount = _fixed_amount(fixed_effect, attacker, defender)
         return (amount, amount) if amount is not None else (0, 0)
+
+    # Same type resolution the live engine applies before it ever calculates damage (Aerilate,
+    # Judgment, Weather Ball, ...) -- without this the scorer reads a converted move's pre-
+    # conversion type, both for effectiveness and for the "-ate" abilities' own power boost below.
+    override_type = move_type_override(move, attacker, state)
+    if override_type is not None and move.type is not override_type:
+        move = replace(move, type=override_type)
 
     payload = {
         **payload_overrides(move, attacker, defender),

@@ -8,6 +8,7 @@ payload keys (stat overrides, burn/weather exemptions).
 
 from collections.abc import Callable
 
+from battle_sim.database.loader import get_move
 from battle_sim.mechanics.battle import BattleState, SideState, effective_weather
 from battle_sim.mechanics.events import Payload
 from battle_sim.mechanics.priority import effective_speed
@@ -15,7 +16,7 @@ from battle_sim.models.actions import ActionType
 from battle_sim.models.moves import DamageEffect, FixedDamageEffect, Move
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.type_matchups import type_effectiveness
-from battle_sim.utils import Item, Stats, Status, Terrain, Weather
+from battle_sim.utils import Ability, Item, Stats, Status, Terrain, Type, Weather
 
 type PowerCondition = Callable[[Pokemon, Pokemon, BattleState], bool]
 type PowerFormula = Callable[[Pokemon, Pokemon, BattleState], int]
@@ -175,6 +176,100 @@ _POWER_CONDITIONS: dict[str, tuple[PowerCondition, int, int]] = {
 }
 _SE_BONUS_MOVES = frozenset({"Electro Drift", "Collision Course"})  # 5461/4096 when super effective
 
+_WEATHER_BALL_TYPES: dict[Weather, Type] = {
+    Weather.SUN: Type.FIRE,
+    Weather.HARSH_SUN: Type.FIRE,
+    Weather.RAIN: Type.WATER,
+    Weather.HEAVY_RAIN: Type.WATER,
+    Weather.SANDSTORM: Type.ROCK,
+    Weather.SNOW: Type.ICE,
+}
+_OGERPON_CUDGEL_TYPES: dict[str, Type] = {
+    "Ogerpon-Wellspring": Type.WATER,
+    "Ogerpon-Hearthflame": Type.FIRE,
+    "Ogerpon-Cornerstone": Type.ROCK,
+}
+_TAUROS_BULL_TYPES: dict[str, Type] = {
+    "Tauros-Paldea-Combat": Type.FIGHTING,
+    "Tauros-Paldea-Blaze": Type.FIRE,
+    "Tauros-Paldea-Aqua": Type.WATER,
+}
+_JUDGMENT_PLATE_TYPES: dict[Item, Type] = {
+    Item.FIST_PLATE: Type.FIGHTING,
+    Item.SKY_PLATE: Type.FLYING,
+    Item.TOXIC_PLATE: Type.POISON,
+    Item.EARTH_PLATE: Type.GROUND,
+    Item.STONE_PLATE: Type.ROCK,
+    Item.INSECT_PLATE: Type.BUG,
+    Item.SPOOKY_PLATE: Type.GHOST,
+    Item.IRON_PLATE: Type.STEEL,
+    Item.FLAME_PLATE: Type.FIRE,
+    Item.SPLASH_PLATE: Type.WATER,
+    Item.MEADOW_PLATE: Type.GRASS,
+    Item.ZAP_PLATE: Type.ELECTRIC,
+    Item.MIND_PLATE: Type.PSYCHIC,
+    Item.ICICLE_PLATE: Type.ICE,
+    Item.DRACO_PLATE: Type.DRAGON,
+    Item.DREAD_PLATE: Type.DARK,
+    Item.PIXIE_PLATE: Type.FAIRY,
+}
+_MULTI_ATTACK_MEMORY_TYPES: dict[Item, Type] = {
+    Item.BUG_MEMORY: Type.BUG,
+    Item.DARK_MEMORY: Type.DARK,
+    Item.DRAGON_MEMORY: Type.DRAGON,
+    Item.ELECTRIC_MEMORY: Type.ELECTRIC,
+    Item.FAIRY_MEMORY: Type.FAIRY,
+    Item.FIGHTING_MEMORY: Type.FIGHTING,
+    Item.FIRE_MEMORY: Type.FIRE,
+    Item.FLYING_MEMORY: Type.FLYING,
+    Item.GHOST_MEMORY: Type.GHOST,
+    Item.GRASS_MEMORY: Type.GRASS,
+    Item.GROUND_MEMORY: Type.GROUND,
+    Item.ICE_MEMORY: Type.ICE,
+    Item.POISON_MEMORY: Type.POISON,
+    Item.PSYCHIC_MEMORY: Type.PSYCHIC,
+    Item.ROCK_MEMORY: Type.ROCK,
+    Item.STEEL_MEMORY: Type.STEEL,
+    Item.WATER_MEMORY: Type.WATER,
+}
+_TECHNO_BLAST_DRIVE_TYPES: dict[Item, Type] = {
+    Item.DOUSE_DRIVE: Type.WATER,
+    Item.SHOCK_DRIVE: Type.ELECTRIC,
+    Item.BURN_DRIVE: Type.FIRE,
+    Item.CHILL_DRIVE: Type.ICE,
+}
+# The "-ate" family: a Normal-type move becomes this type and gains a 4915/4096 (~1.2x, Gen 7+)
+# power boost. Liquid Voice also changes a move's type (sound moves -> Water) but grants no boost,
+# so it is not in this table; `move_type_override` still handles it separately below.
+_NORMAL_TYPE_ABILITIES: dict[Ability, Type] = {
+    Ability.AERILATE: Type.FLYING,
+    Ability.PIXILATE: Type.FAIRY,
+    Ability.REFRIGERATE: Type.ICE,
+}
+_ATE_POWER_MOD_4096 = 4915
+
+
+def move_type_override(move: Move, attacker: Pokemon, state: BattleState) -> Type | None:
+    """The type this move actually resolves as, if something changes it from its listed type."""
+    ate_type = _NORMAL_TYPE_ABILITIES.get(attacker.ability)
+    if ate_type is not None and move.type is Type.NORMAL:
+        return ate_type
+    if attacker.ability is Ability.LIQUID_VOICE and move.sound:
+        return Type.WATER
+    if move.name == "Weather Ball":
+        return _WEATHER_BALL_TYPES.get(effective_weather(state))
+    if move.name == "Ivy Cudgel":
+        return _OGERPON_CUDGEL_TYPES.get(attacker.name, Type.GRASS)
+    if move.name == "Raging Bull":
+        return _TAUROS_BULL_TYPES.get(attacker.name)
+    if move.name == "Judgment":
+        return _JUDGMENT_PLATE_TYPES.get(attacker.item)
+    if move.name == "Multi-Attack":
+        return _MULTI_ATTACK_MEMORY_TYPES.get(attacker.item)
+    if move.name == "Techno Blast":
+        return _TECHNO_BLAST_DRIVE_TYPES.get(attacker.item)
+    return None
+
 
 def effective_power(move: Move, effect: DamageEffect, attacker: Pokemon, defender: Pokemon, state: BattleState) -> int:
     formula = _POWER_FORMULAS.get(move.name)
@@ -222,7 +317,21 @@ def payload_overrides(move: Move, attacker: Pokemon, defender: Pokemon) -> Paylo
         return {"ignore_burn": True}
     if move.name == "Hydro Steam":
         return {"ignore_weather_drop": True}
+    if _ate_boost_applies(move, attacker):
+        return {"power_mods_4096": [_ATE_POWER_MOD_4096]}
     return {}
+
+
+def _ate_boost_applies(move: Move, attacker: Pokemon) -> bool:
+    """True once an "-ate" ability has actually converted this move, not merely alongside one.
+
+    `move.type` may already be the converted type by the time this runs (the live path replaces
+    it before building the damage payload), so the only reliable "was this Normal-type" check left
+    is the move's own listed type in the database — a naturally Flying/Fairy/Ice move used by an
+    Aerilate/Pixilate/Refrigerate holder must not get this boost.
+    """
+    ate_type = _NORMAL_TYPE_ABILITIES.get(attacker.ability)
+    return ate_type is not None and move.type is ate_type and get_move(move.name).type is Type.NORMAL
 
 
 def _sides_of(attacker: Pokemon, defender: Pokemon, state: BattleState) -> tuple[SideState, SideState]:

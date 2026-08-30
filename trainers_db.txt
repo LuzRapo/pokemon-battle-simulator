@@ -5888,64 +5888,65 @@ IVs: 0 Atk
 
 === Sir Meowfred — Resident Cat Butler (Luz's Place) ===
 
-Arceus @ Chople Berry
-Ability: Multitype
+Mewtwo-Mega-Y @ Mewtwonite Y
+Ability: Insomnia
 Level: 50
-EVs: 240 HP / 252 Atk / 16 Spe
-Adamant Nature
-- Swords Dance
-- Extreme Speed
-- Shadow Claw
-- Recover
+EVs: 4 Def / 252 SpA / 252 Spe
+Timid Nature
+IVs: 0 Atk
+- Calm Mind
+- Psystrike
+- Fire Blast
+- Ice Beam
 
 Groudon-Primal @ Red Orb
 Ability: Desolate Land
 Level: 50
-EVs: 252 Atk / 100 SpD / 156 Spe
-Adamant Nature
-- Rock Polish
-- Swords Dance
+EVs: 252 SpA / 4 SpD / 252 Spe
+Mild Nature
+- Stealth Rock
 - Precipice Blades
-- Stone Edge
+- Overheat
+- Rock Slide
 
-Kyogre-Primal @ Blue Orb
-Ability: Primordial Sea
+Arceus-Fairy @ Pixie Plate
+Ability: Multitype
 Level: 50
-EVs: 4 Def / 252 SpA / 252 Spe
-Modest Nature
+EVs: 252 HP / 4 Def / 252 Spe
 IVs: 0 Atk
-- Water Spout
+Timid Nature
 - Calm Mind
-- Origin Pulse
-- Ice Beam
+- Judgment
+- Recover
+- Earth Power
+
+Yveltal @ Life Orb
+Ability: Dark Aura
+Level: 50
+EVs: 4 Atk / 252 SpA / 252 Spe
+Mild Nature
+- Dark Pulse
+- Oblivion Wing
+- Taunt
+- Sucker Punch
 
 Necrozma-Dusk-Mane @ Ultranecrozium Z
 Ability: Prism Armor
 Level: 50
-EVs: 32 Def / 224 SpA / 252 Spe
-Timid Nature
-IVs: 0 Atk
-- Stealth Rock
-- Photon Geyser
-- Heat Wave
-- Power Gem
-
-Salamence-Mega @ Salamencite
-Ability: Aerilate
-Level: 50
-EVs: 252 Atk / 4 Def / 252 Spe
+EVs: 4 HP / 252 Atk / 252 Spe
 Jolly Nature
-- Defog
-- Double-Edge
-- Roost
-- Facade
+- Swords Dance
+- Photon Geyser
+- Earthquake
+- Outrage
 
-Xerneas @ Power Herb
-Ability: Fairy Aura
+Marshadow @ Life Orb
+Ability: Technician
 Level: 50
-EVs: 168 Def / 252 SpA / 88 Spe
-Modest Nature
-- Geomancy
-- Moonblast
-- Thunder
-- Focus Blast
+EVs: 252 Atk / 4 SpD / 252 Spe
+Level: 50
+Jolly Nature
+- Spectral Thief
+- Close Combat
+- Shadow Sneak
+- Pursuit

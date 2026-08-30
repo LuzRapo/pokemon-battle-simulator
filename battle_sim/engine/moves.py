@@ -4,7 +4,7 @@ from battle_sim.database.loader import get_move
 from battle_sim.engine.coded import _apply_coded
 from battle_sim.engine.damage_apply import _apply_damage, _apply_fixed_damage
 from battle_sim.engine.field_apply import _apply_field_effect, _apply_remove_hazards, _apply_side_condition
-from battle_sim.engine.power import ROLLING_LOCK_TURNS, ROLLING_MOVES, coded_move_fails
+from battle_sim.engine.power import ROLLING_LOCK_TURNS, ROLLING_MOVES, coded_move_fails, move_type_override
 from battle_sim.engine.status_apply import _apply_stage_change, _apply_status
 from battle_sim.engine.switching import _force_random_switch
 from battle_sim.maths.damage import move_effectiveness
@@ -164,7 +164,7 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
         move = sleep_choice
         log.add(MoveUsed(side=side_index, pokemon=attacker.nickname, move=move.name))
 
-    override_type = _move_type_override(move, attacker, state)
+    override_type = move_type_override(move, attacker, state)
     if override_type is not None and move.type is not override_type:
         move = replace(move, type=override_type)
 
@@ -297,86 +297,6 @@ def _sleep_talk_choice(attacker: Pokemon, rng: RNG) -> Move | None:
 _CHARGE_TURN_BOOSTS: dict[str, Stats] = {"Meteor Beam": Stats.SP_ATTACK, "Electro Shot": Stats.SP_ATTACK}
 _SUN_SKIP_CHARGE = frozenset({"Solar Beam", "Solar Blade"})
 _SCREEN_BREAKERS = frozenset({"Psychic Fangs", "Raging Bull", "Brick Break"})
-_WEATHER_BALL_TYPES: dict[Weather, Type] = {
-    Weather.SUN: Type.FIRE,
-    Weather.HARSH_SUN: Type.FIRE,
-    Weather.RAIN: Type.WATER,
-    Weather.HEAVY_RAIN: Type.WATER,
-    Weather.SANDSTORM: Type.ROCK,
-    Weather.SNOW: Type.ICE,
-}
-_OGERPON_CUDGEL_TYPES: dict[str, Type] = {
-    "Ogerpon-Wellspring": Type.WATER,
-    "Ogerpon-Hearthflame": Type.FIRE,
-    "Ogerpon-Cornerstone": Type.ROCK,
-}
-_TAUROS_BULL_TYPES: dict[str, Type] = {
-    "Tauros-Paldea-Combat": Type.FIGHTING,
-    "Tauros-Paldea-Blaze": Type.FIRE,
-    "Tauros-Paldea-Aqua": Type.WATER,
-}
-_JUDGMENT_PLATE_TYPES: dict[Item, Type] = {
-    Item.FIST_PLATE: Type.FIGHTING,
-    Item.SKY_PLATE: Type.FLYING,
-    Item.TOXIC_PLATE: Type.POISON,
-    Item.EARTH_PLATE: Type.GROUND,
-    Item.STONE_PLATE: Type.ROCK,
-    Item.INSECT_PLATE: Type.BUG,
-    Item.SPOOKY_PLATE: Type.GHOST,
-    Item.IRON_PLATE: Type.STEEL,
-    Item.FLAME_PLATE: Type.FIRE,
-    Item.SPLASH_PLATE: Type.WATER,
-    Item.MEADOW_PLATE: Type.GRASS,
-    Item.ZAP_PLATE: Type.ELECTRIC,
-    Item.MIND_PLATE: Type.PSYCHIC,
-    Item.ICICLE_PLATE: Type.ICE,
-    Item.DRACO_PLATE: Type.DRAGON,
-    Item.DREAD_PLATE: Type.DARK,
-    Item.PIXIE_PLATE: Type.FAIRY,
-}
-_MULTI_ATTACK_MEMORY_TYPES: dict[Item, Type] = {
-    Item.BUG_MEMORY: Type.BUG,
-    Item.DARK_MEMORY: Type.DARK,
-    Item.DRAGON_MEMORY: Type.DRAGON,
-    Item.ELECTRIC_MEMORY: Type.ELECTRIC,
-    Item.FAIRY_MEMORY: Type.FAIRY,
-    Item.FIGHTING_MEMORY: Type.FIGHTING,
-    Item.FIRE_MEMORY: Type.FIRE,
-    Item.FLYING_MEMORY: Type.FLYING,
-    Item.GHOST_MEMORY: Type.GHOST,
-    Item.GRASS_MEMORY: Type.GRASS,
-    Item.GROUND_MEMORY: Type.GROUND,
-    Item.ICE_MEMORY: Type.ICE,
-    Item.POISON_MEMORY: Type.POISON,
-    Item.PSYCHIC_MEMORY: Type.PSYCHIC,
-    Item.ROCK_MEMORY: Type.ROCK,
-    Item.STEEL_MEMORY: Type.STEEL,
-    Item.WATER_MEMORY: Type.WATER,
-}
-_TECHNO_BLAST_DRIVE_TYPES: dict[Item, Type] = {
-    Item.DOUSE_DRIVE: Type.WATER,
-    Item.SHOCK_DRIVE: Type.ELECTRIC,
-    Item.BURN_DRIVE: Type.FIRE,
-    Item.CHILL_DRIVE: Type.ICE,
-}
-
-
-def _move_type_override(move: Move, attacker: Pokemon, state: BattleState) -> Type | None:
-    if attacker.ability is Ability.LIQUID_VOICE and move.sound:
-        return Type.WATER
-    if move.name == "Weather Ball":
-        return _WEATHER_BALL_TYPES.get(effective_weather(state))
-    if move.name == "Ivy Cudgel":
-        return _OGERPON_CUDGEL_TYPES.get(attacker.name, Type.GRASS)
-    if move.name == "Raging Bull":
-        return _TAUROS_BULL_TYPES.get(attacker.name)
-    if move.name == "Judgment":
-        return _JUDGMENT_PLATE_TYPES.get(attacker.item)
-    if move.name == "Multi-Attack":
-        return _MULTI_ATTACK_MEMORY_TYPES.get(attacker.item)
-    if move.name == "Techno Blast":
-        return _TECHNO_BLAST_DRIVE_TYPES.get(attacker.item)
-    return None
 
 
 def _skips_charge_turn(move: Move, attacker: Pokemon, state: BattleState, side_index: int, log: BattleLog) -> bool:
