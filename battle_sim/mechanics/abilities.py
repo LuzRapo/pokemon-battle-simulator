@@ -934,7 +934,8 @@ def _bind_contact_status(status: Status, chance: float = 0.3) -> AbilityBinder:
                 return None
             from battle_sim.engine.status_apply import _apply_main_status  # lazy: avoids a mechanics->engine cycle
 
-            _apply_main_status(status, attacker, payload["attacker_index"], context.rng, context.log)
+            teams = (context.battle.sides[0].team, context.battle.sides[1].team)
+            _apply_main_status(status, attacker, payload["attacker_index"], context.rng, context.log, teams)
             return None
 
         bus.on(Event.ON_AFTER_HIT, afflict, priority=EventPriority.ABILITY, owner=owner)
@@ -959,7 +960,8 @@ def _bind_on_hit_status(status: Status, requires_contact: bool, chance: float = 
                 return None
             from battle_sim.engine.status_apply import _apply_main_status  # lazy: avoids a mechanics->engine cycle
 
-            _apply_main_status(status, defender, payload["defender_index"], context.rng, context.log)
+            teams = (context.battle.sides[0].team, context.battle.sides[1].team)
+            _apply_main_status(status, defender, payload["defender_index"], context.rng, context.log, teams)
             return None
 
         bus.on(Event.ON_AFTER_HIT, afflict, priority=EventPriority.ABILITY, owner=owner)

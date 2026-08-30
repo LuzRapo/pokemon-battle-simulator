@@ -331,10 +331,13 @@ def _apply_status_routed(
     log: BattleLog,
     behind_substitute: bool,
 ) -> None:
+    teams = (state.sides[0].team, state.sides[1].team)
     if move.target is Target.SELF or effect.to_self:
-        _apply_status(effect, attacker, attacker_side_index, state.rng, log, field=state.field)
+        _apply_status(effect, attacker, attacker_side_index, state.rng, log, teams, field=state.field)
     elif not behind_substitute:
-        _apply_status(effect, defender, 1 - attacker_side_index, state.rng, log, inflictor=attacker, field=state.field)
+        _apply_status(
+            effect, defender, 1 - attacker_side_index, state.rng, log, teams, inflictor=attacker, field=state.field
+        )
 
 
 def _apply_heal(effect: HealEffect, attacker: Pokemon, attacker_side_index: int, log: BattleLog) -> None:

@@ -143,6 +143,16 @@ class DoesNotAffect:
 
 
 @dataclass(frozen=True, slots=True)
+class StatusClauseBlocked:
+    """Sleep Clause (or whichever status this build claps a ceiling on): the side already has as
+    many Pokemon under this status as the format allows, so this one more just doesn't take."""
+
+    side: int
+    pokemon: str
+    status: Status
+
+
+@dataclass(frozen=True, slots=True)
 class NoEffect:
     """Type-chart 0x immunity discovered on application."""
 
@@ -681,6 +691,7 @@ type LogEntry = (
     | DisableApplied
     | DisabledBlocked
     | DoesNotAffect
+    | StatusClauseBlocked
     | NoEffect
     | Effectiveness
     | DamageDealt

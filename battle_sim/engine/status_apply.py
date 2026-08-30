@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import FieldState
 from battle_sim.mechanics.log import BattleLog
@@ -6,6 +8,7 @@ from battle_sim.models.log_events import (
     DisableApplied,
     DoesNotAffect,
     StatusAlready,
+    StatusClauseBlocked,
     StatusCleared,
     StatusInflicted,
     SubstituteAlready,
@@ -25,6 +28,12 @@ _STATUS_TYPE_IMMUNITY: dict[Status, frozenset[Type]] = {
 }
 _ALL_STATUSES = frozenset(Status) - {Status.NONE}
 _SYNCHRONIZE_STATUSES = frozenset({Status.BURN, Status.PARALYSIS, Status.POISON, Status.TOXIC})
+# A compromise Sleep Clause: real Smogon caps a side at one of the opponent's team asleep at once
+# and fails any move that would make it a second; this format allows two before further sleep just
+# doesn't take. No other status is clause-limited (Freeze Clause isn't a standard Gen 7 rule, and
+# paralysis never has been).
+_CLAUSED_STATUSES = frozenset({Status.SLEEP})
+_STATUS_CLAUSE_LIMIT = 2
 _STATUS_ABILITY_IMMUNITY: dict[Ability, frozenset[Status]] = {
     Ability.PURIFYING_SALT: _ALL_STATUSES,
     Ability.WATER_BUBBLE: frozenset({Status.BURN}),
@@ -61,13 +70,14 @@ def _apply_status(
     target_index: int,
     rng: RNG,
     log: BattleLog,
+    teams: tuple[Sequence[Pokemon], Sequence[Pokemon]],
     inflictor: Pokemon | None = None,
     field: FieldState | None = None,
 ) -> None:
     if not rng.roll_chance(effect.probability):
         return
     if isinstance(effect.status, Status):
-        _apply_main_status(effect.status, target, target_index, rng, log, inflictor, field)
+        _apply_main_status(effect.status, target, target_index, rng, log, teams, inflictor, field)
     elif effect.status is ExtraStatus.SUBSTITUTE:
         _make_substitute(target, target_index, log)
     elif effect.status is ExtraStatus.LOCKED_MOVE:
@@ -89,6 +99,7 @@ def _reflect_synchronize(
     inflictor: Pokemon | None,
     rng: RNG,
     log: BattleLog,
+    teams: tuple[Sequence[Pokemon], Sequence[Pokemon]],
     field: FieldState | None,
 ) -> None:
     if inflictor is None or target.ability is not Ability.SYNCHRONIZE:
@@ -97,7 +108,43 @@ def _reflect_synchronize(
         return
     # inflictor=None: the mirrored status doesn't itself re-trigger Synchronize or Poison
     # Puppeteer — it respects the inflictor's own type/ability immunities, nothing more.
-    _apply_main_status(status, inflictor, 1 - target_index, rng, log, inflictor=None, field=field)
+    _apply_main_status(status, inflictor, 1 - target_index, rng, log, teams, inflictor=None, field=field)
+
+
+def _status_clause_blocks(
+    status: Status, target_index: int, teams: tuple[Sequence[Pokemon], Sequence[Pokemon]]
+) -> bool:
+    """Compromise Sleep Clause: this many of the side's team already under this status is the cap."""
+    if status not in _CLAUSED_STATUSES:
+        return False
+    already = sum(1 for p in teams[target_index] if not p.is_fainted() and p.status is status)
+    return already >= _STATUS_CLAUSE_LIMIT
+
+
+def _status_immune(
+    status: Status,
+    target: Pokemon,
+    target_index: int,
+    inflictor: Pokemon | None,
+    field: FieldState | None,
+    log: BattleLog,
+) -> bool:
+    """True if `status` cannot land on `target` at all — type immunity is silent, an ability or
+    Leaf Guard announces itself, matching what each already did before this was split out."""
+    corrosive = inflictor is not None and inflictor.ability is Ability.CORROSION
+    immune_types = _STATUS_TYPE_IMMUNITY.get(status, frozenset())
+    if status in (Status.POISON, Status.TOXIC) and corrosive:
+        immune_types = frozenset()  # Corrosion poisons Steel and Poison types
+    if immune_types and immune_types.intersection(t for t in target.types if t is not None):
+        return True
+    if status in _STATUS_ABILITY_IMMUNITY.get(target.ability, frozenset()):
+        log.add(DoesNotAffect(side=target_index, pokemon=target.nickname))
+        return True
+    in_sun = field is not None and field.weather in (Weather.SUN, Weather.HARSH_SUN)
+    if target.ability is Ability.LEAF_GUARD and in_sun:
+        log.add(DoesNotAffect(side=target_index, pokemon=target.nickname))
+        return True
+    return False
 
 
 def _apply_main_status(
@@ -106,24 +153,17 @@ def _apply_main_status(
     target_index: int,
     rng: RNG,
     log: BattleLog,
+    teams: tuple[Sequence[Pokemon], Sequence[Pokemon]],
     inflictor: Pokemon | None = None,
     field: FieldState | None = None,
 ) -> None:
-    corrosive = inflictor is not None and inflictor.ability is Ability.CORROSION
-    immune_types = _STATUS_TYPE_IMMUNITY.get(status, frozenset())
-    if status in (Status.POISON, Status.TOXIC) and corrosive:
-        immune_types = frozenset()  # Corrosion poisons Steel and Poison types
-    if immune_types and immune_types.intersection(t for t in target.types if t is not None):
-        return
-    if status in _STATUS_ABILITY_IMMUNITY.get(target.ability, frozenset()):
-        log.add(DoesNotAffect(side=target_index, pokemon=target.nickname))
-        return
-    in_sun = field is not None and field.weather in (Weather.SUN, Weather.HARSH_SUN)
-    if target.ability is Ability.LEAF_GUARD and in_sun:
-        log.add(DoesNotAffect(side=target_index, pokemon=target.nickname))
+    if _status_immune(status, target, target_index, inflictor, field, log):
         return
     if target.status is not Status.NONE:
         log.add(StatusAlready(side=target_index, pokemon=target.nickname, status=target.status))
+        return
+    if _status_clause_blocks(status, target_index, teams):
+        log.add(StatusClauseBlocked(side=target_index, pokemon=target.nickname, status=status))
         return
     target.status = status
     if status is Status.SLEEP:
@@ -131,7 +171,7 @@ def _apply_main_status(
     elif status is Status.TOXIC:
         target.status_turns = 0
     log.add(StatusInflicted(side=target_index, pokemon=target.nickname, status=status))
-    _reflect_synchronize(status, target, target_index, inflictor, rng, log, field)
+    _reflect_synchronize(status, target, target_index, inflictor, rng, log, teams, field)
     puppeteered = (
         status in (Status.POISON, Status.TOXIC)
         and inflictor is not None

@@ -410,7 +410,8 @@ def _bind_status_orb(kind: Item, status: Status) -> ItemBinder:
                 return None
             from battle_sim.engine.status_apply import _apply_main_status  # lazy: avoids a mechanics->engine cycle
 
-            _apply_main_status(status, pokemon, payload["side_index"], context.rng, context.log)
+            teams = (context.battle.sides[0].team, context.battle.sides[1].team)
+            _apply_main_status(status, pokemon, payload["side_index"], context.rng, context.log, teams)
             return None
 
         bus.on(Event.ON_RESIDUAL, afflict, priority=ResidualOrder.ORB, owner=owner)

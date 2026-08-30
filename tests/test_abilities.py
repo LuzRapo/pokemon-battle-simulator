@@ -577,7 +577,7 @@ def test_water_bubble_blocks_burns():
     from battle_sim.mechanics.log import BattleLog
 
     mon = _mk("B", ability=Ability.WATER_BUBBLE)
-    _apply_main_status(Status.BURN, mon, 0, RNG(seed=0), BattleLog())
+    _apply_main_status(Status.BURN, mon, 0, RNG(seed=0), BattleLog(), ((mon,), ()))
     assert mon.status is Status.NONE
 
 
@@ -587,7 +587,7 @@ def test_purifying_salt_blocks_all_statuses():
 
     mon = _mk("B", ability=Ability.PURIFYING_SALT)
     for status in (Status.BURN, Status.SLEEP, Status.TOXIC, Status.PARALYSIS):
-        _apply_main_status(status, mon, 0, RNG(seed=0), BattleLog())
+        _apply_main_status(status, mon, 0, RNG(seed=0), BattleLog(), ((mon,), ()))
         assert mon.status is Status.NONE
 
 
@@ -809,7 +809,8 @@ def test_thermal_exchange_boosts_attack_against_fire_and_blocks_burns():
     state = _battle([_mk("A", types=(Type.FIRE, None))], [exchanger])
     step(state, {0: USE_EMBER, 1: USE_SPLASH})
     assert exchanger.stat_stages.ATTACK == 1
-    _apply_main_status(Status.BURN, exchanger, 1, RNG(seed=0), BattleLog())
+    teams = (state.sides[0].team, state.sides[1].team)
+    _apply_main_status(Status.BURN, exchanger, 1, RNG(seed=0), BattleLog(), teams)
     assert exchanger.status is Status.NONE
 
 
@@ -1136,7 +1137,7 @@ def test_status_immunity_abilities_block_their_status(ability: Ability, status: 
     from battle_sim.mechanics.log import BattleLog
 
     mon = _mk("B", ability=ability)
-    _apply_main_status(status, mon, 0, RNG(seed=0), BattleLog())
+    _apply_main_status(status, mon, 0, RNG(seed=0), BattleLog(), ((mon,), ()))
     assert mon.status is Status.NONE
 
 

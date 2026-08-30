@@ -297,9 +297,48 @@ def test_sleep_initial_counter_is_one_to_three():
             1,
             rng,
             BattleLog(),
+            ((), (defender,)),
         )
         durations.add(defender.status_turns)
     assert durations == {1, 2, 3}
+
+
+def test_sleep_clause_allows_two_asleep_per_side_then_blocks_a_third():
+    from battle_sim.engine.status_apply import _apply_status
+    from battle_sim.models.log_events import StatusClauseBlocked
+    from battle_sim.models.moves import InflictStatusEffect
+
+    already_asleep = [_mk("A", status=Status.SLEEP), _mk("B", status=Status.SLEEP)]
+    third = _mk("C")
+    teams: tuple[list[Pokemon], list[Pokemon]] = ([], [*already_asleep, third])
+    log = BattleLog()
+    _apply_status(InflictStatusEffect(status=Status.SLEEP, probability=1.0), third, 1, RNG(seed=0), log, teams)
+    assert third.status is Status.NONE
+    assert any(isinstance(entry, StatusClauseBlocked) for entry in log.entries)
+
+
+def test_sleep_clause_permits_the_second_asleep_pokemon():
+    from battle_sim.engine.status_apply import _apply_status
+    from battle_sim.models.moves import InflictStatusEffect
+
+    one_asleep = _mk("A", status=Status.SLEEP)
+    second = _mk("B")
+    teams: tuple[list[Pokemon], list[Pokemon]] = ([], [one_asleep, second])
+    _apply_status(InflictStatusEffect(status=Status.SLEEP, probability=1.0), second, 1, RNG(seed=0), BattleLog(), teams)
+    assert second.status is Status.SLEEP
+
+
+def test_sleep_clause_does_not_count_a_fainted_teammate():
+    from battle_sim.engine.status_apply import _apply_status
+    from battle_sim.models.moves import InflictStatusEffect
+
+    fainted_asleep = _mk("A", status=Status.SLEEP)
+    fainted_asleep.live_stats.HP = 0
+    still_asleep = _mk("B", status=Status.SLEEP)
+    target = _mk("C")
+    teams: tuple[list[Pokemon], list[Pokemon]] = ([], [fainted_asleep, still_asleep, target])
+    _apply_status(InflictStatusEffect(status=Status.SLEEP, probability=1.0), target, 1, RNG(seed=0), BattleLog(), teams)
+    assert target.status is Status.SLEEP  # only one *live* sleeper on the side, so this is the clause's second
 
 
 def test_sleep_pokemon_wakes_when_counter_hits_zero():

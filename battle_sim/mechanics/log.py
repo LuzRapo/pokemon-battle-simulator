@@ -66,6 +66,7 @@ from battle_sim.models.log_events import (
     StatDropBlockedByItem,
     StatStageChanged,
     StatusAlready,
+    StatusClauseBlocked,
     StatusCleared,
     StatusInflicted,
     StatusMoveBlocked,
@@ -252,6 +253,9 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)} {_STATUS_INFLICTED_VERB[status]}!"
         case StatusAlready(side, pokemon, status):
             return f"{_label(side, pokemon)} is already {_STATUS_ADJECTIVE[status]}."
+        case StatusClauseBlocked(side, pokemon, status):
+            adjective = _STATUS_ADJECTIVE[status]
+            return f"{_label(side, pokemon)} is unaffected — too many of that side are already {adjective}!"
         case VolatileInflicted(side, pokemon, volatile):
             return f"{_label(side, pokemon)} {_VOLATILE_INFLICTED_VERB[volatile]}!"
         case StatStageChanged(side, pokemon, stat, delta, requested, source):
