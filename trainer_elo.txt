@@ -1,0 +1,124 @@
+Trainer Elo — 120 trainers, 14871 individual games, champion=random-a-myopic-tuned, search-budget=30, k=32.0, converged in 64 passes
+
+  # Trainer                                       Gen        Elo  Games
+-----------------------------------------------------------------------
+  1 RuzLaposa — Nobody                            Special Trainers  2439.4    245
+  2 Sir Meowfred — Resident Cat Butler            Luz's Place  2381.8    246
+  3 Morimoto — Game Freak Developer               Special Trainers  2352.1    242
+  4 Emmet — Subway Boss                           Special Trainers  2334.1    244
+  5 Summer — Pokemon Ranger                       Special Trainers  2301.6    245
+  6 Tucker — Dome Ace                             Special Trainers  2287.9    248
+  7 Wolfey — World Champion                       Special Trainers  2260.4    249
+  8 Iris — Unova Champion                         Gen 5   2239.9    250
+  9 Greta — Arena Tycoon                          Special Trainers  2210.3    247
+ 10 Palmer — Tower Tycoon                         Special Trainers  2164.5    251
+ 11 Ingo — Subway Boss                            Special Trainers  2154.3    250
+ 12 Darach — Castle Valet                         Special Trainers  2145.5    251
+ 13 Shaun — Veteran                               Special Trainers  2094.4    252
+ 14 Spenser — Palace Maven                        Special Trainers  2085.9    252
+ 15 Dahlia — Arcade Star                          Special Trainers  2074.2    251
+ 16 Team Charm — Exploration Team                 Special Trainers  2060.7    250
+ 17 Hau — Alola Rival                             Gen 7   2055.8    247
+ 18 Steven Stone — Hoenn Champion                 Gen 5   2052.3    254
+ 19 Barry — Sinnoh Rival                          Gen 4   2051.3    247
+ 20 Shauntal — Unova Elite Four                   Gen 5   2036.4    258
+ 21 N — Unova Trainer                             Gen 5   2026.8    251
+ 22 Kukui — Alola Champion                        Gen 7   2013.0    247
+ 23 Marshal — Unova Elite Four                    Gen 5   2003.6    254
+ 24 Thorton — Factory Head                        Special Trainers  2002.5    253
+ 25 Lucy — Pike Queen                             Special Trainers  2000.0    252
+ 26 Grimsley — Unova Elite Four                   Gen 5   1992.8    250
+ 27 Diantha — Kalos Champion                      Gen 6   1986.8    257
+ 28 Ghetsis — Unova Team Boss                     Gen 5   1986.6    254
+ 29 Cynthia — Sinnoh Champion                     Gen 4   1983.3    251
+ 30 Hugh — Unova Rival                            Gen 5   1978.5    255
+ 31 Kellyn — Top Ranger                           Special Trainers  1964.0    260
+ 32 Noland — Factory Head                         Special Trainers  1955.0    253
+ 33 Caitlin — Unova Elite Four                    Gen 5   1949.3    251
+ 34 Explorers — Wigglytuff Guild                  Special Trainers  1880.5    251
+ 35 Cyrus — Sinnoh Team Boss                      Gen 4   1875.6    251
+ 36 Lucian — Sinnoh Elite Four                    Gen 4   1866.8    246
+ 37 Wallace — Hoenn Champion                      Gen 3   1829.9    252
+ 38 Molayne — Alola Elite Four                    Gen 7   1809.7    256
+ 39 Aaron — Sinnoh Elite Four                     Gen 4   1805.0    254
+ 40 Guzma — Alola Team Boss                       Gen 7   1803.2    250
+ 41 Team Skull — Skull Grunts                     Special Trainers  1784.4    248
+ 42 Crasher Wake — Sinnoh Gym Leader              Gen 4   1774.9    248
+ 43 Red — Kanto Superboss                         Gen 2   1771.5    252
+ 44 Roark — Sinnoh Gym Leader                     Gen 4   1727.6    255
+ 45 Acerola — Alola Elite Four                    Gen 7   1714.4    254
+ 46 Olivia — Alola Elite Four                     Gen 7   1709.5    249
+ 47 Serena — Kalos Rival                          Gen 6   1688.6    248
+ 48 Drake — Hoenn Elite Four                      Gen 3   1680.1    257
+ 49 Kahili — Alola Elite Four                     Gen 7   1667.6    255
+ 50 Lysandre — Kalos Team Boss                    Gen 6   1648.4    251
+ 51 Candice — Sinnoh Gym Leader                   Gen 4   1646.9    247
+ 52 Volkner — Sinnoh Gym Leader                   Gen 4   1645.2    245
+ 53 Fantina — Sinnoh Gym Leader                   Gen 4   1640.5    252
+ 54 Maylene — Sinnoh Gym Leader                   Gen 4   1640.0    253
+ 55 Flint — Sinnoh Elite Four                     Gen 4   1632.5    243
+ 56 Bertha — Sinnoh Elite Four                    Gen 4   1620.4    248
+ 57 Siebold — Kalos Elite Four                    Gen 6   1611.6    255
+ 58 Malva — Kalos Elite Four                      Gen 6   1610.0    253
+ 59 Lusamine — Alola President                    Gen 7   1593.4    252
+ 60 Silver — Johto Rival                          Gen 2   1560.7    251
+ 61 Wikstrom — Kalos Elite Four                   Gen 6   1501.9    252
+ 62 Byron — Sinnoh Gym Leader                     Gen 4   1501.4    247
+ 63 Skyla — Unova Gym Leader                      Gen 5   1484.5    247
+ 64 Hapu — Alola Kahuna                           Gen 7   1457.8    249
+ 65 Glacia — Hoenn Elite Four                     Gen 3   1444.3    243
+ 66 Clemont — Kalos Gym Leader                    Gen 6   1430.8    250
+ 67 Will — Johto Elite Four                       Gen 2   1429.7    246
+ 68 Marlon — Unova Gym Leader                     Gen 5   1418.2    246
+ 69 Juan — Hoenn Gym Leader                       Gen 3   1388.8    245
+ 70 Blue — Kanto Rival                            Gen 1   1383.9    252
+ 71 Drasna — Kalos Elite Four                     Gen 6   1382.0    250
+ 72 Drayden — Unova Gym Leader                    Gen 5   1369.7    250
+ 73 Gardenia — Sinnoh Gym Leader                  Gen 4   1352.2    247
+ 74 Karen — Johto Elite Four                      Gen 2   1342.7    247
+ 75 Lance — Kanto Elite Four                      Gen 1   1341.0    253
+ 76 Clay — Unova Gym Leader                       Gen 5   1323.3    250
+ 77 Clair — Johto Gym Leader                      Gen 2   1307.8    252
+ 78 Wulfric — Kalos Gym Leader                    Gen 6   1301.9    246
+ 79 Phoebe — Hoenn Elite Four                     Gen 3   1300.6    246
+ 80 Nanu — Alola Kahuna                           Gen 7   1294.1    242
+ 81 Olympia — Kalos Gym Leader                    Gen 6   1269.7    245
+ 82 Lorelei — Kanto Elite Four                    Gen 1   1251.5    251
+ 83 Elesa — Unova Gym Leader                      Gen 5   1221.0    251
+ 84 Tate & Liza — Hoenn Gym Leaders               Gen 3   1180.9    242
+ 85 Bruno — Kanto Elite Four                      Gen 1   1175.0    246
+ 86 Winona — Hoenn Gym Leader                     Gen 3   1169.2    243
+ 87 Sidney — Hoenn Elite Four                     Gen 3   1166.3    246
+ 88 Agatha — Kanto Elite Four                     Gen 1   1158.4    244
+ 89 Norman — Hoenn Gym Leader                     Gen 3   1142.9    246
+ 90 Sabrina — Kanto Gym Leader                    Gen 1   1139.8    247
+ 91 Giovanni — Kanto Team Boss                    Gen 1   1117.5    239
+ 92 Valerie — Kalos Gym Leader                    Gen 6   1108.8    245
+ 93 Koga — Kanto Gym Leader                       Gen 1   1104.6    244
+ 94 Morty — Johto Gym Leader                      Gen 2   1090.8    242
+ 95 Wattson — Hoenn Gym Leader                    Gen 3   1089.1    245
+ 96 Maxie — Hoenn Team Boss                       Gen 3    985.2    246
+ 97 Blaine — Kanto Gym Leader                     Gen 1    983.5    246
+ 98 Ramos — Kalos Gym Leader                      Gen 6    935.2    240
+ 99 Flannery — Hoenn Gym Leader                   Gen 3    931.8    244
+100 Jasmine — Johto Gym Leader                    Gen 2    921.0    243
+101 Burgh — Unova Gym Leader                      Gen 5    919.0    245
+102 Korrina — Kalos Gym Leader                    Gen 6    911.9    243
+103 Lt. Surge — Kanto Gym Leader                  Gen 1    902.8    244
+104 Archie — Hoenn Team Boss                      Gen 3    874.2    245
+105 May — Hoenn Rival                             Gen 3    847.1    243
+106 Pryce — Johto Gym Leader                      Gen 2    826.6    249
+107 Misty — Kanto Gym Leader                      Gen 1    804.3    238
+108 Erika — Kanto Gym Leader                      Gen 1    768.3    241
+109 Cheren — Unova Gym Leader                     Gen 5    766.9    246
+110 Chuck — Johto Gym Leader                      Gen 2    765.1    243
+111 Brawly — Hoenn Gym Leader                     Gen 3    745.2    241
+112 Roxanne — Hoenn Gym Leader                    Gen 3    727.1    240
+113 Grant — Kalos Gym Leader                      Gen 6    708.9    242
+114 Roxie — Unova Gym Leader                      Gen 5    707.2    244
+115 Whitney — Johto Gym Leader                    Gen 2    672.1    245
+116 Hala — Alola Kahuna                           Gen 7    639.2    240
+117 Bugsy — Johto Gym Leader                      Gen 2    483.5    239
+118 Falkner — Johto Gym Leader                    Gen 2    439.3    239
+119 Brock — Kanto Gym Leader                      Gen 1    323.2    239
+120 Viola — Kalos Gym Leader                      Gen 6    289.0    238
