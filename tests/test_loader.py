@@ -10,6 +10,7 @@ from battle_sim.database.loader import (
     _TYPE_MAP,
     _VENDOR_DIR,
     _VOLATILE_MAP,
+    gen7_singles_tier,
     get_all_moves,
     get_all_species,
     get_move,
@@ -194,6 +195,24 @@ def test_bulbasaur_species():
         weight_kg=6.9,
         fully_evolved=False,
     )
+
+
+def test_gen7_singles_tier_reflects_gen7_not_the_current_metagame():
+    """Moltres is Gen 7 UU; `pokedex.json`'s own bare `tier` field reflects a later generation
+    where it rates higher — this must read the Gen-7-specific table, not that field."""
+    assert gen7_singles_tier("Moltres") == "UU"
+    assert gen7_singles_tier("Mewtwo") == "Uber"
+    assert gen7_singles_tier("Bulbasaur") == "LC"
+    assert gen7_singles_tier("not-a-real-species") is None
+
+
+def test_legendary_and_mythical_status_comes_from_showdowns_own_tags():
+    """Rarity/spawn logic elsewhere trusts this instead of any rating — it must be exact."""
+    assert get_species("Moltres").is_legendary_or_mythical  # Sub-Legendary
+    assert get_species("Mewtwo").is_legendary_or_mythical  # Restricted Legendary
+    assert get_species("Celebi").is_legendary_or_mythical  # Mythical
+    assert not get_species("Bulbasaur").is_legendary_or_mythical
+    assert not get_species("Dragonite").is_legendary_or_mythical  # a strong pseudo-legendary, not one
 
 
 def test_garchomp_species_matches_test_fixture():

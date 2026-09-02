@@ -83,6 +83,7 @@ class RawSpeciesData(BaseModel):
     battle_only: str | list[str] | None = Field(default=None, alias="battleOnly")
     is_nonstandard: str | None = Field(default=None, alias="isNonstandard")
     is_cosmetic_forme: bool = Field(default=False, alias="isCosmeticForme")
+    tags: list[str] = Field(default_factory=list)
 
     def battle_only_parents(self) -> tuple[str, ...]:
         if self.battle_only is None:

@@ -168,6 +168,7 @@ _STATUS_CLEARED_TEXT: dict[str, str] = {
     "freed_from_leech_seed": "was freed from Leech Seed!",
     "encore_ended": "'s encore ended!",
     "disable_ended": "'s move is no longer disabled!",
+    "slow_start_ended": "'s Slow Start has worn off!",
     "berry": "'s berry cured its status!",
     "refreshed": "shook off its status!",
     "natural_cure": "was cured on the way out!",

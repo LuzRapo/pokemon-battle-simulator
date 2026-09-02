@@ -25,6 +25,8 @@ from battle_sim.models.moves import (
 )
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.spec import PokemonSpec
+from battle_sim.observation import BeliefSampler
+from battle_sim.runner import Player
 from battle_sim.teams import build_pokemon
 from battle_sim.utils import Hazards, Status
 
@@ -49,6 +51,29 @@ class Weights:
     stat_setup: float = 0.4
     safe_threat_fraction: float = 0.25  # "safe" = the opponent's worst case costs less than this much of our HP
     switch_advantage_margin: float = 0.35
+
+
+@dataclass
+class FixedOrderPlayer:
+    """Wraps another player, pinning team preview to that team's own listed order instead of
+    letting it choose a lead strategically — for anything (a Mirror Mode duel, a deterministic
+    sim setup) that needs both sides to send Pokémon out in the same sequence."""
+
+    inner: Player
+
+    def choose_order(self, own: Sequence[PokemonSpec], opponent: Sequence[PokemonSpec]) -> Sequence[int]:
+        return list(range(len(own)))
+
+    def choose_action(self, state: BattleState, side_index: int, actions: Sequence[Action]) -> Action:
+        return self.inner.choose_action(state, side_index, actions)
+
+    def bind_belief_sampler(self, sampler: BeliefSampler) -> None:
+        """Forwarded so wrapping a `Determinizing` player (a `SearchPlayer`) still gets bound —
+        `interactive.py`'s `isinstance(ai, Determinizing)` check only sees this wrapper, not `inner`.
+        A no-op for an inner player that never needed one."""
+        bind = getattr(self.inner, "bind_belief_sampler", None)
+        if bind is not None:
+            bind(sampler)
 
 
 class RandomPlayer:

@@ -199,6 +199,7 @@ _SUPPRESS_VOLATILE = frozenset({"shedtail"})
 
 _EXCLUDE_NONSTANDARD_SPECIES = frozenset({"CAP", "Custom"})
 _EXCLUDE_NONSTANDARD_MOVES = frozenset({"CAP", "Custom", "LGPE", "Gigantamax", "Unobtainable"})
+_LEGENDARY_OR_MYTHICAL_TAGS = frozenset({"Sub-Legendary", "Restricted Legendary", "Mythical"})
 
 
 @dataclass
@@ -253,6 +254,7 @@ def _adapt_species(raw: RawSpeciesData) -> BaseSpecies:
         height_m=raw.height_m,
         weight_kg=raw.weight_kg,
         fully_evolved=not raw.evos,
+        is_legendary_or_mythical=bool(_LEGENDARY_OR_MYTHICAL_TAGS.intersection(raw.tags)),
         base_species=raw.base_species,
         required_item=raw.required_item,
     )
@@ -533,3 +535,17 @@ def get_move(name: str) -> Move:
     if key not in moves:
         raise KeyError(f"Unknown move: {name!r}")
     return moves[key]
+
+
+@cache
+def _gen7_singles_tiers() -> dict[str, str]:
+    """`{species_id: "OU"|"UU"|"Uber"|...}`, Gen 7's own competitive placement — not `pokedex.json`'s
+    `tier` field, which always reflects the *current* generation's metagame instead."""
+    raw: dict[str, str] = json.loads((_VENDOR_DIR / "gen7_tiers.json").read_text())
+    return raw
+
+
+def gen7_singles_tier(name: str) -> str | None:
+    """A species' Gen 7 singles tier (`"OU"`, `"UU"`, `"Uber"`, ...), or None if it was never placed —
+    e.g. it postdates Gen 7, or only ever had a doubles tier."""
+    return _gen7_singles_tiers().get(normalize_id(name))

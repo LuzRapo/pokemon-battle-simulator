@@ -1,6 +1,6 @@
 import pytest
 
-from battle_sim.database.scope import gen7_movepool, in_scope_species
+from battle_sim.database.scope import gen7_high_tier_species, gen7_movepool, in_scope_species
 
 
 def test_gen1_species_is_in_scope():
@@ -54,3 +54,18 @@ def test_unknown_species_raises():
 def test_movepool_excludes_moves_only_taught_after_gen7():
     assert "acidspray" not in gen7_movepool("bulbasaur")  # Gen 9 TM move only
     assert "tackle" in gen7_movepool("bulbasaur")
+
+
+def test_high_tier_species_is_gen7s_own_ou_uu_uber_band():
+    pool = gen7_high_tier_species()
+    assert "moltres" in pool  # Gen 7's own UU, unlike the current-gen `pokedex.json` tier field
+    assert "mewtwo" in pool  # Uber
+    assert "bulbasaur" not in pool  # LC
+    assert "zubat" not in pool  # ZU
+    assert pool <= in_scope_species()  # never offers something unbattleable in this engine
+
+
+def test_high_tier_species_excludes_mega_only_placements():
+    """`charizardmegax` is tiered OU in Gen 7, but it is not an `in_scope_species()` entry — Mega
+    formes are reached mid-battle via the base species' held item, never selected directly."""
+    assert "charizardmegax" not in gen7_high_tier_species()

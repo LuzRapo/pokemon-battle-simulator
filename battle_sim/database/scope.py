@@ -12,10 +12,11 @@ from functools import cache
 from pathlib import Path
 from typing import Final
 
-from battle_sim.database.loader import normalize_id
+from battle_sim.database.loader import gen7_singles_tier, normalize_id
 from battle_sim.database.raw import RawLearnsetData, RawSpeciesData
 
 MAX_GENERATION: Final = 7
+HIGH_COMPETITIVE_TIERS: Final = frozenset({"OU", "UU", "Uber"})
 
 _VENDOR_DIR: Final = Path(__file__).parent / "_vendor"
 _EXCLUDE_NONSTANDARD: Final = frozenset({"CAP", "Custom"})
@@ -109,3 +110,11 @@ def in_scope_species() -> frozenset[str]:
         and not _is_mega_like(raw)
         and gen7_movepool(key)
     )
+
+
+@cache
+def gen7_high_tier_species() -> frozenset[str]:
+    """In-scope species whose Gen 7 singles placement was OU, UU, or Uber — the genuinely
+    competitive band, for anything (mirror-mode team generation) that wants real Smogon-viable
+    picks rather than the full Gen 7 dex, tournament rating included."""
+    return frozenset(key for key in in_scope_species() if gen7_singles_tier(key) in HIGH_COMPETITIVE_TIERS)
