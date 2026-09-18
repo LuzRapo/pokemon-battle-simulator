@@ -7,7 +7,7 @@ from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.mechanics.priority import effective_speed
 from battle_sim.models.actions import Action, ActionType
-from battle_sim.models.log_events import CantAct, DoesNotAffect, StatChangesSwept
+from battle_sim.models.log_events import CantAct, DoesNotAffect, ScreenFaded, StatChangesSwept
 from battle_sim.models.moves import DamageEffect, Move, MoveSet, MoveSlot
 from battle_sim.models.pokemon import NINE_LIVES, Pokemon
 from battle_sim.models.stats import BaseStats, EVs, IVs
@@ -2245,6 +2245,55 @@ def test_the_sweep_is_announced_so_it_does_not_read_as_a_bug():
     clean_state, _, _ = _butler_about_to_lose_a_life()
     quiet = step(clean_state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
     assert not any(isinstance(entry, StatChangesSwept) for entry in quiet.entries), "announced an empty sweep"
+
+
+def test_rising_again_takes_down_the_screens_the_other_side_was_hiding_behind():
+    """The more durable half of the same cheese. A stage boost belongs to whoever is standing there
+    and leaves when they do; Reflect sits on the side for five turns and outlives any number of his
+    lives, halving everything he lands for the whole stretch."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    state.sides[0].screens = {Hazards.REFLECT: 5, Hazards.LIGHT_SCREEN: 5}
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert butler.lives_used == 1, "the setup did not actually spend a life"
+    assert state.sides[0].screens == {}, "he rose behind the same walls he went down to"
+
+
+def test_each_screen_that_goes_is_named():
+    """Same reason the stage sweep is announced: walls vanishing with nothing said reads as a bug.
+    One line per screen, as Brick Break and Defog do it, rather than one standing in for three."""
+    state, _, _ = _butler_about_to_lose_a_life()
+    state.sides[0].screens = {Hazards.REFLECT: 5, Hazards.AURORA_VEIL: 5}
+
+    played = step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    faded = {entry.screen for entry in played.entries if isinstance(entry, ScreenFaded)}
+    assert faded == {Hazards.REFLECT, Hazards.AURORA_VEIL}
+    assert all(entry.side == 0 for entry in played.entries if isinstance(entry, ScreenFaded))
+
+
+def test_the_sweep_leaves_his_own_screens_standing():
+    """The same asymmetry the stages have: his side keeps what it put up, their side keeps nothing."""
+    state, _, _ = _butler_about_to_lose_a_life()
+    state.sides[0].screens = {Hazards.REFLECT: 5}
+    state.sides[1].screens = {Hazards.LIGHT_SCREEN: 5}
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    # Still standing, though a turn shorter: the residual countdown is not the sweep.
+    assert Hazards.LIGHT_SCREEN in state.sides[1].screens, "the sweep reached across and took his own"
+    assert state.sides[0].screens == {}
+
+
+def test_an_empty_board_is_swept_without_a_word():
+    """Nothing to sweep, nothing to say — for the screens as well as the stages."""
+    state, _, _ = _butler_about_to_lose_a_life()
+
+    quiet = step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert not any(isinstance(entry, ScreenFaded) for entry in quiet.entries)
+    assert not any(isinstance(entry, StatChangesSwept) for entry in quiet.entries)
 
 
 def test_the_sweep_does_not_touch_the_butler_s_own_boosts():

@@ -17,6 +17,7 @@ from battle_sim.models.log_events import (
     NineLivesRestored,
     NoEffect,
     RecoilDamage,
+    ScreenFaded,
     StatChangesSwept,
     StatusCleared,
     SubstituteBroke,
@@ -344,21 +345,32 @@ def _hand_back_the_trade(
 
 
 def _sweep_the_opposing_board(state: BattleState, revived_index: int, log: BattleLog) -> None:
-    """Whatever the Pokemon facing him had built up goes when he rises. Every stage, both ways.
+    """Whatever the side facing him had built up goes when he rises: their stages, and their screens.
 
     Without it the nine lives are not a gauntlet so much as nine turns to stand still in: stack
     evasion and he cannot touch you however many times he gets up, and the same is true of a Swords
     Dance sweep set up once and paid off nine times. Each life starts the exchange over.
 
-    Both directions rather than only the boosts, so a Close Combat's own Defence drop clears with the
-    rest -- the board is reset, not confiscated. His own drops go too (see `Pokemon.clear_stat_drops`)
-    while his boosts stay, which is the asymmetry the ability is *for*: it is his, not the field's.
+    Stages go both ways rather than only the boosts, so a Close Combat's own Defence drop clears with
+    the rest -- the board is reset, not confiscated. His own drops go too (see
+    `Pokemon.clear_stat_drops`) while his boosts stay, which is the asymmetry the ability is *for*:
+    it is his, not the field's.
+
+    Screens go for the same reason, and they are the more durable half of the problem. A stage boost
+    belongs to whoever is standing there and leaves when they do; Reflect and Light Screen sit on the
+    *side* for five turns and outlive any number of his lives, halving everything he lands for the
+    whole stretch. That is precisely the standing-still this sweep exists to stop.
     """
-    facing = state.sides[1 - revived_index].active_pokemon
-    if not any(getattr(facing.stat_stages, name) for name in StatStages.model_fields):
-        return  # nothing built up, so nothing to announce
-    facing.reset_stat_stages()
-    log.add(StatChangesSwept(side=1 - revived_index, pokemon=facing.nickname))
+    opposing = state.sides[1 - revived_index]
+    facing = opposing.active_pokemon
+    if any(getattr(facing.stat_stages, name) for name in StatStages.model_fields):
+        facing.reset_stat_stages()
+        log.add(StatChangesSwept(side=1 - revived_index, pokemon=facing.nickname))
+    # One line per screen, the way Brick Break and Defog announce them, rather than a single line
+    # standing in for up to three.
+    for screen in list(opposing.screens):
+        del opposing.screens[screen]
+        log.add(ScreenFaded(side=1 - revived_index, screen=screen))
 
 
 def _fixed_amount(effect: FixedDamageEffect, attacker: Pokemon, defender: Pokemon) -> int | None:
