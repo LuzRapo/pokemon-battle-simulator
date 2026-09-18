@@ -22,3 +22,27 @@ battles/
 replay_cache/
 *.npz
 *.onnx
+
+# Rating-run output: battle logs are large and regenerable, and the fitted file is copied
+# into the bot deliberately rather than committed here.
+ratings/
+
+# The replay corpus the human-policy fit and the sleep/freeze work were calibrated against:
+# 67MB of downloaded battles, regenerable and not ours to redistribute. Anchored with a leading
+# slash: a bare `data/` would also match `battle_sim/data/`, which is package data and belongs here.
+/data/
+
+# Run output from the tournaments, A/B comparisons and evaluator fits. All of it is produced by
+# `tools/`, all of it is reproducible from a seed, and the numbers that matter are committed as
+# `battle_sim/data/` or copied into the bot instead.
+ab_match.json
+ag_team_elo.json
+ag_team_elo.txt
+ag_teams.txt
+ag_tournament.log
+evaluator_compare.json
+evaluator_fit.json
+hazard_ab.json
+overnight_elo.json
+overnight_elo.txt
+overnight_elo.games.jsonl

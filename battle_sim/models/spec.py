@@ -17,6 +17,9 @@ class PokemonSpec(BaseModel):
     effort_values: EVs = Field(default_factory=lambda: EVs())
     individual_values: IVs = Field(default_factory=lambda: IVs())
     moves: list[str] = Field(default_factory=list, max_length=4)
+    # PP Ups, the real mechanic: three of them take a move to 8/5 of its listed PP. Written on the
+    # spec rather than baked into a move, because it belongs to one Pokemon's copy of that move.
+    pp_ups: int = Field(default=0, ge=0, le=3)
 
     @model_validator(mode="after")
     def _require_species(self) -> "PokemonSpec":

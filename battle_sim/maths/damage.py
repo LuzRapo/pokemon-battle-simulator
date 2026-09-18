@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from battle_sim.maths.rng import RNG
 from battle_sim.maths.stats import apply_stage_multiplier
 from battle_sim.mechanics.battle import FieldState, SideState
@@ -10,7 +12,21 @@ from battle_sim.utils import Ability, Category, ExtraStatus, Hazards, Item, Stat
 _CRIT_PROBABILITIES = (1 / 24, 1 / 8, 1 / 2, 1.0)
 
 
-def calculate_damage(  # noqa: C901 — the Gen-9 modifier chain; its sequence IS the contract, splitting would hide it
+@dataclass(frozen=True)
+class Hit:
+    """What one damage calculation worked out, and the one fact about it worth announcing.
+
+    The crit used to live and die inside the formula, which meant a hit that landed for half again
+    its damage — ignoring the defender's Defence boosts and walking through Reflect — arrived in the
+    log as an unexplained number. `amount` is what every caller already wanted; `is_crit` is what the
+    log needs to say so.
+    """
+
+    amount: int
+    is_crit: bool
+
+
+def calculate_damage(
     attacker: Pokemon,
     defender: Pokemon,
     move: Move,
@@ -22,29 +38,57 @@ def calculate_damage(  # noqa: C901 — the Gen-9 modifier chain; its sequence I
     target_count: int = 1,
     modifiers: Payload | None = None,
 ) -> int:
+    """The damage alone, for callers with nothing to say about how it was rolled."""
+    return calculate_hit(
+        attacker, defender, move, field, defender_side, rng, is_crit, random_roll, target_count, modifiers
+    ).amount
+
+
+def calculate_hit(  # noqa: C901, PLR0913 — the Gen-9 modifier chain; its sequence IS the contract, splitting would hide it
+    attacker: Pokemon,
+    defender: Pokemon,
+    move: Move,
+    field: FieldState,
+    defender_side: SideState,
+    rng: RNG,
+    is_crit: bool | None = None,
+    random_roll: int | None = None,
+    target_count: int = 1,
+    modifiers: Payload | None = None,
+) -> Hit:
     """Pure Gen-9 damage formula. Ability/item contributions arrive pre-collected in `modifiers`
     (see Payload in mechanics.events); their fold positions are fixed so rounding is exact
-    regardless of handler registration order."""
+    regardless of handler registration order.
+
+    Every early return is `_nothing()` — a miss of this formula is never a critical one, and the crit
+    is not rolled at all on those paths, which is what keeps the RNG stream where it has always been.
+    """
     payload: Payload = {} if modifiers is None else modifiers
     damage_effect = next((e for e in move.effects if isinstance(e, DamageEffect)), None)
     if damage_effect is None:
-        return 0
+        return _nothing()
     power: int | None = payload.get("power_override", damage_effect.power)
     if not power:
-        return 0
+        return _nothing()
 
     if defender.item is Item.AIR_BALLOON and move.type is Type.GROUND:
-        return 0
+        return _nothing()
 
-    type_multiplier = move_effectiveness(move, attacker, defender)
+    type_multiplier = move_effectiveness(move, attacker, defender, field.weather)
     if type_multiplier == 0:
-        return 0
+        return _nothing()
 
     if is_crit is None:
         crit_stage = damage_effect.crit_stage + (2 if ExtraStatus.FOCUS_ENERGY in attacker.volatiles else 0)
         if attacker.item is Item.SCOPE_LENS:
             crit_stage += 1
-        rolled_crit = rng.roll_chance(_crit_chance(crit_stage))
+        if attacker.ability is Ability.SUPER_LUCK:
+            crit_stage += 1
+        # Merciless crits outright against poison rather than raising the stage — it is the reason
+        # Toxapex's own Baneful Bunker/Toxic pressure is a threat and not just a stall clock.
+        rolled_crit = rng.roll_chance(_crit_chance(crit_stage)) or (
+            attacker.ability is Ability.MERCILESS and defender.status in (Status.POISON, Status.TOXIC)
+        )
         is_crit = rolled_crit and defender.ability not in (Ability.BATTLE_ARMOR, Ability.SHELL_ARMOR)
 
     if damage_effect.category is Category.PHYSICAL:
@@ -52,6 +96,9 @@ def calculate_damage(  # noqa: C901 — the Gen-9 modifier chain; its sequence I
     else:
         attack_stat, defense_stat = Stats.SP_ATTACK, Stats.SP_DEFENCE
     attack_stat = payload.get("attack_stat_override", attack_stat)  # Body Press attacks with Defence
+    # Psyshock and friends are Special moves that land on physical Defence, and Photon Geyser swaps
+    # both stats when the user hits harder physically. Neither is expressible as a category.
+    defense_stat = payload.get("defense_stat_override", defense_stat)
     attack_owner = defender if payload.get("use_target_attack", False) else attacker  # Foul Play
 
     attack = _crit_aware_offensive_stat(attack_owner, attack_stat, is_crit, payload.get("ignore_attack_stages", False))
@@ -102,7 +149,11 @@ def calculate_damage(  # noqa: C901 — the Gen-9 modifier chain; its sequence I
     for modifier in payload.get("final_mods_4096", []):
         damage = _chain(damage, modifier)
 
-    return max(1, damage)
+    return Hit(amount=max(1, damage), is_crit=is_crit)
+
+
+def _nothing() -> Hit:
+    return Hit(amount=0, is_crit=False)
 
 
 _EFFECTIVENESS_OVERRIDES: dict[str, dict[Type, float]] = {
@@ -110,8 +161,14 @@ _EFFECTIVENESS_OVERRIDES: dict[str, dict[Type, float]] = {
 }
 
 
-def move_effectiveness(move: Move, attacker: Pokemon, defender: Pokemon) -> float:
-    """Type effectiveness with per-move (Freeze-Dry) and per-attacker (Scrappy) overrides folded in."""
+def move_effectiveness(move: Move, attacker: Pokemon, defender: Pokemon, weather: Weather = Weather.NONE) -> float:
+    """Type effectiveness with per-move (Freeze-Dry), per-attacker (Scrappy) and weather overrides.
+
+    The weather one is Delta Stream: while Mega Rayquaza's strong winds blow, whatever would be super
+    effective against a Flying type is cut back to neutral. That single clause is most of why the
+    format's best Pokemon is its best Pokemon — without it a Dragon/Flying with a 2x Ice, Rock and
+    Dragon weakness is merely fast and strong.
+    """
     if move.typeless:
         return 1.0
     bypass = immunity_bypass(defender)
@@ -119,6 +176,10 @@ def move_effectiveness(move: Move, attacker: Pokemon, defender: Pokemon) -> floa
     if scrappy and Type.GHOST in defender.types:
         bypass = bypass | {Type.GHOST}
     multiplier = type_effectiveness(move.type, defender.types, immunity_bypass=bypass)
+    if weather is Weather.STRONG_WINDS and Type.FLYING in defender.types:
+        against_flying = type_effectiveness(move.type, (Type.FLYING, None))
+        if against_flying > 1:
+            multiplier /= against_flying  # the Flying half stops being a weakness; the other half stands
     overrides = _EFFECTIVENESS_OVERRIDES.get(move.name)
     if overrides is None:
         return multiplier

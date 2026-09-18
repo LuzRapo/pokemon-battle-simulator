@@ -2,7 +2,7 @@ import random
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 
-from battle_sim.database.loader import get_move, get_species
+from battle_sim.database.loader import get_move, get_species, normalize_id
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, SideState
 from battle_sim.mechanics.log import BattleLog
@@ -24,6 +24,7 @@ from battle_sim.models.log_events import (
     ItemsSwapped,
     ItemStolen,
     LogEntry,
+    MoveBounced,
     MoveUsed,
     ParadoxActivated,
     PpRestored,
@@ -39,7 +40,7 @@ from battle_sim.models.log_events import (
 from battle_sim.models.moves import MoveSlot
 from battle_sim.models.pokemon import BelievedSet, Pokemon
 from battle_sim.models.spec import PokemonSpec
-from battle_sim.teams import build_pokemon
+from battle_sim.teams import ability_from_showdown, build_pokemon
 from battle_sim.utils import CHOICE_ITEMS, Ability, Item
 
 type BeliefSampler = Callable[[random.Random], BattleState]
@@ -266,13 +267,26 @@ class BattleObserver:
         believed = []
         for mon in true_side.team:
             knowledge = self._knowledge[opponent][mon.nickname]
-            spec = self._prior.sample(self._preview_species[opponent][mon.nickname], knowledge, rng)
-            update = {"species": mon.name, "nickname": mon.nickname, "level": mon.level}
-            believed.append(build_pokemon(spec.model_copy(update=update)))
+            preview = self._preview_species[opponent][mon.nickname]
+            spec = self._prior.sample(preview, knowledge, rng)
+            believed.append(build_pokemon(spec.model_copy(update=self._believed_update(mon, preview))))
         self._retired.extend(believed)
         state = self._assemble(viewer, believed)
         self._sync(state, believed, opponent)
         return state
+
+    def _believed_update(self, mon: Pokemon, preview: str) -> dict[str, object]:
+        """The fields a believed Pokemon takes from what is publicly visible rather than guessed.
+
+        The forme a Pokemon is standing in is public, and for the formes reached mid-battle the
+        ability comes with it: a Sableye that Mega Evolves is visibly a Sableye-Mega, and every
+        Sableye-Mega has Magic Bounce. Without this the belief kept the ability sampled for the base
+        species, so the search would happily throw status at a Magic Bounce it could see was there.
+        """
+        update: dict[str, object] = {"species": mon.name, "nickname": mon.nickname, "level": mon.level}
+        if normalize_id(mon.name) != normalize_id(preview):
+            update["ability"] = ability_from_showdown(get_species(normalize_id(mon.name)).regular_abilities[0])
+        return update
 
     def _formes_changed(self, view: _View, opponent: int) -> bool:
         """Forme changes are public but bump no knowledge version; catch them by name."""
@@ -356,6 +370,10 @@ class BattleObserver:
             case AbilitiesSwapped(side=side):
                 for swapped in (side, 1 - side):
                     self._forget_ability(swapped, self._active[swapped])
+            case MoveBounced(side=side, pokemon=pokemon):
+                # Being bounced is as public as a Pokemon gets about its ability, and without this
+                # the search would keep feeding status to it turn after turn.
+                self._learn_ability(side, pokemon, Ability.MAGIC_BOUNCE)
             case AvoidedWithLevitate(side=side, pokemon=pokemon):
                 self._learn_ability(side, pokemon, Ability.LEVITATE)
             case FlashFireActivated(side=side, pokemon=pokemon) | FlashFireAbsorbed(side=side, pokemon=pokemon):
@@ -426,8 +444,7 @@ class BattleObserver:
                 preview = self._preview_species[opponent][mon.nickname]
                 spec = self._prior.believe(preview, knowledge)
                 # The current forme is public; the set behind it is still the prior's guess.
-                update = {"species": mon.name, "nickname": mon.nickname, "level": mon.level}
-                guess = build_pokemon(spec.model_copy(update=update))
+                guess = build_pokemon(spec.model_copy(update=self._believed_update(mon, preview)))
                 guess.believed_sets = believed_sets(self._prior, preview, knowledge, self._belief_candidates[viewer])
                 believed.append(guess)
             mon_versions.append(knowledge.version)

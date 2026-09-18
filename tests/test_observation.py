@@ -264,3 +264,58 @@ def test_sampled_worlds_are_taken_as_known_not_believed():
     _, observer = _battle()
     sampled = observer.sample_view(0, random.Random(1))
     assert sampled.sides[1].active_pokemon.believed_sets is None
+
+
+# -- What a visible forme, and a bounced move, tell you (2026-09-08) -----------------
+#
+# Both of these went unobserved, so the search could watch its Toxic be reflected five turns running
+# and still believe the next one would land.
+
+_WEEZING = PokemonSpec(
+    species="Weezing",
+    ability=Ability.LEVITATE,
+    item=Item.BLACK_SLUDGE,
+    moves=["Toxic", "Sludge Bomb", "Pain Split", "Haze"],
+)
+_SABLEYE = PokemonSpec(
+    species="Sableye",
+    ability=Ability.PRANKSTER,
+    item=Item.SABLENITE,
+    moves=["Knock Off", "Recover", "Protect", "Detect"],
+)
+
+
+def _watching(mine: PokemonSpec, theirs: PokemonSpec) -> tuple[BattleState, BattleObserver]:
+    state = BattleState(
+        sides=(SideState(team=[build_pokemon(mine)]), SideState(team=[build_pokemon(theirs)])),
+        rng=RNG(seed=1),
+    )
+    return state, BattleObserver(state, SetPrior.from_teams([[mine], [theirs]]))
+
+
+def test_a_mega_evolution_reveals_the_ability_that_comes_with_the_forme() -> None:
+    """Every Sableye-Mega has Magic Bounce, and the whole table can see it happen."""
+    from battle_sim.engine import step
+    from battle_sim.models.actions import Action, ActionType
+    from battle_sim.utils import Target
+
+    state, observer = _watching(_WEEZING, _SABLEYE)
+    assert observer.view(0).sides[1].active_pokemon.ability is Ability.PRANKSTER
+
+    attack = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+    observer.ingest(step(state, {0: attack, 1: attack}))
+
+    believed = observer.view(0).sides[1].active_pokemon
+    assert believed.name == "Sableye-Mega"
+    assert believed.ability is Ability.MAGIC_BOUNCE
+
+
+def test_having_a_move_bounced_teaches_who_bounced_it() -> None:
+    from battle_sim.models.log_events import MoveBounced
+
+    _, observer = _watching(_WEEZING, _SABLEYE)
+    log = BattleLog()
+    log.add(MoveBounced(side=1, pokemon=build_pokemon(_SABLEYE).nickname))
+    observer.ingest(log)
+
+    assert observer.view(0).sides[1].active_pokemon.ability is Ability.MAGIC_BOUNCE

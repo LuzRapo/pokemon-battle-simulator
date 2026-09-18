@@ -9,9 +9,13 @@ Two kinds exist, and only one is modelled here:
   rather than hand-listed, so it cannot drift.
 - **Signature crystals** (Kommonium Z, Mimikium Z, ...) upgrade one specific move and carry real
   power in the data — but *which* move they attach to is not in the vendored move data at all (it
-  lives in Showdown's items data, which this project does not vendor). Rather than hand-maintain 17
-  pairings, those crystals stay inert. They are ~35% of observed Z-move use in the replay corpus, so
-  this is a real gap, recorded rather than papered over.
+  lives in Showdown's items data, which this project does not vendor), so the pairing is the one
+  thing here that is hand-written. It is fifteen lines and it was worth writing: while these were
+  inert they were ~35% of observed Z-move use in the replay corpus, and an inert crystal is worse
+  than no item, because the holder gives up a Life Orb or a Leftovers for nothing.
+
+The Ultra Burst that Ultranecrozium Z triggers in the real games is *not* modelled — Necrozma fires
+the Z-move without changing forme.
 """
 
 from dataclasses import replace
@@ -22,6 +26,26 @@ from battle_sim.teams import item_showdown_name
 from battle_sim.utils import Item, Type
 
 _PLACEHOLDER_POWER = 1  # what the generic type Z-moves ship with instead of a real value
+
+# Which base move each signature crystal upgrades. Only the pairing is hand-written; the Z-move
+# itself, with its real power and type, comes from the vendored data like everything else.
+_SIGNATURE_BASES: dict[str, str] = {
+    "aloraichiumz": "Thunderbolt",
+    "decidiumz": "Spirit Shackle",
+    "inciniumz": "Darkest Lariat",
+    "kommoniumz": "Clanging Scales",
+    "lunaliumz": "Moongeist Beam",
+    "lycaniumz": "Stone Edge",
+    "marshadiumz": "Spectral Thief",
+    "mewniumz": "Psychic",
+    "mimikiumz": "Play Rough",
+    "pikaniumz": "Volt Tackle",
+    "pikashuniumz": "Thunderbolt",
+    "primariumz": "Sparkling Aria",
+    "snorliumz": "Giga Impact",
+    "solganiumz": "Sunsteel Strike",
+    "ultranecroziumz": "Photon Geyser",
+}
 
 # Gen 7's fixed conversion: the base move's power decides the Z-move's, in bands.
 _Z_POWER_TABLE: tuple[tuple[int, int], ...] = (
@@ -69,8 +93,22 @@ def crystal_type(item: Item) -> Type | None:
     return template.type if template is not None else None
 
 
+def _signature_move(item: Item, base: Move) -> Move | None:
+    """This crystal's signature Z-move, if `base` is the one move it upgrades."""
+    key = normalize_id(item_showdown_name(item))
+    if _SIGNATURE_BASES.get(key) != base.name:
+        return None
+    z_move = get_all_z_moves().get(key)
+    if z_move is None:
+        return None
+    return replace(z_move, accuracy_probability=None)  # Z-moves never miss
+
+
 def z_move_for(item: Item, base: Move) -> Move | None:
     """The Z-move this crystal makes of this move, or None if the pairing does nothing."""
+    signature = _signature_move(item, base)
+    if signature is not None:
+        return signature
     template = _generic_template(item)
     if template is None or base.type is not template.type:
         return None

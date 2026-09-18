@@ -468,3 +468,47 @@ def test_sniper_boosts_crit_damage_beyond_the_normal_multiplier():
     defender_a = make_pokemon()
     defender_b = make_pokemon()
     assert _guaranteed_crit_roll(sniper_attacker, defender_b) > _guaranteed_crit_roll(plain_attacker, defender_a)
+
+
+def test_the_thin_wrapper_agrees_with_the_detail_it_wraps():
+    """`calculate_damage` exists only to drop the crit flag. If the two ever disagree on the number,
+    every caller that kept the simple signature is quietly computing something else."""
+    from battle_sim.maths.damage import calculate_hit
+
+    attacker, defender = make_pokemon(), make_pokemon(types=(Type.GRASS, None))
+    side = SideState(team=[defender])
+    for seed in range(50):
+        args = (attacker, defender, TACKLE, FieldState(), side)
+        plain = calculate_damage(*args, rng=RNG(seed=seed))
+        detailed = calculate_hit(*args, rng=RNG(seed=seed))
+        assert plain == detailed.amount
+
+
+def test_an_always_crit_move_always_crits():
+    """PS marks these with `willCrit` rather than a crit ratio, and nothing read the flag — so Storm
+    Throw, Frost Breath and the rest were landing as ordinary hits for their whole lives here."""
+    from battle_sim.maths.damage import calculate_hit
+
+    for name in ("Storm Throw", "Frost Breath", "Wicked Blow"):
+        attacker, defender = make_pokemon(), make_pokemon(types=(Type.NORMAL, None))
+        side = SideState(team=[defender])
+        crits = [
+            calculate_hit(attacker, defender, get_move(name), FieldState(), side, rng=RNG(seed=seed)).is_crit
+            for seed in range(30)
+        ]
+        assert all(crits), f"{name} is an always-crit move and rolled an ordinary hit"
+
+
+def test_shell_armor_still_refuses_an_always_crit_move():
+    """The reason `willCrit` is expressed as the top crit *stage* rather than its own bypass: the
+    armour abilities have to keep refusing it, exactly as they refuse any other critical hit."""
+    from battle_sim.maths.damage import calculate_hit
+
+    storm_throw = get_move("Storm Throw")
+    for ability in (Ability.SHELL_ARMOR, Ability.BATTLE_ARMOR):
+        armored = make_pokemon(types=(Type.NORMAL, None))
+        armored.ability = ability
+        hit = calculate_hit(
+            make_pokemon(), armored, storm_throw, FieldState(), SideState(team=[armored]), rng=RNG(seed=0)
+        )
+        assert not hit.is_crit, f"{ability.name} let an always-crit move through"

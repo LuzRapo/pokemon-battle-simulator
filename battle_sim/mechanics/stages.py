@@ -43,6 +43,8 @@ def apply_stage_changes(
 ) -> None:
     if target.ability is Ability.CONTRARY:
         stages = {stat: -change for stat, change in stages.items()}
+    elif target.ability is Ability.SIMPLE:
+        stages = {stat: 2 * change for stat, change in stages.items()}  # both ways, drops included
     has_drop = any(change < 0 for change in stages.values())
     if inflicted_by_opponent and has_drop:
         surviving = _intercept_drops(target, target_index, stages, log, source, inflictor, reflected)

@@ -69,3 +69,21 @@ def test_high_tier_species_excludes_mega_only_placements():
     """`charizardmegax` is tiered OU in Gen 7, but it is not an `in_scope_species()` entry — Mega
     formes are reached mid-battle via the base species' held item, never selected directly."""
     assert "charizardmegax" not in gen7_high_tier_species()
+
+
+def test_an_evolved_species_keeps_what_it_learned_earlier():
+    """The learnsets file stores a move on the stage that learns it and does not repeat it up the
+    chain, so Sucker Punch lives under Pawniard. Without walking `prevo`, Bisharp could not be
+    taught its own signature priority move — and every evolved species was short the same way."""
+    assert "suckerpunch" in gen7_movepool("Pawniard")
+    assert "suckerpunch" in gen7_movepool("Bisharp")
+    assert gen7_movepool("Pawniard") <= gen7_movepool("Bisharp")
+
+
+def test_a_three_stage_line_inherits_all_the_way_down():
+    assert gen7_movepool("Dratini") <= gen7_movepool("Dragonair") <= gen7_movepool("Dragonite")
+
+
+def test_a_first_stage_still_only_knows_its_own():
+    """The walk goes one way: evolving grants moves, it does not hand them backwards."""
+    assert not gen7_movepool("Bisharp") <= gen7_movepool("Pawniard")

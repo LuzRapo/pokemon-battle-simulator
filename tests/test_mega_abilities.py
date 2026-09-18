@@ -97,3 +97,54 @@ def test_sand_force_needs_a_sandstorm_and_the_right_type():
     assert 1.25 < boosted < 1.35
     assert wrong_type == 1.0
     assert no_weather == 1.0
+
+
+def _chomp_vs(foe_ability: Ability) -> tuple[int, Ability]:
+    """One turn: a Garchomp mega-evolves, then eats an Earthquake. Returns damage taken and ability."""
+    chomp = build_pokemon(
+        PokemonSpec(
+            species="Garchomp",
+            level=50,
+            moves=["Dragon Claw"],
+            ability=Ability.ROUGH_SKIN,
+            item=Item.GARCHOMPITE_Z,
+            nature=Nature.JOLLY,
+        )
+    )
+    excadrill = build_pokemon(
+        PokemonSpec(
+            species="Excadrill",
+            level=50,
+            moves=["Earthquake"],
+            ability=foe_ability,
+            item=Item.NONE,
+            nature=Nature.JOLLY,
+        )
+    )
+    chomp.nickname, excadrill.nickname = "Garchomp", "Excadrill"
+    state = BattleState(sides=(SideState(team=[chomp]), SideState(team=[excadrill])), rng=RNG(seed=3))
+    log = step(state, {0: _act(MoveSlot.FIRST), 1: _act(MoveSlot.FIRST)})
+    taken = sum(entry.amount for entry in log if isinstance(entry, DamageDealt) and entry.side == 0)
+    return taken, chomp.ability
+
+
+def test_mega_garchomp_z_floats_above_ground_moves() -> None:
+    """A house rule, and one the forme argues for: this mega sheds the Ground type to become pure
+    Dragon, so the Sand Force the vendor file gives it — a Ground/Rock/Steel booster — would boost
+    nothing it has STAB on. It reads as a Garchomp that has stopped touching the ground.
+
+    Worth testing through a real mid-battle mega evolution rather than by building the forme
+    directly: the ability arrives *during* the turn, and would do nothing at all if the forme change
+    failed to rewire the event bus behind it.
+    """
+    taken, ability = _chomp_vs(Ability.SAND_RUSH)
+    assert ability is Ability.LEVITATE
+    assert taken == 0
+
+
+def test_mold_breaker_still_reaches_a_floating_mega_garchomp_z() -> None:
+    """Which is why turn 6 of match 5a8744b1 was right either way — Ingo's Excadrill held Mold
+    Breaker, and Mold Breaker unwires the defender's ability for the move's duration."""
+    taken, ability = _chomp_vs(Ability.MOLD_BREAKER)
+    assert ability is Ability.LEVITATE
+    assert taken > 0

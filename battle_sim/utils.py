@@ -91,6 +91,8 @@ class Status(Enum):
 
 class ExtraStatus(Enum):
     NONE = auto()
+    NINE_LIVES = auto()  # lives still in hand; see abilities._bind_nine_lives
+    NINE_LIVES_SPENT = auto()  # set the instant one is used, cleared once the heal lands
     CONFUSION = auto()
     DISABLE = auto()
     ENCORE = auto()
@@ -189,6 +191,9 @@ class Item(Enum):
     PIXIE_PLATE = auto()
     SOUL_DEW = auto()
     GRISEOUS_CORE = auto()
+    GRISEOUS_ORB = auto()  # the Gen 4-7 name for the same item; Gen 9 renamed it Griseous Core
+    SHED_SHELL = auto()
+    WIKI_BERRY = auto()
     WELLSPRING_MASK = auto()
     CORNERSTONE_MASK = auto()
     WEAKNESS_POLICY = auto()
@@ -310,6 +315,60 @@ class Item(Enum):
     TYRANITARITE = auto()
     VENUSAURITE = auto()
 
+    # The Legends: Z-A stones. Every one of these formes was already in the vendored species
+    # data with real stats and a `requiredItem`; the only thing missing was the stone itself, so
+    # `item_from_showdown` returned None and `_forme_by_base_and_item` skipped the pairing. Forty
+    # nine Mega Evolutions were unreachable for want of forty nine enum members.
+    ABSOLITE_Z = auto()
+    BARBARACITE = auto()
+    BAXCALIBRITE = auto()
+    CHANDELURITE = auto()
+    CHESNAUGHTITE = auto()
+    CHIMECHITE = auto()
+    CLEFABLITE = auto()
+    CRABOMINITE = auto()
+    DARKRANITE = auto()
+    DELPHOXITE = auto()
+    DRAGALGITE = auto()
+    DRAGONINITE = auto()
+    DRAMPANITE = auto()
+    EELEKTROSSITE = auto()
+    EMBOARITE = auto()
+    EXCADRITE = auto()
+    FALINKSITE = auto()
+    FERALIGITE = auto()
+    FLOETTITE = auto()
+    FROSLASSITE = auto()
+    GARCHOMPITE_Z = auto()
+    GLIMMORANITE = auto()
+    GOLISOPITE = auto()
+    GOLURKITE = auto()
+    GRENINJITE = auto()
+    HAWLUCHANITE = auto()
+    HEATRANITE = auto()
+    LUCARIONITE_Z = auto()
+    MAGEARNITE = auto()
+    MALAMARITE = auto()
+    MEGANIUMITE = auto()
+    MEOWSTICITE = auto()
+    PYROARITE = auto()
+    RAICHUNITE_X = auto()
+    RAICHUNITE_Y = auto()
+    SCOLIPITE = auto()
+    SCOVILLAINITE = auto()
+    SCRAFTINITE = auto()
+    SKARMORITE = auto()
+    STARAPTITE = auto()
+    STARMINITE = auto()
+    TATSUGIRINITE = auto()
+    VICTREEBELITE = auto()
+    ZERAORITE = auto()
+    ZYGARDITE = auto()
+
+    # The butler's own, and the only item here that is not from the games. A flat 1.25x on
+    # everything he throws, with none of the Life Orb recoil that usually pays for it.
+    MEOWFREDS_MONOCLE = auto()
+
     # Primal Reversion orbs
     BLUE_ORB = auto()
     RED_ORB = auto()
@@ -365,6 +424,7 @@ class Ability(Enum):
     SNOW_WARNING = auto()
     LEVITATE = auto()
     WONDER_GUARD = auto()
+    NINE_LIVES = auto()
     STURDY = auto()
     FLASH_FIRE = auto()
     VOLT_ABSORB = auto()
@@ -462,6 +522,8 @@ class Ability(Enum):
     PROTEAN = auto()
     POISON_PUPPETEER = auto()
     MAGIC_BOUNCE = auto()
+    POWER_CONSTRUCT = auto()
+    DELTA_STREAM = auto()
     LIQUID_VOICE = auto()
     NEUTRALIZING_GAS = auto()
     MIRROR_ARMOR = auto()
@@ -479,6 +541,7 @@ class Ability(Enum):
     MINDS_EYE = auto()
     TRIAGE = auto()
     MAGNET_PULL = auto()
+    ARENA_TRAP = auto()
     SHADOW_TAG = auto()
     HARVEST = auto()
     DAZZLING = auto()
@@ -491,6 +554,41 @@ class Ability(Enum):
     LEAF_GUARD = auto()
     PUNK_ROCK = auto()
     WIND_RIDER = auto()
+    # Added 2026-09-08 after a coverage audit found each of these unwired while its species was being
+    # rated as though it had no ability at all (see the species-rating notes): Ferrothorn's Iron
+    # Barbs, Archeops' Defeatist, Toxapex's Merciless, and so on.
+    IRON_BARBS = auto()
+    GALVANIZE = auto()
+    DEFEATIST = auto()
+    MARVEL_SCALE = auto()
+    FUR_COAT = auto()
+    STEELWORKER = auto()
+    LONG_REACH = auto()
+    QUEENLY_MAJESTY = auto()
+    STAKEOUT = auto()
+    SURGE_SURFER = auto()
+    MERCILESS = auto()
+    EMERGENCY_EXIT = auto()
+    WIMP_OUT = auto()
+    FLUFFY = auto()
+    STORM_DRAIN = auto()
+    COMATOSE = auto()
+    MUMMY = auto()
+    FLOWER_GIFT = auto()
+    SHED_SKIN = auto()
+    ANALYTIC = auto()
+    SUPER_LUCK = auto()
+    AFTERMATH = auto()
+    POISON_POINT = auto()
+    EFFECT_SPORE = auto()
+    SIMPLE = auto()
+    # The forme-changing family: each swaps its holder onto another species entry mid-battle, which
+    # is why they live in `formes.py` rather than as event handlers like every other ability.
+    STANCE_CHANGE = auto()
+    DISGUISE = auto()
+    ZEN_MODE = auto()
+    SCHOOLING = auto()
+    SHIELDS_DOWN = auto()
     ILLUSION = auto()  # disguise only: our battle state is fully observable, so there is nothing to hide
     TRACE = auto()
     TERA_SHIFT = auto()
@@ -602,3 +700,44 @@ class Nature(Enum):
     GENTLE = NatureEffect(Stats.SP_DEFENCE, Stats.DEFENCE)
     SASSY = NatureEffect(Stats.SP_DEFENCE, Stats.SPEED)
     CAREFUL = NatureEffect(Stats.SP_DEFENCE, Stats.SP_ATTACK)
+
+
+# Abilities that cannot be swapped away, copied, replaced or taken by anything — the games keep such
+# a list and this is ours. An ability here stays on whoever was born with it and never appears on
+# anybody else, so Skill Swap, Trace, Role Play, Entrainment, Worry Seed, Simple Beam and Mummy all
+# read it before they touch a thing.
+#
+# Two kinds of member. Nine Lives is ours and needs both halves: losing it would undo the one thing
+# the butler's final form *is*, and gaining it would be far worse — a Trace on the switch-in and the
+# challenger has nine lives of their own, which no amount of his nine can answer.
+#
+# The rest are the canonical Gen 7 list, and they are here for a different reason: each one *defines*
+# a Pokemon rather than decorating it. Multitype is what makes an Arceus its type; Disguise is
+# Mimikyu; Schooling is Wishiwashi. Moving one produces a Pokemon the game has no rules for.
+#
+# The real games keep four slightly different lists — what may be copied, swapped, replaced and
+# suppressed each differ at the edges (Illusion may be swapped but not copied, and so on). One list
+# is a deliberate simplification: it errs toward leaving forme-defining abilities alone, which is the
+# right side to err on, and it is one rule rather than four nearly-identical ones to keep true.
+UNTOUCHABLE_ABILITIES: frozenset["Ability"] = frozenset(
+    {
+        Ability.NINE_LIVES,
+        Ability.MULTITYPE,
+        Ability.RKS_SYSTEM,
+        Ability.STANCE_CHANGE,
+        Ability.SCHOOLING,
+        Ability.SHIELDS_DOWN,
+        Ability.DISGUISE,
+        Ability.COMATOSE,
+        Ability.BATTLE_BOND,
+        Ability.POWER_CONSTRUCT,
+        Ability.ZEN_MODE,
+        Ability.ILLUSION,
+        Ability.IMPOSTER,
+    }
+)
+
+
+def is_untouchable(ability: "Ability") -> bool:
+    """Whether this ability refuses to be moved, copied, replaced or taken away."""
+    return ability in UNTOUCHABLE_ABILITIES

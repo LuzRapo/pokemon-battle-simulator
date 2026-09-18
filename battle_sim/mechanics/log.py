@@ -6,12 +6,15 @@ from enum import Enum
 
 from battle_sim.models.log_events import (
     AbilitiesSwapped,
+    AbilityChanged,
     AbilityChipDamage,
     AbilityCopied,
     AbilityHealed,
+    AbilityUnchanged,
     AbsorbBlocked,
     AbsorbHealed,
     AirBalloonPopped,
+    AirBalloonRevealed,
     AllStatsReset,
     AvoidedWithLevitate,
     BattleEnded,
@@ -20,6 +23,7 @@ from battle_sim.models.log_events import (
     ChargingUp,
     ConfusionSelfHit,
     CourtChanged,
+    CriticalHit,
     DamageDealt,
     DisableApplied,
     DisabledBlocked,
@@ -29,6 +33,7 @@ from battle_sim.models.log_events import (
     Fainted,
     FlashFireAbsorbed,
     FlashFireActivated,
+    FloatedOnAirBalloon,
     FormeChanged,
     FutureAttackLands,
     FutureAttackQueued,
@@ -39,8 +44,10 @@ from battle_sim.models.log_events import (
     HazardStatus,
     Healed,
     ItemChipDamage,
+    ItemDevoured,
     ItemHealed,
     ItemRemoved,
+    ItemRestored,
     ItemsSwapped,
     ItemStolen,
     LeechSeedSap,
@@ -50,6 +57,7 @@ from battle_sim.models.log_events import (
     MoveMissed,
     MoveUsed,
     MultiHitSummary,
+    NineLivesRestored,
     NoEffect,
     ParadoxActivated,
     PpRestored,
@@ -62,6 +70,7 @@ from battle_sim.models.log_events import (
     ScreenFaded,
     ScreenSet,
     SelfSwitchPending,
+    StatChangesSwept,
     StatDropBlocked,
     StatDropBlockedByItem,
     StatStageChanged,
@@ -90,7 +99,6 @@ from battle_sim.models.log_events import (
     WeatherSetByAbility,
     WhiteHerbRestored,
     WishMade,
-    ZMoveUnleashed,
 )
 from battle_sim.utils import ExtraStatus, Outcome, Status
 
@@ -204,8 +212,8 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"P{side + 1} withdrew {withdrew} and sent out {sent_out}!"
         case SelfSwitchPending(side, pokemon):
             return f"{_label(side, pokemon)} is switching out!"
-        case ZMoveUnleashed(side, pokemon, move):
-            return f"{_label(side, pokemon)} unleashed {move}!"
+        case MoveUsed(side=side, pokemon=pokemon, move=move, unleashed_as=unleashed_as) if unleashed_as is not None:
+            return f"{_label(side, pokemon)}'s {move} became {unleashed_as}!"
         case MoveUsed(side, pokemon, move):
             return f"{_label(side, pokemon)} used {move}!"
         case MoveMissed():
@@ -224,6 +232,8 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"It had no effect on {_label(side, pokemon)}."
         case Effectiveness(level):
             return "It's super effective!" if level == "super" else "It's not very effective…"
+        case CriticalHit():
+            return "A critical hit!"
         case DamageDealt(side, pokemon, amount):
             return f"{_label(side, pokemon)} took {amount} damage!"
         case MultiHitSummary(hits):
@@ -241,7 +251,12 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
                 return f"{_label(side, pokemon)} hung on with its Focus Sash!"
             if cause == "endure":
                 return f"{_label(side, pokemon)} endured the hit!"
+            if cause == "nine_lives":
+                return f"{_label(side, pokemon)} refuses to fall!"
             return f"{_label(side, pokemon)} held on with Sturdy!"
+        case NineLivesRestored(side, pokemon, healed, remaining):
+            lives = "one life" if remaining == 1 else f"{remaining} lives"
+            return f"{_label(side, pokemon)} rises again, whole! ({healed} HP restored, {lives} left)"
         case ConfusionSelfHit(side, pokemon, amount):
             return f"{_label(side, pokemon)} is confused! It hurt itself in confusion! ({amount} HP)"
         case CantAct(side, pokemon, reason):
@@ -293,6 +308,10 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)}'s {_pretty(ability)} blocked the attack!"
         case AirBalloonPopped(side, pokemon):
             return f"{_label(side, pokemon)}'s Air Balloon popped!"
+        case FloatedOnAirBalloon(side, pokemon):
+            return f"{_label(side, pokemon)} floated above it with its Air Balloon!"
+        case AirBalloonRevealed(side, pokemon):
+            return f"{_label(side, pokemon)} floated with its Air Balloon!"
         case ItemChipDamage(side, pokemon, item, amount):
             return f"{_label(side, pokemon)} was hurt by {_pretty(item)}! ({amount} HP)"
         case AbilityChipDamage(side, pokemon, ability, amount):
@@ -315,6 +334,8 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)} became the {_pretty(new_type)} type!"
         case AllStatsReset():
             return "All stat changes were eliminated!"
+        case StatChangesSwept(side, pokemon):
+            return f"{_label(side, pokemon)}'s stat changes were swept away!"
         case CourtChanged():
             return "Court Change swapped the battlefield effects!"
         case Revived(side, pokemon):
@@ -329,12 +350,20 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)} transformed into {into}!"
         case ItemRemoved(side, pokemon, item):
             return f"{_label(side, pokemon)} lost its {_pretty(item)}!"
+        case ItemDevoured(side, pokemon, item):
+            return f"{_label(side, pokemon)} greedily devoured the {_pretty(item)}!"
+        case ItemRestored(side, pokemon, item):
+            return f"{_label(side, pokemon)} got its {_pretty(item)} back!"
         case ItemStolen(side, pokemon, item):
             return f"{_label(side, pokemon)} stole the target's {_pretty(item)}!"
         case ItemsSwapped(side, pokemon):
             return f"{_label(side, pokemon)} switched items with its target!"
         case AbilityCopied(side, pokemon, ability):
             return f"{_label(side, pokemon)} traced {_pretty(ability)}!"
+        case AbilityChanged(side, pokemon, ability):
+            return f"{_label(side, pokemon)}'s ability became {_pretty(ability)}!"
+        case AbilityUnchanged(side, pokemon, ability):
+            return f"{_label(side, pokemon)}'s {_pretty(ability)} cannot be changed!"
         case AbilitiesSwapped(side, pokemon):
             return f"{_label(side, pokemon)} swapped abilities with its target!"
         case FormeChanged(side, pokemon, forme):

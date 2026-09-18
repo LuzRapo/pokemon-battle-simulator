@@ -33,6 +33,7 @@ class SideState(BaseModel):
     healing_wish_pending: bool = False  # the next pokemon sent in is fully restored
     pending_substitute: int = Field(default=0, ge=0)  # Shed Tail: the substitute passed to the replacement
     has_mega_evolved: bool = False  # once per battle per side, and it never reverts
+    has_ultra_bursted: bool = False  # Ultra Burst is its own once-per-battle, not the Mega's
     has_used_z_move: bool = False  # the crystal is spent after one use
     future_sight_attacker: Pokemon | None = None  # who queued it, for damage calc when it lands
     future_sight_move: Move | None = None  # Future Sight or Doom Desire, snapshotted at use

@@ -28,14 +28,18 @@ _STATUS_TYPE_IMMUNITY: dict[Status, frozenset[Type]] = {
 }
 _ALL_STATUSES = frozenset(Status) - {Status.NONE}
 _SYNCHRONIZE_STATUSES = frozenset({Status.BURN, Status.PARALYSIS, Status.POISON, Status.TOXIC})
-# A compromise Sleep Clause: real Smogon caps a side at one of the opponent's team asleep at once
-# and fails any move that would make it a second; this format allows two before further sleep just
-# doesn't take. No other status is clause-limited (Freeze Clause isn't a standard Gen 7 rule, and
-# paralysis never has been).
-_CLAUSED_STATUSES = frozenset({Status.SLEEP})
+# No clause at all, because the format we are modelling has none. Checked rather than assumed: the
+# only `|rule|` lines across 5,001 real Gen 7 Anything Goes replays are HP Percentage Mod and
+# Endless Battle Clause. Sleep Clause is a standard-tier rule that AG drops, and ours was a
+# "compromise" version of a rule that does not apply. The machinery stays -- a format that does want
+# a clause only has to name the statuses here.
+_CLAUSED_STATUSES: frozenset[Status] = frozenset()
 _STATUS_CLAUSE_LIMIT = 2
 _STATUS_ABILITY_IMMUNITY: dict[Ability, frozenset[Status]] = {
     Ability.PURIFYING_SALT: _ALL_STATUSES,
+    # Komala is permanently asleep and acts anyway, so nothing further can be inflicted on it. What
+    # is not modelled is the other half — counting as asleep for Rest, Snore and Sleep Talk.
+    Ability.COMATOSE: _ALL_STATUSES,
     Ability.WATER_BUBBLE: frozenset({Status.BURN}),
     Ability.THERMAL_EXCHANGE: frozenset({Status.BURN}),
     Ability.LIMBER: frozenset({Status.PARALYSIS}),
@@ -62,6 +66,21 @@ _VOLATILE_INITIAL_DURATIONS: dict[ExtraStatus, tuple[int, int]] = {
     ExtraStatus.FLINCH: (1, 2),  # cleared at end of turn anyway
     ExtraStatus.YAWN: (2, 3),  # fixed at 2: drowsy through this turn, asleep at the end of the next
 }
+
+# The sleep counter, as a half-open span: 2, 3 or 4. It is spent one per *move attempt* rather than
+# one per turn, so the count is not the number of turns slept — it is one more than that, and the
+# extra one is the whole point. A Pokemon put under by a faster foe still has its own action coming
+# up this turn; that action spends the first tick, and a counter that started at 1 would hit zero
+# there and let it wake and attack on the very turn it fell asleep. Starting at 2 means the first
+# tick always leaves something behind, so sleep costs a minimum of one real turn — which is what
+# `1-3 turns` has meant since Gen 5, and what 36 natural sleeps across the AG replay corpus show:
+# not one of them woke or acted on the turn it was inflicted.
+_SLEEP_COUNTER = (2, 5)
+
+
+def sleep_duration(rng: RNG) -> int:
+    """How many move attempts a fresh sleep lasts. Shared so Yawn cannot drift away from Spore."""
+    return rng.random_integer(*_SLEEP_COUNTER)
 
 
 def _apply_status(
@@ -121,6 +140,32 @@ def _status_clause_blocks(
     return already >= _STATUS_CLAUSE_LIMIT
 
 
+def _type_immune_to_status(status: Status, target: Pokemon, inflictor: Pokemon | None) -> bool:
+    corrosive = inflictor is not None and inflictor.ability is Ability.CORROSION
+    immune_types = _STATUS_TYPE_IMMUNITY.get(status, frozenset())
+    if status in (Status.POISON, Status.TOXIC) and corrosive:
+        immune_types = frozenset()  # Corrosion poisons Steel and Poison types
+    return bool(immune_types and immune_types.intersection(t for t in target.types if t is not None))
+
+
+def _ability_immune_to_status(status: Status, target: Pokemon, field: FieldState | None) -> bool:
+    """The half of status immunity that announces itself, so the caller knows to say so."""
+    if status in _STATUS_ABILITY_IMMUNITY.get(target.ability, frozenset()):
+        return True
+    in_sun = field is not None and field.weather in (Weather.SUN, Weather.HARSH_SUN)
+    return target.ability is Ability.LEAF_GUARD and in_sun
+
+
+def status_cannot_land(status: Status, target: Pokemon, inflictor: Pokemon | None, field: FieldState | None) -> bool:
+    """Whether `status` can never stick to `target`, asked without applying anything.
+
+    The engine finds this out by trying; a scorer has to know beforehand, or it prices Toxic at a
+    Steel type as though the poison lands and throws it again every turn. Same answer as
+    `_status_immune` gives, minus the log entries, so the two cannot drift apart.
+    """
+    return _type_immune_to_status(status, target, inflictor) or _ability_immune_to_status(status, target, field)
+
+
 def _status_immune(
     status: Status,
     target: Pokemon,
@@ -131,17 +176,9 @@ def _status_immune(
 ) -> bool:
     """True if `status` cannot land on `target` at all — type immunity is silent, an ability or
     Leaf Guard announces itself, matching what each already did before this was split out."""
-    corrosive = inflictor is not None and inflictor.ability is Ability.CORROSION
-    immune_types = _STATUS_TYPE_IMMUNITY.get(status, frozenset())
-    if status in (Status.POISON, Status.TOXIC) and corrosive:
-        immune_types = frozenset()  # Corrosion poisons Steel and Poison types
-    if immune_types and immune_types.intersection(t for t in target.types if t is not None):
+    if _type_immune_to_status(status, target, inflictor):
         return True
-    if status in _STATUS_ABILITY_IMMUNITY.get(target.ability, frozenset()):
-        log.add(DoesNotAffect(side=target_index, pokemon=target.nickname))
-        return True
-    in_sun = field is not None and field.weather in (Weather.SUN, Weather.HARSH_SUN)
-    if target.ability is Ability.LEAF_GUARD and in_sun:
+    if _ability_immune_to_status(status, target, field):
         log.add(DoesNotAffect(side=target_index, pokemon=target.nickname))
         return True
     return False
@@ -167,7 +204,7 @@ def _apply_main_status(
         return
     target.status = status
     if status is Status.SLEEP:
-        target.status_turns = rng.random_integer(1, 4)
+        target.status_turns = sleep_duration(rng)
     elif status is Status.TOXIC:
         target.status_turns = 0
     log.add(StatusInflicted(side=target_index, pokemon=target.nickname, status=status))

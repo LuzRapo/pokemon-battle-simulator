@@ -27,6 +27,7 @@ type StatChangeSource = Literal[
     "speed_boost",
     "motor_drive",
     "lightning_rod",
+    "storm_drain",
     "moxie",
     "weak_armor",
     "stamina",
@@ -61,9 +62,10 @@ type StatusClearance = Literal[
     "berry",
     "natural_cure",
     "hydration",
+    "shed_skin",
     "refreshed",
 ]
-type SurvivalCause = Literal["focus_sash", "sturdy", "endure"]
+type SurvivalCause = Literal["focus_sash", "sturdy", "endure", "nine_lives"]
 type ResidualSource = Literal["sandstorm", "burn", "poison", "toxic", "nightmare", "salt_cure", "curse"]
 type EffectivenessLevel = Literal["super", "resisted"]
 
@@ -89,18 +91,14 @@ class SelfSwitchPending:
 
 @dataclass(frozen=True, slots=True)
 class MoveUsed:
-    side: int
-    pokemon: str
-    move: str
-
-
-@dataclass(frozen=True, slots=True)
-class ZMoveUnleashed:
-    """The Z-move a slot was upgraded into; the MoveUsed that follows still names the slot's move."""
+    """`move` always names the slot — the move that fills it and that `BattleObserver` learns the
+    user knows. `unleashed_as` is set only when this use was a Z-move: the Z-move's own name, which
+    fills no slot of its own and so is never what `move` holds."""
 
     side: int
     pokemon: str
     move: str
+    unleashed_as: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +164,15 @@ class Effectiveness:
 
 
 @dataclass(frozen=True, slots=True)
+class CriticalHit:
+    """A hit that rolled a critical, announced just before the damage it explains.
+
+    Carries no side, because it is a remark about the hit rather than something that happened to
+    somebody — which is also how the games print it. It sits immediately before its `DamageDealt`.
+    """
+
+
+@dataclass(frozen=True, slots=True)
 class DamageDealt:
     side: int
     pokemon: str
@@ -209,6 +216,16 @@ class SurvivedAtOneHp:
     side: int
     pokemon: str
     cause: SurvivalCause
+
+
+@dataclass(frozen=True, slots=True)
+class NineLivesRestored:
+    """One of the butler's lives spent: back to full, status burned away, and how many are left."""
+
+    side: int
+    pokemon: str
+    healed: int
+    remaining: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,6 +336,25 @@ class AirBalloonPopped:
 
 
 @dataclass(frozen=True, slots=True)
+class FloatedOnAirBalloon:
+    """A Ground move that could not reach its target because the balloon was holding it up."""
+
+    side: int
+    pokemon: str
+
+
+@dataclass(frozen=True, slots=True)
+class AirBalloonRevealed:
+    """The balloon announcing itself on the way in, as it does in the games.
+
+    Not decoration: it is the only reason the other trainer can know not to reach for a Ground move.
+    """
+
+    side: int
+    pokemon: str
+
+
+@dataclass(frozen=True, slots=True)
 class ItemChipDamage:
     """Rocky Helmet, Life Orb, Black Sludge chip — same wording family."""
 
@@ -398,6 +434,14 @@ class AllStatsReset:
 
 
 @dataclass(frozen=True, slots=True)
+class StatChangesSwept:
+    """Nine Lives: the Pokemon facing him loses everything it had built up when he rises."""
+
+    side: int
+    pokemon: str
+
+
+@dataclass(frozen=True, slots=True)
 class CourtChanged:
     """Court Change swapped both sides' field effects."""
 
@@ -445,6 +489,24 @@ class ItemRemoved:
 
 
 @dataclass(frozen=True, slots=True)
+class ItemDevoured:
+    """Nine Lives: an item Tricked onto him, eaten on the spot."""
+
+    side: int
+    pokemon: str
+    item: Item
+
+
+@dataclass(frozen=True, slots=True)
+class ItemRestored:
+    """Nine Lives: an item an opponent took comes back with its holder."""
+
+    side: int
+    pokemon: str
+    item: Item
+
+
+@dataclass(frozen=True, slots=True)
 class ItemStolen:
     """Pickpocket / Magician: the thief's side, with what it took."""
 
@@ -464,6 +526,24 @@ class ItemsSwapped:
 @dataclass(frozen=True, slots=True)
 class AbilityCopied:
     """Trace."""
+
+    side: int
+    pokemon: str
+    ability: Ability
+
+
+@dataclass(frozen=True, slots=True)
+class AbilityChanged:
+    """Mummy, Entrainment, Worry Seed, Simple Beam: this Pokemon now has a different ability."""
+
+    side: int
+    pokemon: str
+    ability: Ability
+
+
+@dataclass(frozen=True, slots=True)
+class AbilityUnchanged:
+    """An ability that refused to be moved. Announced so the failure is legible rather than silent."""
 
     side: int
     pokemon: str
@@ -684,7 +764,6 @@ type LogEntry = (
     Switched
     | SelfSwitchPending
     | MoveUsed
-    | ZMoveUnleashed
     | MoveMissed
     | MoveFailed
     | TauntBlocked
@@ -694,6 +773,7 @@ type LogEntry = (
     | StatusClauseBlocked
     | NoEffect
     | Effectiveness
+    | CriticalHit
     | DamageDealt
     | MultiHitSummary
     | RecoilDamage
@@ -701,6 +781,7 @@ type LogEntry = (
     | Healed
     | Fainted
     | SurvivedAtOneHp
+    | NineLivesRestored
     | ConfusionSelfHit
     | CantAct
     | StatusCleared
@@ -715,6 +796,8 @@ type LogEntry = (
     | AbsorbHealed
     | AbsorbBlocked
     | AirBalloonPopped
+    | FloatedOnAirBalloon
+    | AirBalloonRevealed
     | ItemChipDamage
     | ItemHealed
     | AbilityChipDamage
@@ -727,6 +810,7 @@ type LogEntry = (
     | TerrainSetByAbility
     | TypeChanged
     | AllStatsReset
+    | StatChangesSwept
     | CourtChanged
     | Revived
     | WishMade
@@ -735,9 +819,13 @@ type LogEntry = (
     | Transformed
     | ChargingUp
     | ItemRemoved
+    | ItemDevoured
+    | ItemRestored
     | ItemStolen
     | ItemsSwapped
     | AbilityCopied
+    | AbilityChanged
+    | AbilityUnchanged
     | AbilitiesSwapped
     | FormeChanged
     | MoveBounced

@@ -163,6 +163,15 @@ class EventBus:
         bucket.sort(key=lambda s: -s.priority)  # stable: equal priorities keep registration order
         return sub
 
+    def subscribed_events(self) -> list["Event"]:
+        """Every event something is currently listening on, in the enum's own order.
+
+        Exists for introspection rather than for resolving a turn: an ability or an item is only
+        described by the handlers its binder registers, so this is how `/what_is` answers "when does
+        this actually do something" without anybody maintaining a second description of it.
+        """
+        return [event for event in Event if self._subscriptions.get(event)]
+
     def off(self, subscription: Subscription) -> None:
         bucket = self._subscriptions.get(subscription.event, [])
         if subscription in bucket:

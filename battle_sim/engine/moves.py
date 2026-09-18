@@ -4,9 +4,16 @@ from battle_sim.database.loader import get_move
 from battle_sim.engine.coded import _apply_coded
 from battle_sim.engine.damage_apply import _apply_damage, _apply_fixed_damage
 from battle_sim.engine.field_apply import _apply_field_effect, _apply_remove_hazards, _apply_side_condition
-from battle_sim.engine.power import ROLLING_LOCK_TURNS, ROLLING_MOVES, coded_move_fails, move_type_override
+from battle_sim.engine.power import (
+    ESCALATING_MOVES,
+    ROLLING_LOCK_TURNS,
+    ROLLING_MOVES,
+    coded_move_fails,
+    move_type_override,
+)
 from battle_sim.engine.status_apply import _apply_stage_change, _apply_status
 from battle_sim.engine.switching import _force_random_switch
+from battle_sim.formes import stance_forme, swap_forme
 from battle_sim.maths.damage import move_effectiveness
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState, effective_weather
@@ -22,6 +29,7 @@ from battle_sim.models.log_events import (
     DoesNotAffect,
     Fainted,
     Healed,
+    ItemDevoured,
     MoveBounced,
     MoveFailed,
     MoveMissed,
@@ -34,7 +42,6 @@ from battle_sim.models.log_events import (
     SelfSwitchPending,
     StatusCleared,
     TauntBlocked,
-    ZMoveUnleashed,
 )
 from battle_sim.models.moves import (
     CodedEffect,
@@ -57,8 +64,26 @@ from battle_sim.utils import Ability, Category, ExtraStatus, Item, Stats, Status
 from battle_sim.zmoves import z_move_for
 
 _DEFENDER_FACING_TARGETS = frozenset({Target.SINGLE_OPPONENT, Target.ALL_ADJACENT_ENEMIES, Target.ALL_ADJACENT})
+# Same effect, two names: an opponent holding either simply cannot be hit by a priority move.
+_PRIORITY_BLOCKERS = frozenset({Ability.DAZZLING, Ability.QUEENLY_MAJESTY})
+# The semi-invulnerable charges, and the moves that reach them anyway. Membership here is what makes
+# a charge semi-invulnerable at all — an ordinary two-turn move like Solar Beam is not listed, so its
+# user stays hittable while it charges.
+_UP_IN_THE_AIR = frozenset({"Gust", "Twister", "Thunder", "Hurricane", "Sky Uppercut", "Smack Down", "Thousand Arrows"})
+_REACHES_THROUGH: dict[str, frozenset[str]] = {
+    "Fly": _UP_IN_THE_AIR,
+    "Bounce": _UP_IN_THE_AIR,
+    "Sky Drop": _UP_IN_THE_AIR,
+    "Dig": frozenset({"Earthquake", "Magnitude", "Fissure"}),
+    "Dive": frozenset({"Surf", "Whirlpool"}),
+    "Phantom Force": frozenset(),
+    "Shadow Force": frozenset(),
+}
 _CHOICE_ITEMS = frozenset({Item.CHOICE_BAND, Item.CHOICE_SPECS, Item.CHOICE_SCARF})
 _STRUGGLE = get_move("Struggle")
+# Half his maximum. It costs him the turn, so it has to be worth a turn — and half is what makes
+# handing him anything a real mistake rather than a small one.
+GREEDY_GOURMAND_DIVISOR = 2
 # These carry a real DamageEffect for engine.residuals to apply two turns on (see CodedMoveKind.
 # FUTURE_SIGHT); the effect must not also land immediately on the turn the move is used.
 _DELAYED_DAMAGE_MOVES = frozenset({"Future Sight", "Doom Desire"})
@@ -75,8 +100,12 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
 
     chosen = attacker.moves[action.move] if action.move is not None else None
     sleep_talking = chosen is not None and chosen.name == "Sleep Talk" and attacker.status is Status.SLEEP
-    if not _can_act(attacker, side_index, state.rng, log, sleep_talking):
+    defrosting = chosen is not None and chosen.defrosts_user and attacker.status is Status.FREEZE
+    if not _can_act(attacker, side_index, state.rng, log, sleep_talking, defrosting):
         attacker.protect_streak = 0  # a skipped turn breaks the consecutive-Protect chain
+        return
+    if _greedy_gourmand(attacker, side_index, state, log):
+        attacker.protect_streak = 0  # his turn went on dinner, not on a move
         return
     attacker.volatiles.pop(ExtraStatus.DESTINY_BOND, None)  # the bond lasts until the user's next action
 
@@ -123,6 +152,7 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
             attacker.pp[slot] = min(10, move.pp)
             log.add(PpRestored(side=side_index, pokemon=attacker.nickname, move=move.name))
 
+    unleashed_as: str | None = None
     if action.z_move and not side.has_used_z_move:
         # Spent after the base move's PP is paid: a Z-move costs the slot it upgrades, not extra.
         upgraded = z_move_for(attacker.item, move)
@@ -130,8 +160,9 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
             # The slot keeps its own move for logging: `BattleObserver` treats every MoveUsed name as
             # a move that fills a slot, and a Z-move name fills none — believing one would make the
             # opponent's set unbuildable. Using the Z-move still reveals the base move, which is the
-            # true inference anyway.
-            log.add(ZMoveUnleashed(side=side_index, pokemon=attacker.nickname, move=upgraded.name))
+            # true inference anyway. `unleashed_as` carries the Z-move's own name through to whichever
+            # MoveUsed below actually fires, so it reads as one move becoming its Z-move, not two.
+            unleashed_as = upgraded.name
             move = replace(upgraded, name=move.name)
             side.has_used_z_move = True
 
@@ -145,14 +176,19 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
         and move.target in _DEFENDER_FACING_TARGETS
         and Type.DARK in defender.types
     ):
-        log.add(MoveUsed(side=side_index, pokemon=attacker.nickname, move=move.name))
+        log.add(MoveUsed(side=side_index, pokemon=attacker.nickname, move=move.name, unleashed_as=unleashed_as))
         log.add(DoesNotAffect(side=defender_index, pokemon=defender.nickname))
         return
 
-    log.add(MoveUsed(side=side_index, pokemon=attacker.nickname, move=move.name))
+    log.add(MoveUsed(side=side_index, pokemon=attacker.nickname, move=move.name, unleashed_as=unleashed_as))
+    # Drawn before the move resolves, so Blade forme's Attack is what the hit is calculated from —
+    # which is the whole of Aegislash, and why it was rated as a wall that cannot hurt anything.
+    stance = stance_forme(attacker, move)
+    if stance is not None:
+        swap_forme(state.bus, state.effects, attacker, stance, side_index, log)
     attacker.last_move_slot = slot
-    if move.name not in ROLLING_MOVES:
-        attacker.rolling_hits = 0  # any other move ends the run, so the next Rollout starts from base
+    if move.name not in ESCALATING_MOVES:
+        attacker.rolling_hits = 0  # any other move ends the run, so the next one starts from base
     if attacker.item in _CHOICE_ITEMS and attacker.choice_locked_move is None:
         attacker.choice_locked_move = action.move
 
@@ -185,7 +221,7 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
         log.add(MoveFailed())
         return
 
-    if move.priority > 0 and defender.ability is Ability.DAZZLING and move.target in _DEFENDER_FACING_TARGETS:
+    if move.priority > 0 and defender.ability in _PRIORITY_BLOCKERS and move.target in _DEFENDER_FACING_TARGETS:
         log.add(DoesNotAffect(side=defender_index, pokemon=defender.nickname))
         return
 
@@ -197,6 +233,12 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
 
     if move.protectable and move.target in _DEFENDER_FACING_TARGETS and ExtraStatus.PROTECT in defender.volatiles:
         log.add(Protected(side=defender_index, pokemon=defender.nickname))
+        _break_rolling(attacker)
+        _apply_crash_damage(move, attacker, side_index, log)
+        return
+
+    if move.target in _DEFENDER_FACING_TARGETS and _out_of_reach(defender, move):
+        log.add(MoveMissed())
         _break_rolling(attacker)
         _apply_crash_damage(move, attacker, side_index, log)
         return
@@ -262,6 +304,8 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
 
     if move.name in ROLLING_MOVES:
         _continue_rolling(attacker, slot)
+    elif move.name in ESCALATING_MOVES:
+        attacker.rolling_hits += 1  # Fury Cutter counts its run without being locked into it
     if move.recharges:
         attacker.volatiles[ExtraStatus.MUST_RECHARGE] = 1
     if move.self_destructs and not attacker.is_fainted():
@@ -358,6 +402,22 @@ def _continue_rolling(attacker: Pokemon, slot: MoveSlot) -> None:
         attacker.locked_slot = slot
 
 
+def _out_of_reach(defender: Pokemon, move: Move) -> bool:
+    """Whether the defender is mid-charge somewhere this move cannot follow.
+
+    Fly, Dig and the rest spend their charge turn out of reach entirely, which is most of why they
+    are worth a slot at all — without it they were two-turn moves that paid the cost and got none of
+    the protection. A handful of moves reach anyway, and each of those is the well-known answer to
+    the move it beats (Earthquake on a Dig, Surf on a Dive), so they are worth carrying.
+    """
+    if ExtraStatus.CHARGING not in defender.volatiles or defender.charging_slot is None:
+        return False
+    charging = defender.moves[defender.charging_slot]
+    if charging is None or charging.name not in _REACHES_THROUGH:
+        return False  # an ordinary charge — a Solar Beam's user stands there in plain sight
+    return move.name not in _REACHES_THROUGH[charging.name]
+
+
 def _break_rolling(attacker: Pokemon) -> None:
     """A miss or a Protect ends the run, power and commitment together."""
     attacker.rolling_hits = 0
@@ -373,14 +433,50 @@ def _is_rolling_slot(attacker: Pokemon) -> bool:
     return locked is not None and locked.name in ROLLING_MOVES
 
 
-def _can_act(pokemon: Pokemon, side_index: int, rng: RNG, log: BattleLog, sleep_talking: bool = False) -> bool:
+def _greedy_gourmand(attacker: Pokemon, side_index: int, state: BattleState, log: BattleLog) -> bool:
+    """Trick something onto the butler and he spends his turn eating it. True if he did.
+
+    Not a move and not a choice he can be talked out of — the turn an item is forced into his paws
+    is the turn it goes, and it costs him the action he had planned. `mechanics.priority` sees the
+    Trick coming and sorts him after it, so the trade has always landed by the time this is asked:
+    he moves second that turn by construction, however fast he is.
+
+    Only an item somebody handed him. What he brought to the field is his own and stays where it is,
+    or he would spend every battle devouring his own Monocle.
+    """
+    eaten = attacker.tricked_item
+    if attacker.ability is not Ability.NINE_LIVES or eaten is Item.NONE:
+        return False
+    attacker.tricked_item = Item.NONE
+    if attacker.item is not eaten:
+        return False  # already gone — knocked off, or tricked away again before he could get to it
+    from battle_sim.mechanics.effects import rewire_active  # lazy: avoids an engine->mechanics cycle
+
+    attacker.item = Item.NONE
+    attacker.item_consumed = True
+    rewire_active(state.bus, state.effects, attacker)
+    healed = attacker.apply_healing(max(1, attacker.stat_totals.HP // GREEDY_GOURMAND_DIVISOR))
+    log.add(ItemDevoured(side=side_index, pokemon=attacker.nickname, item=eaten))
+    if healed > 0:
+        log.add(Healed(side=side_index, pokemon=attacker.nickname, amount=healed))
+    return True
+
+
+def _can_act(  # noqa: PLR0913 — one argument per gate; they are independent and all belong here
+    pokemon: Pokemon,
+    side_index: int,
+    rng: RNG,
+    log: BattleLog,
+    sleep_talking: bool = False,
+    defrosting: bool = False,
+) -> bool:
     if ExtraStatus.MUST_RECHARGE in pokemon.volatiles:
         del pokemon.volatiles[ExtraStatus.MUST_RECHARGE]
         log.add(CantAct(side=side_index, pokemon=pokemon.nickname, reason="recharge"))
         return False
     if pokemon.ability is Ability.TRUANT and not _truant_allows_acting(pokemon, side_index, log):
         return False
-    if not _status_allows_acting(pokemon, side_index, rng, log, sleep_talking):
+    if not _status_allows_acting(pokemon, side_index, rng, log, sleep_talking, defrosting):
         return False
     if ExtraStatus.FLINCH in pokemon.volatiles:
         log.add(CantAct(side=side_index, pokemon=pokemon.nickname, reason="flinch"))
@@ -404,9 +500,15 @@ def _truant_allows_acting(pokemon: Pokemon, side_index: int, log: BattleLog) -> 
     return True
 
 
-def _status_allows_acting(pokemon: Pokemon, side_index: int, rng: RNG, log: BattleLog, sleep_talking: bool) -> bool:
+def _status_allows_acting(
+    pokemon: Pokemon, side_index: int, rng: RNG, log: BattleLog, sleep_talking: bool, defrosting: bool = False
+) -> bool:
     if pokemon.status is Status.FREEZE:
-        if not rng.roll_chance(0.2):
+        # Freeze has no minimum duration, unlike sleep: it is an independent 20% roll at every move
+        # attempt, so thawing on the very turn it was inflicted is legal and simply unlucky for the
+        # freezer. What is *not* a roll is a defrosting move — Flame Wheel, Sacred Fire, Scald and
+        # the rest melt their own user free and go off anyway.
+        if not defrosting and not rng.roll_chance(0.2):
             log.add(CantAct(side=side_index, pokemon=pokemon.nickname, reason="frozen"))
             return False
         pokemon.status = Status.NONE
@@ -457,6 +559,34 @@ def _stall_check(move: Move, attacker: Pokemon, rng: RNG) -> bool:
     return True
 
 
+# Weather that makes the move an automatic hit, and weather that instead halves its accuracy —
+# Thunder and Hurricane share both (rain guarantees a hit, sun halves it); Blizzard only ever gets
+# the guarantee, never the penalty, and only from hail.
+_WEATHER_ALWAYS_HITS: dict[str, frozenset[Weather]] = {
+    "Thunder": frozenset({Weather.RAIN, Weather.HEAVY_RAIN}),
+    "Hurricane": frozenset({Weather.RAIN, Weather.HEAVY_RAIN}),
+    "Blizzard": frozenset({Weather.SNOW}),
+}
+_WEATHER_HALVES_ACCURACY: dict[str, frozenset[Weather]] = {
+    "Thunder": frozenset({Weather.SUN, Weather.HARSH_SUN}),
+    "Hurricane": frozenset({Weather.SUN, Weather.HARSH_SUN}),
+}
+_GUARANTEED = 1e6  # pushes any nonzero base accuracy past the final min(1.0, ...) clamp
+
+
+def _weather_accuracy_multiplier(move: Move, weather: Weather) -> float:
+    """What weather alone does to `move`'s accuracy multiplier: huge (so the final clamp guarantees
+    a hit) for Thunder/Hurricane's rain and Blizzard's hail, 0.5 for Thunder/Hurricane's sun, else
+    no effect. Folded into the ordinary multiplier chain rather than an early return, so a move that
+    both always-hits in this weather and would otherwise have missed still reads as one accuracy
+    roll, not a special case."""
+    if weather in _WEATHER_ALWAYS_HITS.get(move.name, frozenset()):
+        return _GUARANTEED
+    if weather in _WEATHER_HALVES_ACCURACY.get(move.name, frozenset()):
+        return 0.5
+    return 1.0
+
+
 def _accuracy_check(move: Move, attacker: Pokemon, defender: Pokemon, field: FieldState, rng: RNG) -> bool:
     if move.accuracy_probability is None:
         return True
@@ -464,6 +594,7 @@ def _accuracy_check(move: Move, attacker: Pokemon, defender: Pokemon, field: Fie
         return True
     net_stage = max(-6, min(6, attacker.stat_stages.ACCURACY - defender.stat_stages.EVASION))
     multiplier = (3 + net_stage) / 3 if net_stage >= 0 else 3 / (3 - net_stage)
+    multiplier *= _weather_accuracy_multiplier(move, field.weather)
     if defender.ability is Ability.SAND_VEIL and field.weather is Weather.SANDSTORM:
         multiplier *= 0.8
     if defender.ability is Ability.SNOW_CLOAK and field.weather is Weather.SNOW:
@@ -497,7 +628,7 @@ def _apply_effect(
             effect, move, attacker, attacker_side_index, defender, defender_side, state, log, behind_substitute
         )
     elif isinstance(effect, FixedDamageEffect):
-        _apply_fixed_damage(effect, move, attacker, defender, 1 - attacker_side_index, log, behind_substitute)
+        _apply_fixed_damage(effect, move, attacker, defender, 1 - attacker_side_index, log, behind_substitute, state)
     elif isinstance(effect, HealEffect):
         _apply_heal(effect, attacker, attacker_side_index, log)
     elif isinstance(effect, (InflictStatusEffect, StatStageChangeEffect)):

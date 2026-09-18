@@ -100,6 +100,14 @@ def _apply_side_condition(
         return
 
     if effect.kind in _SCREEN_HAZARDS:
+        # A screen already standing cannot be re-raised: in the real games Light Screen, Reflect and
+        # Aurora Veil simply fail if that same screen is up, and there is no way to refresh one early.
+        # Without this the move silently re-set the timer, which made re-casting a real (if small)
+        # gain — and the search, correctly seeing a gain, would spend dying turns topping it up
+        # instead of attacking. Tailwind and the entry hazards below both already guard this way.
+        if effect.kind in target_side.screens:
+            log.add(MoveFailed())
+            return
         target_side.screens[effect.kind] = 8 if attacker.item is Item.LIGHT_CLAY else (effect.duration_turns or 5)
         log.add(ScreenSet(side=target_index, screen=effect.kind))
         return

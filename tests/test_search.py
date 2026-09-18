@@ -193,6 +193,27 @@ def test_choose_order_is_a_seeded_permutation():
     assert list(order) == list(SearchPlayer().choose_order(TEAM, TEAM))
 
 
+def test_seeds_lead_differently_so_a_repeat_opponent_cannot_learn_one_opening():
+    """The lead is drawn from a mixture, so distinct seeds must actually reach distinct leads.
+
+    Regression: `choose_order` reset the stream to `Random(0)` on every battle, which collapsed the
+    whole mixture onto one sample. A human replaying the same trainer met the identical lead every
+    single time, and could plan the whole game around it.
+    """
+    leads = {SearchPlayer(seed=seed).choose_order(TEAM, TEAM)[0] for seed in range(24)}
+    assert len(leads) > 1
+    replayed = SearchPlayer(seed=7).choose_order(TEAM, TEAM)
+    assert list(replayed) == list(SearchPlayer(seed=7).choose_order(TEAM, TEAM))  # a seed still replays
+
+
+def test_tie_band_mixes_near_equal_actions_only():
+    band = SearchPlayer(profile=SearchProfile(budget=0, tie_band=0.10), seed=3)
+    assert {band._pick(["a", "b"], [0.50, 0.45]) for _ in range(32)} == {"a", "b"}  # inside the band
+    assert all(band._pick(["a", "b"], [0.80, 0.20]) == "a" for _ in range(32))  # a real preference stands
+    strict = SearchPlayer(profile=SearchProfile(budget=0), seed=3)
+    assert all(strict._pick(["a", "b"], [0.50, 0.45]) == "a" for _ in range(32))  # band 0.0 is argmax
+
+
 def test_determinization_battles_deterministically():
     prior = SetPrior.from_teams([TEAM])
     profile = SearchProfile(budget=60, determinizations=3)

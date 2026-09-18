@@ -2,10 +2,18 @@ import random
 
 import pytest
 
+from battle_sim.database.loader import get_all_moves, normalize_id
 from battle_sim.database.scope import in_scope_species
 from battle_sim.models.species import BaseSpecies
 from battle_sim.models.stats import BaseStats
-from battle_sim.setgen import _BULKY_ITEMS, _FAST_OFFENSE_ITEMS, _SLOW_OFFENSE_ITEMS, _infer_item, random_set
+from battle_sim.setgen import (
+    _BULKY_ITEMS,
+    _FAST_OFFENSE_ITEMS,
+    _SLOW_OFFENSE_ITEMS,
+    _infer_item,
+    legal_abilities,
+    random_set,
+)
 from battle_sim.teams import build_pokemon
 from battle_sim.utils import Ability, Item, Type
 
@@ -160,3 +168,39 @@ def test_infer_item_breaks_a_stat_tie_using_the_movepools_physical_special_split
     assert Item.CHOICE_SPECS in special_choices
     assert Item.CHOICE_SPECS not in physical_choices
     assert Item.CHOICE_BAND not in special_choices
+
+
+def test_generated_sets_never_carry_a_move_that_does_nothing() -> None:
+    """A move with no mechanics spends its turn on nothing, so a set holding one is a Pokemon
+    fighting with three moves — a rating artefact rather than a fact about the species."""
+    known = get_all_moves()
+    rng = random.Random(0)
+    for key in sorted(in_scope_species()):
+        for move in random_set(key, rng).moves:
+            loaded = known[normalize_id(move)]
+            assert loaded.effects or loaded.force_switch or loaded.self_switch or loaded.recharges, (
+                f"{key} was given {move}, which does nothing"
+            )
+
+
+def test_a_species_whose_whole_pool_is_inert_still_gets_moves() -> None:
+    """The filter must never leave a Pokemon with nothing to do — an odd set beats an empty one."""
+    from battle_sim.setgen import _with_effects
+
+    assert _with_effects(["Splash", "Celebrate"]) == ["Splash", "Celebrate"]
+
+
+def test_legal_abilities_lists_the_ordinary_ones_before_the_hidden_one():
+    """Order is the contract: a caller that just wants "an ability this species could have" takes the
+    first, and should get Overgrow rather than Chlorophyll."""
+    assert legal_abilities("Bulbasaur")[0] is Ability.OVERGROW
+    assert Ability.CHLOROPHYLL in legal_abilities("Bulbasaur")
+    assert legal_abilities("bulbasaur") == legal_abilities("Bulbasaur")  # normalised, like every lookup
+
+
+def test_legal_abilities_leaves_out_what_the_engine_does_not_model():
+    """An unmodelled ability handed back here would be handed straight to a Pokemon that then fights
+    with nothing where its ability should be."""
+    for species in ("Vaporeon", "Eevee", "Zygarde", "Mewtwo"):
+        assert all(ability is not Ability.NONE for ability in legal_abilities(species))
+    assert legal_abilities("Vaporeon")  # a species whose whole pool is unmodelled would come back empty

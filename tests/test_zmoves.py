@@ -5,9 +5,9 @@ from battle_sim.engine import legal_actions
 from battle_sim.engine.turn import step
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, SideState
-from battle_sim.mechanics.log import BattleLog
+from battle_sim.mechanics.log import BattleLog, render_text
 from battle_sim.models.actions import Action, ActionType
-from battle_sim.models.log_events import DamageDealt, MoveUsed, ZMoveUnleashed
+from battle_sim.models.log_events import DamageDealt, MoveUsed
 from battle_sim.models.moves import DamageEffect, Move, MoveSlot
 from battle_sim.models.spec import PokemonSpec
 from battle_sim.teams import build_pokemon, item_showdown_name
@@ -15,7 +15,7 @@ from battle_sim.utils import Ability, Item, Nature, Target
 from battle_sim.zmoves import crystal_type, z_move_for, z_power
 
 _GENERIC_CRYSTALS = 18  # one per type
-_SIGNATURE_CRYSTALS = 17  # upgrade one specific move; which move is not in the vendored data
+_SIGNATURE_CRYSTALS = 17  # upgrade one specific move; the pairing is hand-written in `zmoves`
 
 
 @pytest.mark.parametrize(
@@ -40,7 +40,14 @@ def test_every_type_has_exactly_one_generic_crystal():
 
 def test_signature_crystals_are_not_treated_as_generic():
     """They share types with the generic crystals, so keying on type would mis-resolve them."""
-    signature = [item for item in Item if item.name.endswith("_Z") and crystal_type(item) is None]
+    # Identified from the Z-move data, never from the item's name: three of the Legends Z-A *mega
+    # stones* are called "Absolite Z", "Garchompite Z" and "Lucarionite Z", and a name-suffix test
+    # sweeps them in as crystals. They are not; `crystal_type` is right about them for the right
+    # reason, which is why this asks the data instead.
+    z_moves = get_all_z_moves()
+    signature = [
+        item for item in Item if normalize_id(item_showdown_name(item)) in z_moves and crystal_type(item) is None
+    ]
     assert len(signature) == _SIGNATURE_CRYSTALS
     assert Item.MIMIKIUM_Z in signature  # Ghost, same as the generic Ghostium Z
     assert Item.KOMMONIUM_Z in signature  # Dragon, same as the generic Dragonium Z
@@ -75,12 +82,31 @@ def test_category_is_inherited_from_the_base_move():
     [
         (Item.FLYINIUM_Z, "Earthquake"),  # wrong type
         (Item.NORMALIUM_Z, "Splash"),  # status move: gets a bonus effect instead, not modelled
-        (Item.KOMMONIUM_Z, "Clanging Scales"),  # signature crystal, deliberately inert
+        (Item.KOMMONIUM_Z, "Dragon Claw"),  # signature crystal, but not the move it upgrades
         (Item.LEFTOVERS, "Brave Bird"),  # not a crystal at all
     ],
 )
 def test_pairings_that_do_nothing(item: Item, move: str):
     assert z_move_for(item, get_move(move)) is None
+
+
+def test_a_signature_crystal_upgrades_the_one_move_it_belongs_to():
+    """These were inert until the crystal -> base-move pairing was written down, which made every
+    holder give up a real item for nothing — Necrozma-Dusk-Mane carried Ultranecrozium Z through a
+    whole battle and could never fire it."""
+    fired = z_move_for(Item.ULTRANECROZIUM_Z, get_move("Photon Geyser"))
+    assert fired is not None
+    assert fired.name == "Light That Burns the Sky"
+    assert fired.accuracy_probability is None  # Z-moves never miss
+    assert z_move_for(Item.ULTRANECROZIUM_Z, get_move("Sunsteel Strike")) is None
+
+
+def test_every_signature_crystal_names_a_move_the_database_has():
+    """A typo in the hand-written pairing table would silently make that crystal inert again."""
+    from battle_sim.zmoves import _SIGNATURE_BASES
+
+    for crystal, base in _SIGNATURE_BASES.items():
+        assert get_move(base) is not None, f"{crystal} names an unknown move {base!r}"
 
 
 def test_every_vendored_z_move_is_addressable_by_a_real_crystal():
@@ -146,12 +172,22 @@ def test_move_used_names_the_slot_so_beliefs_stay_buildable():
     """`BattleObserver` treats every MoveUsed name as slot-fillable; a Z-move name fills no slot."""
     state = _z_battle(Item.DRAGONIUM_Z)
     log = step(state, {0: _Z, 1: _PLAIN})
-    used = [e.move for e in log if isinstance(e, MoveUsed) and e.side == 0]
-    unleashed = [e.move for e in log if isinstance(e, ZMoveUnleashed)]
+    entries = [e for e in log if isinstance(e, MoveUsed) and e.side == 0]
 
-    assert used == ["Dragon Claw"]
-    assert unleashed == ["Devastating Drake"]
-    get_move(used[0])  # resolvable, which is what keeps SetPrior.believe able to rebuild the set
+    assert [e.move for e in entries] == ["Dragon Claw"]
+    assert [e.unleashed_as for e in entries] == ["Devastating Drake"]
+    get_move(entries[0].move)  # resolvable, which is what keeps SetPrior.believe able to rebuild the set
+
+
+def test_a_z_move_reads_as_one_move_becoming_its_z_move():
+    """One line, not two separately-named moves: it was never really two uses."""
+    entry = MoveUsed(side=0, pokemon="Flygon", move="Outrage", unleashed_as="Devastating Drake")
+    assert render_text(entry) == "P1's Flygon's Outrage became Devastating Drake!"
+
+
+def test_a_plain_move_still_just_says_it_was_used():
+    entry = MoveUsed(side=0, pokemon="Flygon", move="Outrage")
+    assert render_text(entry) == "P1's Flygon used Outrage!"
 
 
 def _dealt(log: object) -> int:

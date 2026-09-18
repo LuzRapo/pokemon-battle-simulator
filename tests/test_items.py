@@ -2,9 +2,17 @@ from battle_sim.database.loader import get_move
 from battle_sim.engine import step
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
+from battle_sim.mechanics.items import static_damage_modifiers
 from battle_sim.mechanics.priority import effective_speed
 from battle_sim.models.actions import Action, ActionType
-from battle_sim.models.log_events import MoveUsed
+from battle_sim.models.log_events import (
+    AirBalloonPopped,
+    AirBalloonRevealed,
+    DamageDealt,
+    Effectiveness,
+    FloatedOnAirBalloon,
+    MoveUsed,
+)
 from battle_sim.models.moves import MoveSet, MoveSlot
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.stats import BaseStats, EVs, IVs
@@ -48,9 +56,14 @@ def _mk(
     )
 
 
-def _battle(side0: list[Pokemon], side1: list[Pokemon], seed: int = 0) -> BattleState:
+def _battle(
+    side0: list[Pokemon],
+    side1: list[Pokemon],
+    seed: int = 0,
+    side1_hazards: dict[Hazards, int] | None = None,
+) -> BattleState:
     return BattleState(
-        sides=(SideState(team=side0), SideState(team=side1)),
+        sides=(SideState(team=side0), SideState(team=side1, hazards=side1_hazards or {})),
         rng=RNG(seed=seed),
     )
 
@@ -230,6 +243,109 @@ def test_air_balloon_grants_ground_immunity():
     use_eq = Action(action=ActionType.USE_MOVE, target=Target.ALL_ADJACENT, move=MoveSlot.FIRST)
     step(state, {0: use_eq, 1: USE_SWORDS_DANCE})
     assert defender.live_stats.HP == defender.stat_totals.HP
+    assert defender.item is Item.AIR_BALLOON
+
+
+def test_air_balloon_says_why_the_ground_move_did_nothing():
+    """The mechanic was right and the message was missing, which is its own kind of wrong.
+
+    Effectiveness is logged before damage is worked out, and the immunity used to live inside the
+    damage formula as a bare `return 0`. So a 4x Earthquake announced "It's super effective!" and
+    then did nothing whatever — no damage, no faint, no explanation. Match bcf1ceb4 ends with a
+    trainer losing to what reads, in the transcript, as an attack that simply evaporated.
+    """
+    earthquake = get_move("Earthquake")
+    attacker = _mk(
+        "A",
+        moves=MoveSet(earthquake, TACKLE, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    defender = _mk("B", item=Item.AIR_BALLOON)
+    state = _battle([attacker], [defender])
+    use_eq = Action(action=ActionType.USE_MOVE, target=Target.ALL_ADJACENT, move=MoveSlot.FIRST)
+
+    log = step(state, {0: use_eq, 1: USE_SWORDS_DANCE})
+
+    assert any(isinstance(entry, FloatedOnAirBalloon) for entry in log)
+    # And it must not claim to be effective on the way to doing nothing.
+    assert not any(isinstance(entry, Effectiveness) for entry in log)
+    assert not any(isinstance(entry, DamageDealt) and entry.side == 1 for entry in log)
+
+
+def test_an_air_balloon_announces_itself_on_the_way_in():
+    """The games say so when the holder enters, and that announcement is the entire reason the other
+    trainer can know not to reach for a Ground move. Silent, the immunity stops being a counter and
+    becomes a hidden trapdoor — which is how bcf1ceb4 was actually lost."""
+    attacker = _mk("A")
+    first, balloon = _mk("B1"), _mk("B2", item=Item.AIR_BALLOON)
+    state = _battle([attacker], [first, balloon])
+    switch = Action(action=ActionType.SWITCH_OUT, switch_in=balloon)
+
+    log = step(state, {0: USE_SWORDS_DANCE, 1: switch})
+
+    assert any(isinstance(entry, AirBalloonRevealed) for entry in log)
+
+
+def test_nothing_is_announced_for_a_pokemon_carrying_no_balloon():
+    attacker = _mk("A")
+    first, plain = _mk("B1"), _mk("B2")
+    state = _battle([attacker], [first, plain])
+    switch = Action(action=ActionType.SWITCH_OUT, switch_in=plain)
+
+    log = step(state, {0: USE_SWORDS_DANCE, 1: switch})
+
+    assert not any(isinstance(entry, AirBalloonRevealed) for entry in log)
+
+
+def test_air_balloon_pops_on_any_damage_at_all_not_only_on_being_hit():
+    """A house rule, and a deliberate divergence: the games burst a balloon only when its holder is
+    hit by an attack, leaving it whole through Stealth Rock, poison and sandstorm alike.
+
+    Match bcf1ceb4 is why it is broader here. An Aggron switched into Stealth Rock, took nine, and
+    still floated over a 4x Earthquake that would have won the match — which reads as the balloon
+    surviving something that plainly should have burst it.
+    """
+    attacker = _mk("A")
+    first = _mk("B1")
+    holder = _mk("B2", item=Item.AIR_BALLOON)
+    state = _battle([attacker], [first, holder], side1_hazards={Hazards.STEALTH_ROCK: 1})
+    switch = Action(action=ActionType.SWITCH_OUT, switch_in=holder)
+
+    log = step(state, {0: USE_SWORDS_DANCE, 1: switch})
+
+    assert any(isinstance(entry, AirBalloonPopped) for entry in log)
+    assert holder.item is Item.NONE
+    assert holder.live_stats.HP < holder.stat_totals.HP  # it really did take the hazard
+
+
+def test_a_balloon_survives_a_switch_in_that_costs_nothing():
+    """The rule is *damage*, not merely arriving. A clean entry leaves it whole, or the item would
+    burst the instant it was ever brought in and never do anything at all."""
+    attacker = _mk("A")
+    first, holder = _mk("B1"), _mk("B2", item=Item.AIR_BALLOON)
+    state = _battle([attacker], [first, holder])
+
+    log = step(state, {0: USE_SWORDS_DANCE, 1: Action(action=ActionType.SWITCH_OUT, switch_in=holder)})
+
+    assert not any(isinstance(entry, AirBalloonPopped) for entry in log)
+    assert holder.item is Item.AIR_BALLOON
+
+
+def test_a_ground_move_leaves_the_balloon_whole():
+    """The one attack that must not burst it: it never reached the holder, so it cannot have."""
+    earthquake = get_move("Earthquake")
+    attacker = _mk(
+        "A",
+        moves=MoveSet(earthquake, TACKLE, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    defender = _mk("B", item=Item.AIR_BALLOON)
+    state = _battle([attacker], [defender])
+    use_eq = Action(action=ActionType.USE_MOVE, target=Target.ALL_ADJACENT, move=MoveSlot.FIRST)
+
+    log = step(state, {0: use_eq, 1: USE_SWORDS_DANCE})
+
+    assert not any(isinstance(entry, AirBalloonPopped) for entry in log)
     assert defender.item is Item.AIR_BALLOON
 
 
@@ -542,3 +658,25 @@ def test_wellspring_mask_boosts_its_ogerpon():
         return hp - defender.live_stats.HP
 
     assert dmg("Ogerpon-Wellspring") > dmg("TestMon")
+
+
+def test_the_monocle_is_technician_in_an_item():
+    """It used to be a flat 1.25x on everything, which made a strong attacker stronger and said
+    nothing about what he should be attacking with. Now only the weak, spammable moves are rewarded
+    -- the same 60 base power line Technician reads, and the same 1.5x."""
+    monocled = _mk("Monocle", item=Item.MEOWFREDS_MONOCLE)
+    target = _mk("Target")
+    weak = static_damage_modifiers(TACKLE.type, TACKLE.category, monocled, target, 60)
+    strong = static_damage_modifiers(TACKLE.type, TACKLE.category, monocled, target, 61)
+    assert weak["power_mods_4096"] == [6144]
+    assert "power_mods_4096" not in strong
+
+
+def test_the_monocle_never_bites_back():
+    """A Life Orb costs a tenth of your health per attack. This costs nothing, which is the point."""
+    monocled = _mk("Monocle", item=Item.MEOWFREDS_MONOCLE)
+    orbed = _mk("Orb", item=Item.LIFE_ORB)
+    for attacker in (monocled, orbed):
+        step(_battle([attacker], [_mk("Dummy")]), {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert monocled.live_stats.HP == monocled.stat_totals.HP
+    assert orbed.live_stats.HP < orbed.stat_totals.HP

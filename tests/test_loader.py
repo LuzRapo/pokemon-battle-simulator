@@ -194,6 +194,7 @@ def test_bulbasaur_species():
         height_m=0.7,
         weight_kg=6.9,
         fully_evolved=False,
+        evolutions=("Ivysaur",),
     )
 
 
@@ -412,3 +413,50 @@ def test_all_fang_moves_carry_both_secondaries():
         move = get_move(name)
         inflicted = [e for e in move.effects if isinstance(e, InflictStatusEffect)]
         assert len(inflicted) == 2, f"{name} should carry status + flinch, got {inflicted}"
+
+
+def test_moves_unobtainable_in_the_current_generation_still_load() -> None:
+    """Showdown's `isNonstandard: "Unobtainable"` is a judgement about the newest game, not this one.
+
+    Excluding it wholesale dropped moves that are perfectly legal in Gen 7 — V-create, which is the
+    second-most-used move on Mega Rayquaza across the high Anything Goes ladder, and Burn Up. The
+    real legality gate is `gen7_movepool`, which decides what each species may learn; this only has
+    to keep out moves belonging to another game entirely.
+    """
+    v_create = get_move("V-create")
+    assert v_create.type is Type.FIRE
+    assert get_move("Burn Up").type is Type.FIRE
+
+
+def test_the_movepool_is_what_actually_gates_an_unobtainable_move() -> None:
+    """Which is why loading them is safe: a species that never learned one still cannot have it."""
+    from battle_sim.database.scope import gen7_movepool
+
+    def learns(species: str, move: str) -> bool:
+        return normalize_id(move) in {normalize_id(m) for m in gen7_movepool(species)}
+
+    assert learns("Rayquaza", "V-create")
+    assert not learns("Snorlax", "V-create")
+
+
+def test_dark_void_is_the_pre_nerf_version():
+    """A house rule, not a data fix. Gen 7 cut Dark Void from 80% to 50% and made it fail for
+    anything that is not Darkrai; the restriction was never modelled here, so accuracy is the whole
+    of the nerf and this restores the move exactly."""
+    assert get_move("Dark Void").accuracy_probability == pytest.approx(0.8)
+
+
+def test_house_rules_only_touch_moves_that_exist():
+    """A typo in the table would be a rule that silently never applies."""
+    from battle_sim.database.loader import _MOVE_HOUSE_RULES, get_all_moves
+
+    assert set(_MOVE_HOUSE_RULES) <= set(get_all_moves())
+
+
+def test_house_rules_leave_everything_else_alone():
+    """The table is a short list of deliberate divergences, not a second source of truth."""
+    from battle_sim.database.loader import _MOVE_HOUSE_RULES
+
+    assert get_move("Hypnosis").accuracy_probability == pytest.approx(0.6)
+    assert get_move("Spore").accuracy_probability == pytest.approx(1.0)
+    assert len(_MOVE_HOUSE_RULES) <= 5

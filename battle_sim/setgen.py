@@ -79,9 +79,42 @@ def _from_role(key: str, entry: RawRandbatsSpecies, rng: random.Random) -> tuple
     # randbats is a snapshot in its own right: a move it lists can be tagged unobtainable in
     # our (later, current-gen) vendored moves.json, e.g. Rayquaza's signature V-create.
     known_moves = get_all_moves()
-    pool = [name for name in role.moves if normalize_id(name) in known_moves]
+    pool = _with_effects([name for name in role.moves if normalize_id(name) in known_moves])
     chosen = rng.sample(pool, min(_MAX_MOVES, len(pool)))
     return ability, item, [get_move(name).name for name in chosen]
+
+
+def _with_effects(pool: list[str]) -> list[str]:
+    """The moves in `pool` that actually do something when used.
+
+    Some Gen-7 moves have no mechanics in this engine — the doubles-only ones (Follow Me, Wide Guard,
+    ally targets) plus a tail of exotica like Mimic and Psych Up — and they load with no effects at
+    all, so using one spends the turn on nothing. A set built around three real moves and one of
+    those is a Pokemon fighting with three, which is a rating artefact rather than a fact about the
+    species. The whole pool falling away is the one case worth keeping: better an odd set than none.
+    """
+    known = get_all_moves()
+
+    def does_something(name: str) -> bool:
+        move = known[normalize_id(name)]
+        return bool(move.effects) or move.force_switch or move.self_switch or move.recharges
+
+    usable = [name for name in pool if does_something(name)]
+    return usable or pool
+
+
+def legal_abilities(species: str) -> tuple[Ability, ...]:
+    """Every ability this species can have, as the engine models them, ordinary ones first.
+
+    Regular before hidden and in Showdown's own order, so a caller that just wants "an ability this
+    species could plausibly have" can take the first and get the common one rather than the rare
+    one. Anything the engine does not implement is left out, so this can come back empty — which
+    means the same thing `Ability.NONE` does, and callers should treat it that way.
+    """
+    entry = get_species(normalize_id(species))
+    names = [name for name in (*entry.regular_abilities, entry.hidden_ability) if name is not None]
+    mapped = [_ABILITY_BY_SHOWDOWN_NAME[normalize_id(n)] for n in names if normalize_id(n) in _ABILITY_BY_SHOWDOWN_NAME]
+    return tuple(dict.fromkeys(mapped))
 
 
 def _from_heuristic(key: str, rng: random.Random) -> tuple[Ability, Item, list[str]]:
@@ -90,7 +123,7 @@ def _from_heuristic(key: str, rng: random.Random) -> tuple[Ability, Item, list[s
     species = get_species(key)
     ability_names = [name for name in (*species.regular_abilities, species.hidden_ability) if name is not None]
     ability = _pick_ability(ability_names, rng)
-    pool = sorted(gen7_movepool(key) & get_all_moves().keys())
+    pool = _with_effects(sorted(gen7_movepool(key) & get_all_moves().keys()))
     chosen = _pick_heuristic_moves(species, pool, rng)
     item = _infer_item(species, pool, rng)
     return ability, item, [get_move(name).name for name in chosen]

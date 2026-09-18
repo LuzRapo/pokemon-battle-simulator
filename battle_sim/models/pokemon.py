@@ -10,6 +10,13 @@ from battle_sim.models.stats import BaseStats, EVs, IVs, LiveStats, StatStages, 
 from battle_sim.models.type_matchups import TypePair
 from battle_sim.utils import Ability, Category, ExtraStatus, Item, Nature, Stats, Status, Type
 
+NINE_LIVES = 9  # how many times the butler gets up again
+# Every move the butler has, however short its list says it is. Nine lives is a long fight by design,
+# and his real set runs 24/16/56/16 — against Pressure, which doubles every cost, that is eight uses
+# of Warm Dinner. Stalling him into Struggle and letting the recoil take the lives one by one is not
+# beating him so much as waiting him out, and it was the cheapest line against him on the board.
+BUTLERS_PP = 99
+
 
 @dataclass(frozen=True)
 class FormSnapshot:
@@ -50,6 +57,24 @@ class Pokemon(BaseModel):
     base_stats: BaseStats
     types: TypePair
     moves: MoveSet
+    pp_ups: int = 0  # 0-3 PP Ups; each is +1/5 of the move's listed PP, as in the games
+    # Nine Lives. A plain field rather than a volatile: `switching.volatiles.clear()` would hand a
+    # free reset, and the search's cloned futures would each decrement a shared counter -- which is
+    # exactly what happened, and produced a life count that repeated and ran backwards (8 8 7 7 6 5
+    # 4 3 6) and let one battle spend thirteen of nine.
+    lives_used: int = 0
+    just_revived: bool = False  # set for the log to pick up, cleared once it has
+    # What an opponent took off him, held until a life is spent and it comes back with him. Nine
+    # Lives restores everything else about him -- full HP, status burned away -- so an item knocked
+    # off on the way down was the one lasting wound in a fight that is meant to have none, and a
+    # single Knock Off early on disarmed every one of the nine lives that followed.
+    stripped_item: Item = Item.NONE
+    restored_item: Item = Item.NONE  # set alongside `just_revived`; the log and the rewire read it
+    # An item Tricked onto him. Held separately from `stripped_item` because a trade has two
+    # halves: what he lost, and what he was left holding in its place — and the second half is
+    # what he eats, and what goes back across the field when he rises.
+    tricked_item: Item = Item.NONE
+    owed_item: Item = Item.NONE  # what to hand back on revival; read and cleared by `_log_revival`
 
     item: Item = Item.NONE
     ability: Ability = Ability.NONE
@@ -65,7 +90,13 @@ class Pokemon(BaseModel):
     last_hit_taken: int = Field(default=0, ge=0)  # damage from the most recent hit this turn (Counter family)
     last_hit_category: Category | None = None
     eject_pending: bool = False  # an Eject Pack waits for the action to resolve before pulling the holder
+    flee_pending: bool = False  # Emergency Exit / Wimp Out, waiting on the action the same way
     turns_active: int = Field(default=0, ge=0)  # whole turns since this stint's switch-in (Fake Out)
+    # True through the end of the turn this stint's switch-in happened (lead or mid-battle), then
+    # cleared for good — unlike turns_active, this doesn't wait for the Pokemon to also act on its
+    # own. Speed Boost's rule is "every turn-end except the one it entered on", not Fake Out's
+    # "my first turn actually acting", and the two diverge whenever a switch spends the whole turn.
+    just_switched_in: bool = True
     believed_sets: tuple[BelievedSet, ...] | None = None  # None: this side's set is known, not believed
 
     live_stats: LiveStats = Field(default_factory=lambda: LiveStats())
@@ -107,7 +138,10 @@ class Pokemon(BaseModel):
     @model_validator(mode="after")
     def _init_pp(self) -> "Pokemon":
         if not self.pp:
-            self.pp = {slot: move.pp for slot in MoveSlot if (move := self.moves[slot]) is not None}
+            bonus = 1 + self.pp_ups / 5
+            self.pp = {slot: int(move.pp * bonus) for slot in MoveSlot if (move := self.moves[slot]) is not None}
+            if self.ability is Ability.NINE_LIVES:
+                self.pp = dict.fromkeys(self.pp, BUTLERS_PP)
         return self
 
     @model_validator(mode="after")
@@ -144,7 +178,56 @@ class Pokemon(BaseModel):
         max_hp = self.stat_totals.HP
         new_hp = max(0, min(max_hp, old_hp + amount))
         self.live_stats.HP = new_hp
+        if new_hp == 0 and self._revive():
+            return self.live_stats.HP - old_hp
         return new_hp - old_hp
+
+    def _revive(self) -> bool:
+        """Nine Lives: rather than faint, get up whole. True if a life was spent.
+
+        Placed here, at the one point every kind of damage passes through, because the engine checks
+        for a faint in half a dozen places and only one of them emits `ON_FAINT` -- an ability bound
+        to that event would have let poison, hazards, recoil and confusion kill him outright while
+        eight lives went unused.
+        """
+        from battle_sim.utils import Ability, Status
+
+        if self.ability is not Ability.NINE_LIVES or self.lives_used >= NINE_LIVES:
+            return False
+        self.lives_used += 1
+        self.live_stats.HP = self.stat_totals.HP
+        self.status = Status.NONE
+        self.status_turns = 0
+        self.just_revived = True
+        # He comes back holding what was taken from him. Only what an opponent stripped: an item he
+        # spent himself stays spent, or a Sash behind nine lives would be nine free survivals.
+        #
+        # A Trick is taken back too, and that one is a trade rather than a theft — so whatever he was
+        # left holding goes back across the field with it. `owed_item` carries that half; if he has
+        # already eaten it there is nothing to give, and whoever tricked him simply loses both.
+        if self.stripped_item is not Item.NONE:
+            self.owed_item = self.item
+            self.item = self.stripped_item
+            self.restored_item = self.stripped_item
+            self.stripped_item = Item.NONE
+            self.tricked_item = Item.NONE
+            self.item_consumed = False
+        self.clear_stat_drops()
+        return True
+
+    def clear_stat_drops(self) -> None:
+        """Every stage an opponent pushed below zero, back to zero. Boosts of his own are left alone.
+
+        The same principle as the status and the item: rising whole undoes what was done to him, and
+        an Intimidate landing early otherwise followed him through all nine lives — 0.67x Attack on
+        a Pokemon that is supposed to come back untouched, with nothing in the log to explain it.
+
+        Only the negative half, though. A Swords Dance he earned is not a wound, and wiping it would
+        make each life a punishment for having set up before losing one.
+        """
+        for name in StatStages.model_fields:  # the seven that have stages; `Stats` also carries HP
+            if getattr(self.stat_stages, name) < 0:
+                setattr(self.stat_stages, name, 0)
 
     def apply_damage(self, amount: int) -> int:
         return -self._adjust_hp(-abs(amount))

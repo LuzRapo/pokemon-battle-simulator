@@ -32,7 +32,9 @@ class DamageEffect:
 
 @dataclass(frozen=True)
 class FixedDamageEffect:
-    amount_formula: Literal["LEVEL", "SET", "HALF_TARGET_HP", "ENDEAVOR", "COUNTER", "MIRROR_COAT", "USER_HP"]
+    amount_formula: Literal[
+        "LEVEL", "SET", "HALF_TARGET_HP", "ENDEAVOR", "COUNTER", "MIRROR_COAT", "USER_HP", "TARGET_HP", "PSYWAVE"
+    ]
     set_amount: int | None
 
 
@@ -101,6 +103,7 @@ class CodedMoveKind(Enum):
     WISH = auto()
     HEALING_WISH = auto()
     CURE_SELF = auto()  # Take Heart
+    CURE_PARTY = auto()  # Heal Bell / Aromatherapy
     TIDY_UP = auto()
     CURSE = auto()
     PERISH_SONG = auto()
@@ -110,6 +113,10 @@ class CodedMoveKind(Enum):
     KNOCK_OFF_ITEM = auto()
     TRICK = auto()
     SKILL_SWAP = auto()
+    ROLE_PLAY = auto()  # the user takes a copy of the target's ability
+    ENTRAINMENT = auto()  # the target is given the user's
+    WORRY_SEED = auto()  # the target is given Insomnia
+    SIMPLE_BEAM = auto()  # the target is given Simple
     FUTURE_SIGHT = auto()  # Future Sight / Doom Desire: queued now, lands two turns later
 
 
@@ -162,6 +169,8 @@ class Move:
     recharges: bool = False  # PS `mustrecharge` self-volatile: the next turn is lost
     force_switch: bool = False  # PS `forceSwitch`: phazing (Whirlwind, Roar, Dragon Tail)
     has_crash_damage: bool = False  # PS `hasCrashDamage`: (High) Jump Kick — half the user's max HP if it fails
+    defrosts_user: bool = False  # PS flag `defrost`: a frozen user melts itself free and attacks anyway
+    thaws_target: bool = False  # PS `thawsTarget`: Scald and friends unfreeze whatever they hit
 
 
 class MoveSlot(Enum):

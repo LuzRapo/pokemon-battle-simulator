@@ -3,10 +3,19 @@ import random
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
-from battle_sim.analysis import EDGE_CAP, exchange_edge, hazard_pressure
+from battle_sim.analysis import (
+    EDGE_CAP,
+    exchange_edge,
+    hazard_pressure,
+    hazard_toll,
+    residual_pressure,
+    setup_potential,
+    sweep_threat,
+)
 from battle_sim.engine import apply_forced_switch, legal_actions, step
-from battle_sim.matchup import MatchupPlayer, MatchupWeights
+from battle_sim.matchup import MatchupPlayer, MatchupWeights, set_hazard
 from battle_sim.maths.rng import RNG
+from battle_sim.mechanics.abilities import field_from_actives
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.moves import MoveSet
@@ -14,7 +23,7 @@ from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.spec import PokemonSpec
 from battle_sim.observation import BeliefSampler
 from battle_sim.teams import build_pokemon
-from battle_sim.utils import Outcome, Status
+from battle_sim.utils import Outcome, Status, Terrain, Weather
 
 _MAX_DEPTH = 8
 _WIN_VALUE = 100.0  # dwarfs every positional term; material on top keeps "win bigger" preferred
@@ -37,14 +46,63 @@ class PositionWeights:
     """
 
     exchange_edge: float = 0.6
-    hazard_value: float = 0.6
     timer_value: float = 0.5
+    # What the hazards already down are worth. No longer derived from the genome: the gene it used
+    # to copy is an *action*-ranking coefficient, and fitting one number to both jobs is the exact
+    # confusion this class exists to undo.
+    #
+    # 3.0 is derived, not tuned. `hazard_pressure` reads (layers/4) x (bench/6), so one layer of
+    # Stealth Rock against a full bench of five gives 0.208; a neutral rock costs each entrant an
+    # eighth of its bar, so five of them walking in once costs 5/8 = 0.625 of a Pokemon. 0.625/0.208
+    # is 3.0 -- the weight at which the term is worth the health it will actually take.
+    #
+    # It replaces 0.594, which priced that same layer at 0.12. Three independent measurements said
+    # that was far too low: humans spend 6.5% of their turns on hazards against our 1-4%, they have
+    # rocks down by turn 3 against our turn 7, and a logistic fit over 4,970 replays put a layer at
+    # ~1.1 Pokemon against the live 0.125. The fit is associational -- the side with rocks up is also
+    # the side playing better, so it is an upper bound -- which is why this lands below it.
+    hazard_value: float = 3.0
+    # What it is worth that one side's active, as boosted, beats a share of the other's whole team.
+    # Set above `exchange_edge` on purpose: a sweep is not a better matchup, it is the game ending a
+    # few turns later, and the position value has to say so loudly enough that the search will spend
+    # a turn breaking it up — attacking into it, phazing it out, or paralysing it — rather than
+    # taking the locally cheaper option and being run over. No genome gene backs it; there is no
+    # observed-play coefficient to fit here, and deriving one from an action-ranking weight is what
+    # `PositionWeights` exists to avoid.
+    sweep_threat: float = 1.2
+    # What it is worth that the clock is already killing something. `timer_value` scores a status
+    # as a flat constant — a Toxic that kills in two turns and one landed this turn are the same
+    # number to it — which is exactly the blindness that made every stall team in the Anything Goes
+    # round-robin finish in the bottom six. Measured: raising the search budget a thousandfold
+    # changed the AI's play in those positions not at all, because the payoff is six turns out and
+    # six turns is about nine to the fourth times the cost of two. So it cannot be searched for and
+    # has to be evaluated instead. Like `sweep_threat`, no genome gene backs it.
+    #
+    # 6.0 is not tuning, it is the scale that makes the term commensurate with material: `_material`
+    # runs to 6.0 for a full team, and `residual_pressure` reaches 1.0 when every member dies inside
+    # the horizon, so a point of pressure buys exactly what a Pokemon's worth of HP buys. Measured
+    # behaviour is flat anywhere in 5-10 and gets worse by 20.
+    residual_pressure: float = 6.0
+    # What an opponent asleep is worth, in Pokemon. The action scorer already ranks Dark Void above
+    # an outright kill (1.334 against 1.054) and it was still chosen on fewer than a quarter of
+    # turns, because the search overruled it: `_statused` prices a sleeping Pokemon at one flat
+    # constant, about 0.13, against the 1.0 of material a knockout banks. The genome said sleep, the
+    # search said kill, and the search won.
+    #
+    # Set at parity with a knockout on purpose. Sleep is not *generally* better than killing —
+    # they can switch the sleeper out — but it buys the two free turns a Nasty Plot and a Bad Dreams
+    # clock need, and this is the number that lets the search agree with the scorer rather than
+    # fight it.
+    sleep_value: float = 1.0
+    # What a sweep that has not started yet is worth, to whichever side owns it. Held below
+    # `sweep_threat` deliberately: a boost still on the drawing board is worth less than one already
+    # on the board, and pricing them alike would have the AI set up in front of anything.
+    setup_potential: float = 0.8
 
     @classmethod
     def from_matchup(cls, weights: MatchupWeights) -> "PositionWeights":
         return cls(
             exchange_edge=weights.exchange_edge,
-            hazard_value=weights.hazard_value,
             timer_value=weights.timer_value,
         )
 
@@ -66,6 +124,21 @@ class SearchProfile:
     # can't otherwise separate in its own favor — see `with_genome_prior`; 0.5 measurably left some
     # of them unresolved (e.g. a full-HP Rest sampled about as often as a real attack against it).
     genome_prior: float = 1.0
+    # How close to the best action's mixture weight a rival has to be before the pick is drawn
+    # rather than taken outright. `exploit_p` answers "how exploitable am I in one game"; this
+    # answers "how memorisable am I across many", which is a different threat and needs a
+    # different knob — a human who replays the same trainer sees a fixed board produce a fixed
+    # reply and can learn the whole line. Banding by *mixture weight* keeps the cost near zero:
+    # an action the search actually prefers still wins every time, so only the decisions it was
+    # already indifferent about move. 0.0 restores the strict argmax.
+    tie_band: float = 0.0
+
+
+def _apply_entry_field(state: BattleState, *actives: Pokemon) -> None:
+    """Put the weather and terrain these Pokemon would set onto a hand-built board."""
+    weather, terrain = field_from_actives(actives)
+    state.field.weather = weather if weather is not None else Weather.NONE
+    state.field.terrain = terrain if terrain is not None else Terrain.NONE
 
 
 def clone_for_search(state: BattleState, seed: int) -> BattleState:
@@ -110,6 +183,7 @@ def _clone_side(side: SideState, mapping: dict[int, Pokemon]) -> SideState:
         healing_wish_pending=side.healing_wish_pending,
         pending_substitute=side.pending_substitute,
         has_mega_evolved=side.has_mega_evolved,  # without this every lookahead line would mega again
+        has_ultra_bursted=side.has_ultra_bursted,  # likewise, and it is a separate once-per-battle
         has_used_z_move=side.has_used_z_move,  # likewise: one Z-move per line, not per node
     )
 
@@ -141,13 +215,40 @@ def evaluate_position(state: BattleState, side_index: int, weights: PositionWeig
     me, them = mine.active_pokemon, theirs.active_pokemon
     if not me.is_fainted() and not them.is_fainted():
         value += weights.exchange_edge * exchange_edge(me, them, state) / EDGE_CAP
+        # Both ways round: a sweep I am set up for is worth as much as one being set up on me.
+        value += weights.sweep_threat * (sweep_threat(me, theirs, state) - sweep_threat(them, mine, state))
+        # And our own sweep one boost out, so a Dragon Dance is scored against the five behind the
+        # Pokemon in front of it rather than only against that one.
+        #
+        # Deliberately NOT mirrored onto their potential, though theirs is the more interesting half.
+        # This applies exactly one boost, so subtracting it credited any defensive counter-boost with
+        # permanently solving a sweeper: a Snorlax facing a +3 Volcarona picked Amnesia, because +2
+        # Special Defence moved the reading from a one-shot to a two-shot -- and the Volcarona simply
+        # Quiver Dances again. Their realised setup is already priced by `sweep_threat` above; their
+        # *latent* setup needs a term that models a sweeper reaching its ceiling, not taking one step.
+        value += weights.setup_potential * setup_potential(me, theirs, state)
     value += weights.hazard_value * (hazard_pressure(theirs) - hazard_pressure(mine))
     value += weights.timer_value * (_statused(theirs) - _statused(mine)) / 6
+    value += weights.sleep_value * (_asleep(theirs) - _asleep(mine))
+    # Kept alongside the flat count rather than replacing it: paralysis and a burn's halved attack
+    # do no residual damage at all, so a pressure-only term would quietly stop valuing them.
+    #
+    # One-sided on purpose. Scored both ways, this reads every contact move into a Flame Body or a
+    # Static as risking a clock of one's own, and that priced *not attacking* above attacking on
+    # exactly the near-ties `genome_prior` exists to protect — the resting Snorlax came straight
+    # back. Being on a clock oneself is already covered where it belongs: `matchup._heal_feature`
+    # nets `residual_drain` when deciding whether a heal is worth the turn.
+    value += weights.residual_pressure * residual_pressure(theirs, state)
     return value
 
 
 def _material(side: SideState) -> float:
     return sum(p.live_stats.HP / p.stat_totals.HP for p in side.team if not p.is_fainted())
+
+
+def _asleep(side: SideState) -> int:
+    """Members currently losing their turns. The only status that takes an action away outright."""
+    return sum(1 for p in side.team if not p.is_fainted() and p.status is Status.SLEEP)
 
 
 def _statused(side: SideState) -> int:
@@ -285,6 +386,7 @@ class SearchPlayer:
         leaf_evaluator: LeafEvaluator | None = None,
         position_weights: PositionWeights | None = None,
         opponent_model: MatchupWeights | None = None,
+        seed: int = 0,
     ):
         """`leaf_evaluator` replaces `evaluate_position`'s *non-terminal* scoring only — a resolved
         outcome always goes through the hardcoded win/draw/loss handling below, since a learned
@@ -297,17 +399,24 @@ class SearchPlayer:
         replay-fitted weights are actually good at, having lost badly as a policy. Without one the
         search answers the equilibrium mixture, which is unexploitable and therefore never punishes
         a predictable opponent; `SearchProfile.exploit_p` decides how far to trust it.
+
+        `seed` fixes the mixing stream every draw comes from — the lead sample and any near-tie
+        pick. It defaults to 0 so a bare SearchPlayer is reproducible, but a caller that plays the
+        same human repeatedly must pass a per-battle value: without one the lead mixture, however
+        wide, resolves to the same draw in every battle it ever plays.
         """
+        self._seed = seed
         self.weights = weights
         self.position_weights = position_weights or PositionWeights.from_matchup(weights)
         self.profile = profile
         self._opponent_model = MatchupPlayer(opponent_model) if opponent_model is not None else None
         self._leaf_evaluator = leaf_evaluator
         self._mine = MatchupPlayer(weights)  # prunes my actions; keeps its per-battle cache
+        self._genome_hazard_value = weights.hazard_value if weights is not None else MatchupWeights().hazard_value
         self._theirs = MatchupPlayer(weights)  # prunes the opponent's, with a separate cache
         self._rollout = MatchupPlayer(weights)  # forced replacements inside simulated lines
         self._sampler: BeliefSampler | None = None
-        self._rng = random.Random(0)
+        self._rng = random.Random(seed)
         self._spent = 0
         self._sim_index = 0
         self._extend = False  # faint extensions joined the current iteration; off for the depth-1 safety net
@@ -322,14 +431,53 @@ class SearchPlayer:
 
     def choose_order(self, own: Sequence[PokemonSpec], opponent: Sequence[PokemonSpec]) -> Sequence[int]:
         """Sample the lead from the equilibrium of the lead-vs-lead edge matrix; rest by edge total."""
-        self._rng = random.Random(0)  # battle start: an identical mixing stream for every same-seed replay
+        self._rng = random.Random(self._seed)  # battle start: one mixing stream per seed, so a replay repeats
         ours = [build_pokemon(spec) for spec in own]
         theirs = [build_pokemon(spec) for spec in opponent]
         scratch = BattleState(sides=(SideState(team=ours), SideState(team=theirs)), rng=RNG(seed=0))
-        matrix = [[exchange_edge(mine, foe, scratch) for foe in theirs] for mine in ours]
+        # Hand-built boards never run the switch-in, so nothing here would have turned on Groudon's
+        # Desolate Land or Rayquaza's Delta Stream. Without it Kyogre's best hit on Groudon scored
+        # 370 against a true 184, and the lead matrix read a Primal as a bad lead on that arithmetic.
+        _apply_entry_field(scratch, ours[0], theirs[0])
+        matrix = [[self._lead_matchup(mine, foe, scratch) for foe in theirs] for mine in ours]
+        # A lead is not only the fight it wins. Scored on `exchange_edge` alone this picked the
+        # biggest attacker every time -- across all thirteen Anything Goes teams carrying Stealth
+        # Rock it never once led the setter, so the rocks waited for that Pokemon to arrive some
+        # other way and went up on turn 13 against a human median of turn 3. What a lead can bank on
+        # the first turn belongs in the matrix, because no other member can bank it as cheaply.
+        for row, mine in zip(matrix, ours, strict=True):
+            banked = self._lead_hazard_value(mine, scratch.sides[1])
+            if banked:
+                row[:] = [cell + banked for cell in row]
         lead = self._sample(range(len(own)), gated_mixture(matrix))
         rest = sorted((i for i in range(len(own)) if i != lead), key=lambda i: sum(matrix[i]), reverse=True)
         return [lead, *rest]
+
+    def _lead_matchup(self, mine: Pokemon, foe: Pokemon, scratch: BattleState) -> float:
+        """Lead-vs-lead edge with whatever field these two would actually create between them."""
+        _apply_entry_field(scratch, mine, foe)
+        return exchange_edge(mine, foe, scratch)
+
+    def _lead_hazard_value(self, mine: Pokemon, theirs: SideState) -> float:
+        """What this Pokemon would bank by spending turn one on the best hazard it carries.
+
+        Scaled by the *genome's* hazard coefficient rather than the position evaluator's, which is
+        not a detail. The lead matrix is denominated in exchange edges -- turns-to-kill differences,
+        capped at four -- and `PositionWeights.hazard_value` is denominated in Pokemon. Adding one to
+        the other was a unit error that went unnoticed while both numbers happened to be near 0.6.
+        Once the position weight was raised to 3.0 on the evidence, the bonus reached 4.5 against
+        lead spreads of about two, and every team led its hazard setter against every opponent --
+        collapsing `gated_mixture` to a single row and making the opening perfectly memorisable,
+        which is the one thing the lead mixture exists to prevent.
+        """
+        best = 0.0
+        for move in mine.moves.to_list():
+            hazard = None if move is None else set_hazard(move)
+            if hazard is None:
+                continue
+            gained = hazard_toll(theirs, extra=hazard, attacker=mine) - hazard_toll(theirs, attacker=mine)
+            best = max(best, gained)
+        return best * self._genome_hazard_value
 
     def choose_action(self, state: BattleState, side_index: int, actions: Sequence[Action]) -> Action:
         if len(actions) == 1:
@@ -359,8 +507,22 @@ class SearchPlayer:
             mixture = [sum(column) / len(strategies) for column in zip(*strategies, strict=True)]
         if mixture is None:
             return fallback
-        best_index = max(range(len(mixture)), key=lambda i: mixture[i])
-        return my_actions[best_index]
+        return self._pick(my_actions, mixture)
+
+    def _pick(self, actions: Sequence[Action], mixture: Sequence[float]) -> Action:
+        """The mixture's best action, except among those it rates as near-equal — see `tie_band`.
+
+        Contenders are drawn proportionally rather than uniformly, so even inside the band the
+        action the search liked most is still the one it plays most often.
+        """
+        best = max(mixture)
+        if self.profile.tie_band <= 0.0:
+            return actions[mixture.index(best)]
+        floor = best - self.profile.tie_band
+        contenders = [(action, weight) for action, weight in zip(actions, mixture, strict=True) if weight >= floor]
+        if len(contenders) == 1:
+            return contenders[0][0]
+        return self._sample([action for action, _ in contenders], [weight for _, weight in contenders])
 
     def action_values(self, state: BattleState, side_index: int, actions: Sequence[Action]) -> list[float]:
         """One value per offered action — unpruned, in evaluate_position units — for grading decisions.

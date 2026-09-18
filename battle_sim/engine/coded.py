@@ -21,7 +21,7 @@ from battle_sim.models.log_events import (
 )
 from battle_sim.models.moves import CodedEffect, CodedMoveKind, Move
 from battle_sim.models.pokemon import Pokemon
-from battle_sim.utils import Ability, ExtraStatus, Item, Stats, Status, Type, Weather
+from battle_sim.utils import Ability, ExtraStatus, Item, Stats, Status, Type, Weather, is_untouchable
 
 _SUB_BLOCKED_KINDS = frozenset(
     {CodedMoveKind.PAIN_SPLIT, CodedMoveKind.STRENGTH_SAP, CodedMoveKind.KNOCK_OFF_ITEM, CodedMoveKind.TRICK}
@@ -71,6 +71,15 @@ def _apply_coded(  # noqa: C901 — a flat dispatch over every coded move kind
                 attacker.status = Status.NONE
                 attacker.status_turns = 0
                 log.add(StatusCleared(side=attacker_side_index, pokemon=attacker.nickname, clearance="refreshed"))
+        case CodedMoveKind.CURE_PARTY:
+            # Heal Bell / Aromatherapy clear the whole team, bench included. This is the clean-up
+            # half of a defensive core, so an inert version cost exactly the playstyle these ratings
+            # already under-read.
+            for member in state.sides[attacker_side_index].team:
+                if member.status is not Status.NONE:
+                    member.status = Status.NONE
+                    member.status_turns = 0
+                    log.add(StatusCleared(side=attacker_side_index, pokemon=member.nickname, clearance="refreshed"))
         case CodedMoveKind.TIDY_UP:
             _tidy_up(state, log)
         case CodedMoveKind.CURSE:
@@ -95,6 +104,14 @@ def _apply_coded(  # noqa: C901 — a flat dispatch over every coded move kind
             _trick(attacker, attacker_side_index, defender, state, log)
         case CodedMoveKind.SKILL_SWAP:
             _skill_swap(attacker, attacker_side_index, defender, state, log)
+        case CodedMoveKind.ROLE_PLAY:
+            _take_ability(attacker, attacker_side_index, defender.ability, state, log)
+        case CodedMoveKind.ENTRAINMENT:
+            _take_ability(defender, 1 - attacker_side_index, attacker.ability, state, log)
+        case CodedMoveKind.WORRY_SEED:
+            _take_ability(defender, 1 - attacker_side_index, Ability.INSOMNIA, state, log)
+        case CodedMoveKind.SIMPLE_BEAM:
+            _take_ability(defender, 1 - attacker_side_index, Ability.SIMPLE, state, log)
         case CodedMoveKind.FUTURE_SIGHT:
             _future_sight(move, attacker, attacker_side_index, state, log)
 
@@ -226,6 +243,7 @@ def _knock_off_item(
         return
     removed = defender.item
     defender.consume_item()
+    defender.stripped_item = removed  # Nine Lives gives it back; for anyone else this is inert
     rewire_active(state.bus, state.effects, defender)
     log.add(ItemRemoved(side=1 - attacker_side_index, pokemon=defender.nickname, item=removed))
 
@@ -234,10 +252,26 @@ def _trick(attacker: Pokemon, attacker_side_index: int, defender: Pokemon, state
     if attacker.item is Item.NONE and defender.item is Item.NONE:
         log.add(MoveFailed())
         return
+    taken_from_attacker, taken_from_defender = attacker.item, defender.item
     attacker.item, defender.item = defender.item, attacker.item
+    for side, pokemon, lost in (
+        (attacker_side_index, attacker, taken_from_attacker),
+        (1 - attacker_side_index, defender, taken_from_defender),
+    ):
+        del side
+        _remember_trade(pokemon, lost)
     rewire_active(state.bus, state.effects, attacker)
     rewire_active(state.bus, state.effects, defender)
     log.add(ItemsSwapped(side=attacker_side_index, pokemon=attacker.nickname))
+
+
+def _remember_trade(pokemon: Pokemon, lost: Item) -> None:
+    """Nine Lives takes a Trick back when it rises, so the trade has to be on record. Inert for
+    everybody else, who simply keep what they traded for."""
+    if pokemon.ability is not Ability.NINE_LIVES or lost is Item.NONE:
+        return
+    pokemon.stripped_item = lost
+    pokemon.tricked_item = pokemon.item  # what he was left holding, and what he may eat this turn
 
 
 def _skill_swap(
@@ -246,10 +280,32 @@ def _skill_swap(
     if attacker.ability is Ability.NONE and defender.ability is Ability.NONE:
         log.add(MoveFailed())
         return
+    # Either side holding one that cannot be moved fails the whole swap rather than half of it: a
+    # one-way trade would hand the butler's Nine Lives to a challenger, or take it off him.
+    if is_untouchable(attacker.ability) or is_untouchable(defender.ability):
+        log.add(MoveFailed())
+        return
     attacker.ability, defender.ability = defender.ability, attacker.ability
     rewire_active(state.bus, state.effects, attacker)
     rewire_active(state.bus, state.effects, defender)
     log.add(AbilitiesSwapped(side=attacker_side_index, pokemon=attacker.nickname))
+
+
+def _take_ability(target: Pokemon, target_index: int, ability: Ability, state: BattleState, log: BattleLog) -> None:
+    """Role Play, Entrainment, Worry Seed and Simple Beam: one Pokemon ends up with a named ability.
+
+    All four are the same operation pointed in different directions, so all four go through the one
+    guarded write in `mechanics.abilities` rather than each reaching for `.ability` themselves —
+    which is how Skill Swap and Trace each grew their own hole.
+    """
+    from battle_sim.mechanics.abilities import set_ability
+
+    if ability is not Ability.NONE and set_ability(target, target_index, ability, state, log):
+        return
+    # `set_ability` already says so when the target's own ability is the immovable one, and two lines
+    # saying the same thing reads worse than either. Anything else it refuses, it refuses silently.
+    if not is_untouchable(target.ability):
+        log.add(MoveFailed())
 
 
 def _future_sight(move: Move, attacker: Pokemon, attacker_side_index: int, state: BattleState, log: BattleLog) -> None:

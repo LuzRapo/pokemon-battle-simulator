@@ -12,7 +12,7 @@ from battle_sim.mechanics.battle import BattleState, SideState
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.moves import MoveSlot
 from battle_sim.models.pokemon import Pokemon
-from battle_sim.utils import Ability, Category, ExtraStatus, Type
+from battle_sim.utils import Ability, Category, ExtraStatus, Item, Type
 from battle_sim.zmoves import z_move_for
 
 
@@ -31,11 +31,17 @@ def legal_actions(state: BattleState, side_index: int) -> list[Action]:
 
 
 def _trapped(active: Pokemon, opponent: Pokemon) -> bool:
-    """Shadow Tag / Magnet Pull; ghosts are free to leave (gen 6+)."""
-    if opponent.is_fainted() or Type.GHOST in active.types:
+    """Shadow Tag / Magnet Pull / Arena Trap; ghosts are free to leave (gen 6+).
+
+    Shed Shell is the item answer to all of it, and the only reason a wall carries one instead of
+    Leftovers — a Blissey that cannot escape a Shadow Tag is simply removed from the game.
+    """
+    if opponent.is_fainted() or Type.GHOST in active.types or active.item is Item.SHED_SHELL:
         return False
     if opponent.ability is Ability.SHADOW_TAG and active.ability is not Ability.SHADOW_TAG:
         return True
+    if opponent.ability is Ability.ARENA_TRAP and active.is_grounded():
+        return True  # Dugtrio's whole reason for existing, and it was missing from this list
     return opponent.ability is Ability.MAGNET_PULL and Type.STEEL in active.types
 
 

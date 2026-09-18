@@ -17,6 +17,7 @@ _ABILITY_SHOWDOWN_NAMES: dict[Ability, str] = {
     Ability.SNOW_WARNING: "Snow Warning",
     Ability.LEVITATE: "Levitate",
     Ability.WONDER_GUARD: "Wonder Guard",
+    Ability.NINE_LIVES: "9 Lives",
     Ability.STURDY: "Sturdy",
     Ability.FLASH_FIRE: "Flash Fire",
     Ability.VOLT_ABSORB: "Volt Absorb",
@@ -37,6 +38,37 @@ _ABILITY_SHOWDOWN_NAMES: dict[Ability, str] = {
     Ability.CLEAR_BODY: "Clear Body",
     Ability.SAND_VEIL: "Sand Veil",
     Ability.ROUGH_SKIN: "Rough Skin",
+    Ability.IRON_BARBS: "Iron Barbs",
+    Ability.GALVANIZE: "Galvanize",
+    Ability.DEFEATIST: "Defeatist",
+    Ability.MARVEL_SCALE: "Marvel Scale",
+    Ability.FUR_COAT: "Fur Coat",
+    Ability.STEELWORKER: "Steelworker",
+    Ability.LONG_REACH: "Long Reach",
+    Ability.QUEENLY_MAJESTY: "Queenly Majesty",
+    Ability.STAKEOUT: "Stakeout",
+    Ability.SURGE_SURFER: "Surge Surfer",
+    Ability.MERCILESS: "Merciless",
+    Ability.ARENA_TRAP: "Arena Trap",
+    Ability.EMERGENCY_EXIT: "Emergency Exit",
+    Ability.WIMP_OUT: "Wimp Out",
+    Ability.FLUFFY: "Fluffy",
+    Ability.STORM_DRAIN: "Storm Drain",
+    Ability.COMATOSE: "Comatose",
+    Ability.MUMMY: "Mummy",
+    Ability.FLOWER_GIFT: "Flower Gift",
+    Ability.SHED_SKIN: "Shed Skin",
+    Ability.ANALYTIC: "Analytic",
+    Ability.SUPER_LUCK: "Super Luck",
+    Ability.AFTERMATH: "Aftermath",
+    Ability.POISON_POINT: "Poison Point",
+    Ability.EFFECT_SPORE: "Effect Spore",
+    Ability.SIMPLE: "Simple",
+    Ability.STANCE_CHANGE: "Stance Change",
+    Ability.DISGUISE: "Disguise",
+    Ability.ZEN_MODE: "Zen Mode",
+    Ability.SCHOOLING: "Schooling",
+    Ability.SHIELDS_DOWN: "Shields Down",
     Ability.PROTOSYNTHESIS: "Protosynthesis",
     Ability.QUARK_DRIVE: "Quark Drive",
     Ability.REGENERATOR: "Regenerator",
@@ -114,6 +146,8 @@ _ABILITY_SHOWDOWN_NAMES: dict[Ability, str] = {
     Ability.PROTEAN: "Protean",
     Ability.POISON_PUPPETEER: "Poison Puppeteer",
     Ability.MAGIC_BOUNCE: "Magic Bounce",
+    Ability.POWER_CONSTRUCT: "Power Construct",
+    Ability.DELTA_STREAM: "Delta Stream",
     Ability.LIQUID_VOICE: "Liquid Voice",
     Ability.NEUTRALIZING_GAS: "Neutralizing Gas",
     Ability.MIRROR_ARMOR: "Mirror Armor",
@@ -206,6 +240,7 @@ _ABILITY_BY_SHOWDOWN_NAME: dict[str, Ability] = {
 _ITEM_SHOWDOWN_NAMES: dict[Item, str] = {
     Item.LEFTOVERS: "Leftovers",
     Item.LIFE_ORB: "Life Orb",
+    Item.MEOWFREDS_MONOCLE: "Meowfred's Monocle",
     Item.CHOICE_BAND: "Choice Band",
     Item.CHOICE_SPECS: "Choice Specs",
     Item.CHOICE_SCARF: "Choice Scarf",
@@ -244,6 +279,9 @@ _ITEM_SHOWDOWN_NAMES: dict[Item, str] = {
     Item.PIXIE_PLATE: "Pixie Plate",
     Item.SOUL_DEW: "Soul Dew",
     Item.GRISEOUS_CORE: "Griseous Core",
+    Item.GRISEOUS_ORB: "Griseous Orb",
+    Item.SHED_SHELL: "Shed Shell",
+    Item.WIKI_BERRY: "Wiki Berry",
     Item.WELLSPRING_MASK: "Wellspring Mask",
     Item.CORNERSTONE_MASK: "Cornerstone Mask",
     Item.WEAKNESS_POLICY: "Weakness Policy",
@@ -359,6 +397,51 @@ _ITEM_SHOWDOWN_NAMES: dict[Item, str] = {
     Item.SWAMPERTITE: "Swampertite",
     Item.TYRANITARITE: "Tyranitarite",
     Item.VENUSAURITE: "Venusaurite",
+    Item.ABSOLITE_Z: "Absolite Z",
+    Item.BARBARACITE: "Barbaracite",
+    Item.BAXCALIBRITE: "Baxcalibrite",
+    Item.CHANDELURITE: "Chandelurite",
+    Item.CHESNAUGHTITE: "Chesnaughtite",
+    Item.CHIMECHITE: "Chimechite",
+    Item.CLEFABLITE: "Clefablite",
+    Item.CRABOMINITE: "Crabominite",
+    Item.DARKRANITE: "Darkranite",
+    Item.DELPHOXITE: "Delphoxite",
+    Item.DRAGALGITE: "Dragalgite",
+    Item.DRAGONINITE: "Dragoninite",
+    Item.DRAMPANITE: "Drampanite",
+    Item.EELEKTROSSITE: "Eelektrossite",
+    Item.EMBOARITE: "Emboarite",
+    Item.EXCADRITE: "Excadrite",
+    Item.FALINKSITE: "Falinksite",
+    Item.FERALIGITE: "Feraligite",
+    Item.FLOETTITE: "Floettite",
+    Item.FROSLASSITE: "Froslassite",
+    Item.GARCHOMPITE_Z: "Garchompite Z",
+    Item.GLIMMORANITE: "Glimmoranite",
+    Item.GOLISOPITE: "Golisopite",
+    Item.GOLURKITE: "Golurkite",
+    Item.GRENINJITE: "Greninjite",
+    Item.HAWLUCHANITE: "Hawluchanite",
+    Item.HEATRANITE: "Heatranite",
+    Item.LUCARIONITE_Z: "Lucarionite Z",
+    Item.MAGEARNITE: "Magearnite",
+    Item.MALAMARITE: "Malamarite",
+    Item.MEGANIUMITE: "Meganiumite",
+    Item.MEOWSTICITE: "Meowsticite",
+    Item.PYROARITE: "Pyroarite",
+    Item.RAICHUNITE_X: "Raichunite X",
+    Item.RAICHUNITE_Y: "Raichunite Y",
+    Item.SCOLIPITE: "Scolipite",
+    Item.SCOVILLAINITE: "Scovillainite",
+    Item.SCRAFTINITE: "Scraftinite",
+    Item.SKARMORITE: "Skarmorite",
+    Item.STARAPTITE: "Staraptite",
+    Item.STARMINITE: "Starminite",
+    Item.TATSUGIRINITE: "Tatsugirinite",
+    Item.VICTREEBELITE: "Victreebelite",
+    Item.ZERAORITE: "Zeraorite",
+    Item.ZYGARDITE: "Zygardite",
     # Primal Reversion orbs
     Item.BLUE_ORB: "Blue Orb",
     Item.RED_ORB: "Red Orb",
@@ -462,12 +545,15 @@ def _parse_pokemon_block(block: str) -> tuple[PokemonSpec, list[ParseWarning]]:
     nature = Nature.HARDY
     evs = EVs()
     ivs = IVs()
+    pp_ups = 0
     for line in lines[1:]:
         stripped = line.strip()
         if stripped.startswith("- "):
             moves.append(_HIDDEN_POWER_TYPE_RE.sub("", stripped[2:].strip()))
         elif stripped.startswith("Ability:"):
             ability = _parse_ability(stripped.split(":", 1)[1].strip(), warnings)
+        elif stripped.startswith("PP Ups:"):
+            pp_ups = _parse_pp_ups(stripped.split(":", 1)[1].strip())
         elif stripped.startswith("Level:"):
             level = _parse_level(stripped.split(":", 1)[1].strip(), warnings)
         elif stripped.startswith("EVs:"):
@@ -489,8 +575,20 @@ def _parse_pokemon_block(block: str) -> tuple[PokemonSpec, list[ParseWarning]]:
         effort_values=evs,
         individual_values=ivs,
         moves=moves,
+        pp_ups=pp_ups,
     )
     return spec, warnings
+
+
+def _parse_pp_ups(value: str) -> int:
+    """`PP Ups: 3`, or `max` for the same thing. Out-of-range or unreadable means none."""
+    text = value.strip().casefold()
+    if text in {"max", "maxed", "all"}:
+        return 3
+    try:
+        return max(0, min(3, int(text)))
+    except ValueError:
+        return 0
 
 
 def _parse_first_line(line: str, warnings: list[ParseWarning]) -> tuple[str, str | None, Item]:
@@ -579,6 +677,7 @@ def build_pokemon(spec: PokemonSpec) -> Pokemon:
         nature=spec.nature,
         item=spec.item,
         ability=spec.ability,
+        pp_ups=spec.pp_ups,
         fully_evolved=species.fully_evolved,
         weight_kg=species.weight_kg,
     )

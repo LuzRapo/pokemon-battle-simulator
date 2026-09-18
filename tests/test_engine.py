@@ -9,6 +9,8 @@ from battle_sim.mechanics.log import BattleLog
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.log_events import (
     BattleEnded,
+    CantAct,
+    CriticalHit,
     DamageDealt,
     DisableApplied,
     DisabledBlocked,
@@ -24,7 +26,9 @@ from battle_sim.models.log_events import (
     Protected,
     RecoilDamage,
     ResidualDamage,
+    ScreenSet,
     StatStageChanged,
+    StatusCleared,
     StatusInflicted,
     SubstituteAlready,
     SubstituteTooWeak,
@@ -283,7 +287,13 @@ def test_toxic_counter_resets_on_switch_out():
     assert a.status_turns == 0
 
 
-def test_sleep_initial_counter_is_one_to_three():
+def test_sleep_initial_counter_is_two_to_four():
+    """Two to four *move attempts*, which is one to three turns of moves actually lost.
+
+    It used to roll one to three, and a counter of 1 was spent by the sleeper's own action later in
+    the same turn — so a third of all sleeps were a no-op against anything slower than the sleep
+    move. See `test_sleep_cannot_be_slept_off_on_the_turn_it_lands` for the behaviour that protects.
+    """
     from battle_sim.engine.status_apply import _apply_status
     from battle_sim.models.moves import InflictStatusEffect
 
@@ -300,10 +310,14 @@ def test_sleep_initial_counter_is_one_to_three():
             ((), (defender,)),
         )
         durations.add(defender.status_turns)
-    assert durations == {1, 2, 3}
+    assert durations == {2, 3, 4}
 
 
-def test_sleep_clause_allows_two_asleep_per_side_then_blocks_a_third():
+def test_there_is_no_sleep_clause_in_this_format():
+    """Checked against the corpus rather than assumed: the only `|rule|` lines across 5,001 real
+    Gen 7 Anything Goes replays are HP Percentage Mod and Endless Battle Clause. Sleep Clause is a
+    standard-tier rule that AG drops, and what we had was a "compromise" version of a rule that does
+    not apply here at all."""
     from battle_sim.engine.status_apply import _apply_status
     from battle_sim.models.log_events import StatusClauseBlocked
     from battle_sim.models.moves import InflictStatusEffect
@@ -313,8 +327,8 @@ def test_sleep_clause_allows_two_asleep_per_side_then_blocks_a_third():
     teams: tuple[list[Pokemon], list[Pokemon]] = ([], [*already_asleep, third])
     log = BattleLog()
     _apply_status(InflictStatusEffect(status=Status.SLEEP, probability=1.0), third, 1, RNG(seed=0), log, teams)
-    assert third.status is Status.NONE
-    assert any(isinstance(entry, StatusClauseBlocked) for entry in log.entries)
+    assert third.status is Status.SLEEP  # a whole team may be put under
+    assert not any(isinstance(entry, StatusClauseBlocked) for entry in log.entries)
 
 
 def test_sleep_clause_permits_the_second_asleep_pokemon():
@@ -357,6 +371,53 @@ def test_sleep_pokemon_stays_asleep_when_counter_positive():
     step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
     assert sleeper.status is Status.SLEEP
     assert sleeper.status_turns == 2
+
+
+def test_sleep_cannot_be_slept_off_on_the_turn_it_lands():
+    """The bug this exists for: Spore landing on something slower, which then attacked anyway.
+
+    A sleep counter is spent per move attempt, not per turn, and a Pokemon put under by a faster foe
+    still has its own action coming this turn. With the counter rolling from 1 it could hit zero on
+    that very action — "fell asleep", "woke up", full-power attack, all inside one turn. Checked
+    across a hundred seeds rather than one, because the old range only misfired a third of the time.
+
+    Not a matter of taste: across the AG replay corpus, no Pokemon ever woke or acted on the turn it
+    fell asleep, and the shortest natural sleep still cost a full turn of moves.
+    """
+    spore = get_move("Spore")
+    fast = BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200)
+    slow = BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=10)
+
+    for seed in range(100):
+        sporer = _mk("Sporer", base_stats=fast, moves=MoveSet(spore, TACKLE, EMBER, SWORDS_DANCE))
+        sleeper = _mk("Sleeper", base_stats=slow)
+        state = _battle([sporer], [sleeper], seed=seed)
+        entries = step(state, {0: USE_TACKLE, 1: USE_TACKLE}).entries
+        fell_asleep = any(isinstance(e, StatusInflicted) and e.status is Status.SLEEP for e in entries)
+        assert fell_asleep, f"seed {seed}: Spore did not land, so the test proves nothing"
+        assert sleeper.status is Status.SLEEP, f"seed {seed}: woke on the turn it fell asleep"
+        # DamageDealt carries the side that *took* the damage, so side 0 is the sleeper hitting back.
+        assert not any(isinstance(e, DamageDealt) and e.side == 0 for e in entries), (
+            f"seed {seed}: the sleeper attacked on the turn it was put to sleep"
+        )
+
+
+def test_yawn_puts_its_target_under_for_as_long_as_spore_does():
+    """Yawn writes the counter itself, in another module, and so could drift away from the move that
+    sets it. Both go through `sleep_duration`; this is what notices if one stops."""
+    from battle_sim.engine.status_apply import sleep_duration
+
+    from_yawn: set[int] = set()
+    from_spore: set[int] = set()
+    for seed in range(100):
+        from_spore.add(sleep_duration(RNG(seed=seed)))
+        sleeper = _mk("S")
+        sleeper.volatiles[ExtraStatus.YAWN] = 1
+        state = _battle([sleeper], [_mk("B")], seed=seed)
+        step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+        assert sleeper.status is Status.SLEEP
+        from_yawn.add(sleeper.status_turns)
+    assert from_yawn == from_spore == {2, 3, 4}
 
 
 def test_fire_type_cannot_be_burned():
@@ -409,6 +470,133 @@ def test_ice_type_cannot_be_frozen():
         use_ice = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
         step(state, {0: use_ice, 1: USE_SWORDS_DANCE})
         assert fresh_def.status is not Status.FREEZE, f"Ice-type got frozen at seed {seed}"
+
+
+def _crit_pairing_holds(entries: list[object]) -> bool:
+    """Every announced crit is immediately followed by the damage it explains, and there is never a
+    crit line with nothing attached to it."""
+    kinds = [type(entry).__name__ for entry in entries]
+    return all(
+        index + 1 < len(kinds) and kinds[index + 1] == "DamageDealt"
+        for index, kind in enumerate(kinds)
+        if kind == "CriticalHit"
+    )
+
+
+def test_a_critical_hit_says_so_right_before_the_damage_it_explains():
+    """The bug this exists for: crits were rolled, applied and never mentioned. One hit in twenty-four
+    did half again its damage — ignoring the defender's Defence boosts and walking straight through
+    Reflect — and arrived in the log as an unexplained number."""
+    storm_throw = get_move("Storm Throw")  # `willCrit`: no roll to hunt a seed for
+    attacker = _mk("A", moves=MoveSet(storm_throw, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)
+    defender = _mk("B")
+    state = _battle([attacker], [defender])
+    use_first = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+
+    entries = list(step(state, {0: use_first, 1: USE_SWORDS_DANCE}).entries)
+
+    assert any(isinstance(entry, CriticalHit) for entry in entries), "a guaranteed crit went unannounced"
+    assert _crit_pairing_holds(entries)
+    assert "A critical hit!" in BattleLog(entries=entries).rendered()
+
+
+def test_a_multi_hit_move_announces_each_crit_against_its_own_hit():
+    """Rock Blast logs its hits one at a time, so a crit on the third has to appear against the third
+    — one crit line before the whole flurry would be a different claim about what happened."""
+    rock_blast = get_move("Rock Blast")
+    seen_a_crit = False
+    for seed in range(40):
+        attacker = _mk("A", moves=MoveSet(rock_blast, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6, item=Item.SCOPE_LENS)
+        state = _battle([attacker], [_mk("B")], seed=seed)
+        use_first = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+        entries = list(step(state, {0: use_first, 1: USE_SWORDS_DANCE}).entries)
+        assert _crit_pairing_holds(entries), f"seed {seed}: a crit line was not attached to a hit"
+        crits = sum(isinstance(entry, CriticalHit) for entry in entries)
+        hits = sum(isinstance(entry, DamageDealt) for entry in entries)
+        assert crits <= hits, f"seed {seed}: {crits} crits announced across {hits} hits"
+        seen_a_crit = seen_a_crit or crits > 0
+    assert seen_a_crit, "forty Scope Lens Rock Blasts and not one crit — the flag is not reaching multi-hit"
+
+
+def test_an_ordinary_move_announces_crits_at_about_the_real_rate():
+    """A guard on both sides: silence would mean the log never says it, and a crit line on every hit
+    would mean it says it when it should not. One in twenty-four, checked over a wide sample."""
+    crits = hits = 0
+    for seed in range(2000):
+        defender = _mk("B")
+        state = _battle([_mk("A", spe_stage=6)], [defender], seed=seed)
+        entries = list(step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE}).entries)
+        assert _crit_pairing_holds(entries), f"seed {seed}: a crit line was not attached to a hit"
+        if any(isinstance(entry, DamageDealt) for entry in entries):
+            hits += 1
+            crits += any(isinstance(entry, CriticalHit) for entry in entries)
+    assert 0.02 < crits / hits < 0.07, f"{crits}/{hits} = {crits / hits:.2%}, nothing like the 4.17% expected"
+
+
+def test_shell_armor_is_never_announced_as_a_critical_hit():
+    """It stops the crit outright, so there must be nothing to report — not a crit line with ordinary
+    damage under it, which would be the worst of both."""
+    storm_throw = get_move("Storm Throw")
+    armored = _mk("B")
+    armored.ability = Ability.SHELL_ARMOR
+    state = _battle([_mk("A", moves=MoveSet(storm_throw, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)], [armored])
+    use_first = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+
+    entries = list(step(state, {0: use_first, 1: USE_SWORDS_DANCE}).entries)
+
+    assert not any(isinstance(entry, CriticalHit) for entry in entries)
+
+
+def _frozen_hit_by(move_name: str, seed: int = 0) -> tuple[Pokemon, list[object]]:
+    """A frozen Pokemon takes `move_name` from something faster, and never gets to act itself."""
+    attacker = _mk("A", moves=MoveSet(get_move(move_name), TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)
+    frozen = _mk("F", status=Status.FREEZE)
+    state = _battle([attacker], [frozen], seed=seed)
+    use_first = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+    return frozen, list(step(state, {0: use_first, 1: USE_SWORDS_DANCE}).entries)
+
+
+def test_a_fire_attack_thaws_whatever_it_hits():
+    """Freeze had no way out but its own 20% roll: you could hit something with Fire Blast all day
+    and it stayed solid. Every damaging Fire move thaws its target from Gen 6 on."""
+    frozen, entries = _frozen_hit_by("Flamethrower")
+    assert frozen.status is Status.NONE
+    assert any(isinstance(e, StatusCleared) and e.clearance == "thawed" for e in entries)
+
+
+def test_scald_thaws_its_target_despite_being_a_water_move():
+    """`thawsTarget` is a per-move fact rather than a type one, so it needs reading off the move."""
+    frozen, _ = _frozen_hit_by("Scald")
+    assert frozen.status is Status.NONE
+
+
+def test_an_ordinary_attack_leaves_a_frozen_target_frozen():
+    """The counterweight: thawing is Fire and the named few, not simply being hit.
+
+    The frozen one still takes its own turn afterwards and rolls its 20%, so seeds where that roll
+    lands prove nothing and are skipped — a `CantAct` means the roll failed, and anything that
+    thawed it after that could only have been the hit.
+    """
+    checked = 0
+    for seed in range(50):
+        frozen, entries = _frozen_hit_by("Tackle", seed=seed)
+        if not any(isinstance(e, CantAct) and e.reason == "frozen" for e in entries):
+            continue  # it thawed on its own 20% roll, which is legal and not what is under test
+        checked += 1
+        assert frozen.status is Status.FREEZE, f"thawed off an ordinary hit at seed {seed}"
+    assert checked > 25, f"only {checked} seeds left it frozen to check — the sample proves little"
+
+
+def test_a_defrosting_move_frees_its_own_frozen_user_and_goes_off_anyway():
+    """Flame Wheel and friends are the frozen Pokemon's way out that does not need the 20% roll."""
+    for seed in range(50):
+        frozen = _mk("F", status=Status.FREEZE, moves=MoveSet(get_move("Flame Wheel"), TACKLE, EMBER, SWORDS_DANCE))
+        state = _battle([frozen], [_mk("B")], seed=seed)
+        entries = step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE}).entries
+        assert frozen.status is Status.NONE, f"seed {seed}: Flame Wheel left its user frozen"
+        assert any(isinstance(e, MoveUsed) and e.move == "Flame Wheel" for e in entries), (
+            f"seed {seed}: thawed but the move never went off"
+        )
 
 
 def test_sandstorm_chips_non_immune_types():
@@ -1186,6 +1374,43 @@ def test_tailwind_fails_while_already_active():
     log = step(state, {0: use_tailwind, 1: USE_SWORDS_DANCE})
     assert any(isinstance(entry, MoveFailed) for entry in log)
     assert state.sides[0].tailwind_turns == 2
+
+
+def test_a_screen_cannot_be_raised_while_it_is_already_standing():
+    """Light Screen, Reflect and Aurora Veil fail outright if that screen is already up — there is no
+    way to refresh one early. Without this the move silently re-set the timer, which made re-casting
+    a real gain: a doomed Aurorus spent its last two turns topping up a screen instead of attacking.
+    """
+    light_screen = get_move("Light Screen")
+    a = _mk("A", moves=MoveSet(light_screen, TACKLE, EMBER, SWORDS_DANCE))
+    state = _battle([a], [_mk("B")])
+    use_screen = Action(action=ActionType.USE_MOVE, target=Target.USER_SIDE, move=MoveSlot.FIRST)
+
+    first = step(state, {0: use_screen, 1: USE_SWORDS_DANCE})
+    assert ScreenSet(side=0, screen=Hazards.LIGHT_SCREEN) in first.entries
+    assert state.sides[0].screens[Hazards.LIGHT_SCREEN] == 4  # set to 5, end-of-turn tick took one
+
+    second = step(state, {0: use_screen, 1: USE_SWORDS_DANCE})
+    assert any(isinstance(entry, MoveFailed) for entry in second)
+    # The timer keeps running down rather than going back to five: the turn bought nothing at all.
+    assert state.sides[0].screens[Hazards.LIGHT_SCREEN] == 3
+
+
+def test_a_screen_can_be_raised_again_once_it_has_faded():
+    """The guard is on the screen standing, not on having ever cast it."""
+    light_screen = get_move("Light Screen")
+    a = _mk("A", moves=MoveSet(light_screen, TACKLE, EMBER, SWORDS_DANCE))
+    state = _battle([a], [_mk("B")])
+    use_screen = Action(action=ActionType.USE_MOVE, target=Target.USER_SIDE, move=MoveSlot.FIRST)
+
+    step(state, {0: use_screen, 1: USE_SWORDS_DANCE})
+    for _ in range(4):  # run the five turns down
+        step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert Hazards.LIGHT_SCREEN not in state.sides[0].screens
+
+    log = step(state, {0: use_screen, 1: USE_SWORDS_DANCE})
+    assert ScreenSet(side=0, screen=Hazards.LIGHT_SCREEN) in log.entries
+    assert not any(isinstance(entry, MoveFailed) for entry in log)
 
 
 def test_sand_attack_lowers_accuracy_stage():

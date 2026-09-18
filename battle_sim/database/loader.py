@@ -1,9 +1,9 @@
 import json
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from loguru import logger
 
@@ -92,6 +92,17 @@ _VOLATILE_MAP: dict[str, ExtraStatus] = {
     "substitute": ExtraStatus.SUBSTITUTE,
     "taunt": ExtraStatus.TAUNT,
     "burningbulwark": ExtraStatus.PROTECT,  # the contact-burn rider is not modelled
+    # Every Protect variant shares Protect's own volatile: blocking the hit is all they have in
+    # common and all this engine models of them. Without an entry each, the move loads with no
+    # effects whatsoever and spends its turn doing literally nothing — King's Shield is Aegislash's
+    # defining move and Baneful Bunker half of what makes Toxapex a wall. Their riders (King's
+    # Shield's -2 Attack, Baneful Bunker's poison, Spiky Shield's chip) go unmodelled, as Burning
+    # Bulwark's does above.
+    "kingsshield": ExtraStatus.PROTECT,
+    "banefulbunker": ExtraStatus.PROTECT,
+    "spikyshield": ExtraStatus.PROTECT,
+    "obstruct": ExtraStatus.PROTECT,
+    "silktrap": ExtraStatus.PROTECT,
     "saltcure": ExtraStatus.SALT_CURE,
     "endure": ExtraStatus.ENDURE,
     "destinybond": ExtraStatus.DESTINY_BOND,
@@ -143,6 +154,7 @@ _CODED_EFFECTS: dict[str, tuple[MoveEffect, ...]] = {
     "morningsun": (CodedEffect(kind=CodedMoveKind.WEATHER_HEAL),),
     "moonlight": (CodedEffect(kind=CodedMoveKind.WEATHER_HEAL),),
     "synthesis": (CodedEffect(kind=CodedMoveKind.WEATHER_HEAL),),
+    "shoreup": (CodedEffect(kind=CodedMoveKind.WEATHER_HEAL),),  # sand rather than sun, but the same shape
     "painsplit": (CodedEffect(kind=CodedMoveKind.PAIN_SPLIT),),
     "strengthsap": (CodedEffect(kind=CodedMoveKind.STRENGTH_SAP),),
     "bellydrum": (CodedEffect(kind=CodedMoveKind.BELLY_DRUM),),
@@ -162,6 +174,8 @@ _CODED_EFFECTS: dict[str, tuple[MoveEffect, ...]] = {
     "partingshot": (
         StatStageChangeEffect(target="TARGET", stages={Stats.ATTACK: -1, Stats.SP_ATTACK: -1}, probability=1.0),
     ),
+    "healbell": (CodedEffect(kind=CodedMoveKind.CURE_PARTY),),
+    "aromatherapy": (CodedEffect(kind=CodedMoveKind.CURE_PARTY),),
     "curse": (CodedEffect(kind=CodedMoveKind.CURSE),),
     "perishsong": (CodedEffect(kind=CodedMoveKind.PERISH_SONG),),
     "revivalblessing": (CodedEffect(kind=CodedMoveKind.REVIVAL_BLESSING),),
@@ -171,10 +185,24 @@ _CODED_EFFECTS: dict[str, tuple[MoveEffect, ...]] = {
     "trick": (CodedEffect(kind=CodedMoveKind.TRICK),),
     "switcheroo": (CodedEffect(kind=CodedMoveKind.TRICK),),
     "skillswap": (CodedEffect(kind=CodedMoveKind.SKILL_SWAP),),
+    # The rest of the ability-moving family. They loaded with no effects at all, so four moves
+    # that read as doing something sat in movepools doing nothing whatever.
+    "roleplay": (CodedEffect(kind=CodedMoveKind.ROLE_PLAY),),
+    "entrainment": (CodedEffect(kind=CodedMoveKind.ENTRAINMENT),),
+    "worryseed": (CodedEffect(kind=CodedMoveKind.WORRY_SEED),),
+    "simplebeam": (CodedEffect(kind=CodedMoveKind.SIMPLE_BEAM),),
     "futuresight": (CodedEffect(kind=CodedMoveKind.FUTURE_SIGHT),),
     "doomdesire": (CodedEffect(kind=CodedMoveKind.FUTURE_SIGHT),),
     "ruination": (FixedDamageEffect(amount_formula="HALF_TARGET_HP", set_amount=None),),
     "superfang": (FixedDamageEffect(amount_formula="HALF_TARGET_HP", set_amount=None),),
+    "naturesmadness": (FixedDamageEffect(amount_formula="HALF_TARGET_HP", set_amount=None),),
+    "psywave": (FixedDamageEffect(amount_formula="PSYWAVE", set_amount=None),),
+    # The OHKO moves. Their 30% accuracy is in the vendored data and does the gating; without an
+    # effect here they were simply four moves that missed 70% of the time and did nothing the rest.
+    "fissure": (FixedDamageEffect(amount_formula="TARGET_HP", set_amount=None),),
+    "horndrill": (FixedDamageEffect(amount_formula="TARGET_HP", set_amount=None),),
+    "guillotine": (FixedDamageEffect(amount_formula="TARGET_HP", set_amount=None),),
+    "sheercold": (FixedDamageEffect(amount_formula="TARGET_HP", set_amount=None),),
     "endeavor": (FixedDamageEffect(amount_formula="ENDEAVOR", set_amount=None),),
     "counter": (FixedDamageEffect(amount_formula="COUNTER", set_amount=None),),
     "mirrorcoat": (FixedDamageEffect(amount_formula="MIRROR_COAT", set_amount=None),),
@@ -198,7 +226,13 @@ _GEN7_PP: dict[str, int] = {
 _SUPPRESS_VOLATILE = frozenset({"shedtail"})
 
 _EXCLUDE_NONSTANDARD_SPECIES = frozenset({"CAP", "Custom"})
-_EXCLUDE_NONSTANDARD_MOVES = frozenset({"CAP", "Custom", "LGPE", "Gigantamax", "Unobtainable"})
+# "Unobtainable" is Showdown's judgement about the *current* generation, not about Gen 7, and taking
+# it at face value threw away moves that are perfectly legal here — V-create (Mega Rayquaza's
+# second-most-used move on the high Anything Goes ladder) and Burn Up among them. What a species may
+# actually learn is decided by `scope.gen7_movepool`, which is the real legality gate; this list only
+# has to keep out moves that do not belong to this game at all. A Gen 9 Torque move loading is
+# harmless, because nothing in Gen 7 can learn one.
+_EXCLUDE_NONSTANDARD_MOVES = frozenset({"CAP", "Custom", "LGPE", "Gigantamax"})
 _LEGENDARY_OR_MYTHICAL_TAGS = frozenset({"Sub-Legendary", "Restricted Legendary", "Mythical"})
 
 
@@ -254,9 +288,12 @@ def _adapt_species(raw: RawSpeciesData) -> BaseSpecies:
         height_m=raw.height_m,
         weight_kg=raw.weight_kg,
         fully_evolved=not raw.evos,
+        evolutions=tuple(raw.evos),
+        pre_evolution=raw.prevo,
         is_legendary_or_mythical=bool(_LEGENDARY_OR_MYTHICAL_TAGS.intersection(raw.tags)),
         base_species=raw.base_species,
         required_item=raw.required_item,
+        required_move=raw.required_move,
     )
 
 
@@ -279,8 +316,33 @@ def _build_boost_effect(
 
 
 # Damaging moves whose base power is 0 in data because it lives in a PS callback (engine/power.py).
+# PS marks Storm Throw, Frost Breath, Flower Trick, Surging Strikes and Wicked Blow with `willCrit`
+# rather than a crit ratio, which is why they were landing as ordinary hits: nothing read the flag.
+# Expressed as the top crit stage rather than a separate "always" path, because the ladder already
+# tops out at certainty — and routing it through the same stage keeps Battle Armor and Shell Armor
+# refusing these the way they refuse any other critical hit, which is what the games do.
+_ALWAYS_CRIT_STAGE = 3
+
 _FORMULA_POWER_MOVES = frozenset(
-    {"lowkick", "grassknot", "heavyslam", "heatcrash", "electroball", "beatup", "gyroball"}
+    {
+        "lowkick",
+        "grassknot",
+        "heavyslam",
+        "heatcrash",
+        "electroball",
+        "beatup",
+        "gyroball",
+        # Added 2026-09-08: each of these loaded with no damage effect at all and so did nothing when
+        # used. Return alone turned up on 125 of 2850 sampled generated sets as a dead slot.
+        "return",
+        "frustration",
+        "flail",
+        "reversal",
+        "crushgrip",
+        "wringout",
+        "punishment",
+        "magnitude",
+    }
 )
 
 
@@ -293,7 +355,7 @@ def _damage_effects(raw: RawMoveData, category: Category) -> list[MoveEffect]:
             DamageEffect(
                 power=raw.base_power or None,
                 category=category,
-                crit_stage=(raw.crit_ratio or 1) - 1,
+                crit_stage=_ALWAYS_CRIT_STAGE if raw.will_crit else (raw.crit_ratio or 1) - 1,
                 contact=bool(raw.flags.get("contact")),
                 multi_hit=multi_hit,
                 recoil_percent=raw.recoil[0] / raw.recoil[1] if raw.recoil else None,
@@ -454,7 +516,28 @@ def _adapt_move(raw: RawMoveData, diag: LoaderDiagnostics) -> Move | None:
         force_switch=raw.force_switch,
         typeless=raw.struggle_recoil,  # only Struggle; its typelessness lives in PS code (onEffectiveness -> 0)
         has_crash_damage=raw.has_crash_damage,
+        defrosts_user=bool(raw.flags.get("defrost")),
+        thaws_target=raw.thaws_target,
     )
+
+
+# Species that exist only here. Same reasoning as `_MOVE_HOUSE_RULES`: the vendor file is refreshed
+# wholesale, so anything added to it would vanish without trace. Keyed by normalized id, as the dex
+# is. Dex number 0 marks them as ours -- no real species can collide with it.
+_HOUSE_SPECIES: dict[str, BaseSpecies] = {
+    "meowfredunbound": BaseSpecies(
+        name="Meowfred Unbound",
+        dex_number=0,
+        types=(Type.FAIRY, Type.STEEL),
+        base_stats=BaseStats(HP=120, ATTACK=120, DEFENCE=120, SP_ATTACK=120, SP_DEFENCE=120, SPEED=120),
+        regular_abilities=("9 Lives",),
+        hidden_ability=None,
+        height_m=1.1,
+        weight_kg=12.0,
+        fully_evolved=True,
+        is_legendary_or_mythical=True,
+    ),
+}
 
 
 @cache
@@ -470,6 +553,10 @@ def get_all_species() -> dict[str, BaseSpecies]:
         if raw.num is None or raw.base_stats is None:
             continue
         result[key] = _adapt_species(raw)
+    for key, abilities in _ABILITY_HOUSE_RULES.items():
+        if key in result:
+            result[key] = replace(result[key], regular_abilities=abilities, hidden_ability=None)
+    result.update(_HOUSE_SPECIES)
     return result
 
 
@@ -495,6 +582,56 @@ def get_all_z_moves() -> dict[str, Move]:
     return result
 
 
+# Deliberate divergences from the vendored data: house rules, not data fixes. They live here rather
+# than as edits to `moves.json` because the vendor file is refreshed wholesale and an edit there
+# would be reverted silently the next time, with nothing to show it had ever been made.
+#
+# Dark Void is the Gen 6 version. Gen 7 cut it from 80% to 50% and made it fail for anything that is
+# not Darkrai; the restriction was never modelled here, so accuracy is the whole of the nerf and
+# restoring it restores the move -- including, faithfully, for a Smeargle that sketched it, which is
+# what the nerf existed to stop.
+# Abilities we set ourselves, overriding what the vendor file carries. Same reasoning as
+# `_MOVE_HOUSE_RULES`: the vendor file is refreshed wholesale, so an edit made there would vanish.
+#
+# Mega Garchomp Z arrives from the vendor with Sand Force, which is what the *Gen 6* Mega Garchomp
+# has and looks very much like it was inherited rather than chosen. It does not fit the forme at all:
+# this one sheds the Ground type to become pure Dragon, so Sand Force — which boosts Ground, Rock and
+# Steel moves — would be boosting nothing it has STAB on. Levitate is what the design reads as, a
+# Garchomp that has stopped touching the ground, and is what Sam asked for.
+_ABILITY_HOUSE_RULES: dict[str, tuple[str, ...]] = {
+    "garchompmegaz": ("Levitate",),
+}
+
+_MOVE_HOUSE_RULES: dict[str, dict[str, Any]] = {
+    "darkvoid": {"accuracy_probability": 0.8},
+    # Order Up raises a stat by one in the games, but only for a Dondozo with a Tatsugiri in its
+    # mouth -- a Commander pairing this engine does not model and nothing on our roster could form.
+    # As written the move is 80 BP and nothing else. Granted unconditionally instead, which is the
+    # move as it is meant to feel rather than the move as a lone user would ever experience it.
+    "orderup": {
+        "effects": (
+            DamageEffect(power=80, category=Category.PHYSICAL, crit_stage=0, contact=False),
+            StatStageChangeEffect(target="SELF", stages={Stats.ATTACK: 1}, probability=1.0),
+        )
+    },
+}
+
+
+# Moves that exist only here, each a named copy of a real one with a tweak. Built after the vendor
+# file is read, from the finished entry, so they inherit every effect the original has -- Hot Tea
+# still burns like Scald, Warm Dinner still raises Special Attack like Torch Song.
+_HOUSE_MOVE_NAMES = {"hottea": "hot tea", "warmdinner": "warm dinner"}
+_HOUSE_MOVES: dict[str, tuple[str, int]] = {
+    "hottea": ("Scald", 60),
+    "warmdinner": ("Torch Song", 60),
+}
+
+
+def _house_move(name: str, source: Move, power: int) -> Move:
+    effects = tuple(replace(e, power=power) if isinstance(e, DamageEffect) else e for e in source.effects)
+    return replace(source, name=name, effects=effects)
+
+
 @cache
 def get_all_moves() -> dict[str, Move]:
     raw_data = json.loads((_VENDOR_DIR / "moves.json").read_text())
@@ -508,7 +645,12 @@ def get_all_moves() -> dict[str, Move]:
             continue
         move = _adapt_move(raw, diag)
         if move is not None:
-            result[key] = move
+            house_rule = _MOVE_HOUSE_RULES.get(key)
+            result[key] = replace(move, **house_rule) if house_rule else move
+    for key, (source_name, power) in _HOUSE_MOVES.items():
+        source = result.get(normalize_id(source_name))
+        if source is not None:
+            result[key] = _house_move(" ".join(w.capitalize() for w in _HOUSE_MOVE_NAMES[key].split()), source, power)
     diag.log_summary("moves.json")
     return result
 

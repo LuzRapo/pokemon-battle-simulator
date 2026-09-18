@@ -82,17 +82,32 @@ def _predates_gen8(key: str) -> bool:
 
 @cache
 def gen7_movepool(species: str) -> frozenset[str]:
-    """Every move `species` could legally know by Generation 7, forme-inherited moves included."""
+    """Every move `species` could legally know by Generation 7.
+
+    Three sources, and the third was missing. A Pokemon keeps everything it learned before it
+    evolved, and the learnsets file stores those moves on the *pre-evolution* rather than repeating
+    them: Sucker Punch is listed under Pawniard, so Bisharp could not be taught its own signature
+    priority move. That is not a Bisharp problem -- every evolved species was short its earlier
+    stages' moves, including anything bred onto the base form as an egg move.
+    """
     key = normalize_id(species)
     if key not in _raw_species():
         raise KeyError(f"Unknown species: {species!r}")
     if not _predates_gen8(key):
         return frozenset()
     moves = set(_own_movepool(key))
-    parent = _parent_key(key)
-    if parent is not None and _predates_gen8(parent):
-        moves |= gen7_movepool(parent)
+    for earlier in (_parent_key(key), _prevo_key(key)):
+        if earlier is not None and earlier != key and _predates_gen8(earlier):
+            moves |= gen7_movepool(earlier)
     return frozenset(moves)
+
+
+def _prevo_key(key: str) -> str | None:
+    """What this species evolved from, if anything."""
+    raw = _raw_species().get(key)
+    if raw is None or raw.prevo is None:
+        return None
+    return normalize_id(raw.prevo)
 
 
 def _is_mega_like(raw: RawSpeciesData) -> bool:

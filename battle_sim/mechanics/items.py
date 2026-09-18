@@ -16,12 +16,15 @@ from battle_sim.mechanics.log import BattleLog
 from battle_sim.mechanics.stages import apply_stage_changes
 from battle_sim.models.log_events import (
     AirBalloonPopped,
+    AirBalloonRevealed,
     BerryWeakened,
+    FloatedOnAirBalloon,
     ItemChipDamage,
     ItemHealed,
     SelfSwitchPending,
     SurvivedAtOneHp,
 )
+from battle_sim.models.moves import DamageEffect
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.type_matchups import type_effectiveness
 from battle_sim.utils import Category, Item, Stats, Status, Terrain, Type, Weather
@@ -37,6 +40,30 @@ def item(kind: Item) -> Callable[[ItemBinder], ItemBinder]:
         return binder
 
     return register
+
+
+MONOCLE_MOD_4096 = 6144  # 1.5x
+MONOCLE_POWER_CAP = 60  # only the weak moves, exactly as Technician reads it
+
+
+@item(Item.MEOWFREDS_MONOCLE)
+def _bind_meowfreds_monocle(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Technician in an item: anything at 60 base power or less hits half again as hard.
+
+    Deliberately not from the games; neither is he. It replaced a flat 1.25x on everything, which
+    made a strong attacker stronger and had nothing to say about what he should be attacking with.
+    This rewards the weak, spammable moves he actually carries.
+    """
+
+    def boost(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is not pokemon or pokemon.item is not Item.MEOWFREDS_MONOCLE or context.move is None:
+            return None
+        damage = next((e for e in context.move.effects if isinstance(e, DamageEffect)), None)
+        if damage is not None and damage.power is not None and damage.power <= MONOCLE_POWER_CAP:
+            payload.setdefault("power_mods_4096", []).append(MONOCLE_MOD_4096)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost, priority=EventPriority.ITEM, owner=owner)
 
 
 @item(Item.LIFE_ORB)
@@ -161,15 +188,63 @@ def _bind_rocky_helmet(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> N
 
 @item(Item.AIR_BALLOON)
 def _bind_air_balloon(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
-    def pop(context: EventContext, payload: Payload) -> HandlerResult | None:
-        if context.defender is not pokemon or pokemon.item is not Item.AIR_BALLOON:
-            return None
-        if payload["dealt"] > 0:
-            pokemon.consume_item()
-            context.log.add(AirBalloonPopped(side=payload["defender_index"], pokemon=pokemon.nickname))
+    """The balloon does two things: it keeps its holder off the ground, and it bursts when hit.
+
+    The first used to live only inside `calculate_damage`, as a bare `return 0` — which meant the
+    engine announced "It's super effective!" for a 4x Earthquake and then silently did nothing at
+    all, because effectiveness is logged before damage is worked out and a zero deals no blow worth
+    reporting. A trainer watched their Garchomp lose a won match to what looked like a no-op.
+
+    So it is cancelled here instead, before a move is applied, exactly as Levitate cancels one. The
+    check in `calculate_damage` stays where it is: `analysis.damage_range` never runs the event bus,
+    so without it the AI would still believe Earthquake hurts a Pokemon holding a balloon.
+    """
+
+    def announce(context: EventContext, payload: Payload) -> HandlerResult | None:
+        # The games say so on the way in, and that is the whole of how an opponent learns not to
+        # reach for a Ground move. Silent, the immunity is not a counter — it is a hidden trapdoor.
+        if pokemon.item is Item.AIR_BALLOON:
+            context.log.add(AirBalloonRevealed(side=payload.get("side_index", 0), pokemon=pokemon.nickname))
         return None
 
-    bus.on(Event.ON_AFTER_HIT, pop, priority=EventPriority.ITEM, owner=owner)
+    def float_over(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or pokemon.item is not Item.AIR_BALLOON:
+            return None
+        if payload["move_type"] is not Type.GROUND:
+            return None
+        context.log.add(FloatedOnAirBalloon(side=payload["defender_index"], pokemon=pokemon.nickname))
+        return HandlerResult(cancel=True, updated_payload={"absorbed": True, "immune_reason": "air_balloon"})
+
+    # The last HP this Pokemon was seen at, so any drop at all can be noticed however it happened.
+    # Watching the total rather than listening for one kind of damage is what makes this cover the
+    # awkward ones — entry hazards land after `ON_ENTRY_HAZARD` has already fired, and recoil, Life
+    # Orb, Rough Skin and confusion all arrive by their own routes.
+    seen = [pokemon.live_stats.HP]
+
+    def pop(context: EventContext, payload: Payload) -> HandlerResult | None:
+        """Burst the balloon the moment its holder has lost any HP at all.
+
+        A house rule, and a deliberate one: the games burst a balloon only when its holder is *hit
+        by an attack*, leaving it whole through Stealth Rock, poison and sandstorm alike. Sam asked
+        for the broader version, and match bcf1ceb4 is why — an Aggron walked into Stealth Rock, took
+        nine, and still floated over a 4x Earthquake that would have won the match.
+        """
+        if pokemon.item is not Item.AIR_BALLOON:
+            seen[0] = pokemon.live_stats.HP
+            return None
+        now = pokemon.live_stats.HP
+        if now < seen[0]:
+            pokemon.consume_item()
+            context.log.add(AirBalloonPopped(side=payload.get("defender_index", 0), pokemon=pokemon.nickname))
+        seen[0] = now
+        return None
+
+    bus.on(Event.ON_SWITCH_IN, announce, priority=EventPriority.ITEM, owner=owner)
+    bus.on(Event.ON_BEFORE_MOVE, float_over, priority=EventPriority.ITEM, owner=owner)
+    # Every point a turn can pause at after HP has moved: a hit lands immediately, and the rest —
+    # hazards on the way in, residual chip, recoil — are swept up at the next of these to come round.
+    for moment in (Event.ON_AFTER_HIT, Event.ON_ACTION_RESOLVE, Event.ON_RESIDUAL, Event.ON_TURN_END):
+        bus.on(moment, pop, priority=EventPriority.ITEM, owner=owner)
 
 
 @item(Item.LEFTOVERS)
@@ -304,6 +379,10 @@ ITEM_BINDERS[Item.SOUL_DEW] = _bind_legend_orb(
 ITEM_BINDERS[Item.GRISEOUS_CORE] = _bind_legend_orb(
     Item.GRISEOUS_CORE, frozenset({"Giratina", "Giratina-Origin"}), frozenset({Type.GHOST, Type.DRAGON})
 )
+# Gen 4-7 called it the Griseous Orb, which is the name every Gen 7 set is written with; identical item.
+ITEM_BINDERS[Item.GRISEOUS_ORB] = _bind_legend_orb(
+    Item.GRISEOUS_ORB, frozenset({"Giratina", "Giratina-Origin"}), frozenset({Type.GHOST, Type.DRAGON})
+)
 
 
 def _bind_ogerpon_mask(kind: Item, bearer: str) -> ItemBinder:
@@ -373,6 +452,29 @@ def _bind_sitrus_berry(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> N
             context.log.add(
                 ItemHealed(side=payload["defender_index"], pokemon=pokemon.nickname, item=Item.SITRUS_BERRY)
             )
+        return None
+
+    bus.on(Event.ON_AFTER_HIT, ripen, priority=EventPriority.ITEM, owner=owner)
+
+
+@item(Item.WIKI_BERRY)
+def _bind_wiki_berry(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """A pinch berry: a third of its holder's health back, once, at a quarter or less.
+
+    Sitrus is the same shape with different numbers — half health, a quarter healed. The confusion a
+    disliked nature brings is not modelled; it only fires on a Sp. Atk-lowering nature and would
+    otherwise mean carrying flavour data for one berry.
+    """
+
+    def ripen(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or pokemon.item is not Item.WIKI_BERRY or pokemon.is_fainted():
+            return None
+        if 4 * pokemon.live_stats.HP > pokemon.stat_totals.HP:
+            return None
+        pokemon.consume_item()
+        healed = pokemon.apply_healing(max(1, pokemon.stat_totals.HP // 3))
+        if healed > 0:
+            context.log.add(ItemHealed(side=payload["defender_index"], pokemon=pokemon.nickname, item=Item.WIKI_BERRY))
         return None
 
     bus.on(Event.ON_AFTER_HIT, ripen, priority=EventPriority.ITEM, owner=owner)
@@ -504,3 +606,64 @@ def _bind_punching_glove(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) ->
         return None
 
     bus.on(Event.ON_DAMAGE_CALC, boost_punches, priority=EventPriority.ITEM, owner=owner)
+
+
+# -- What a damage estimate has to know without running the bus ----------------------
+# Every multiplier above is applied from an ON_DAMAGE_CALC handler, which `analysis.damage_range`
+# never runs — so the estimator priced a Choice Band hit exactly like a bare one, and an Eviolite
+# wall exactly like a naked NFE. Measured against the engine over 2,000 random hits, an Eviolite
+# defender took 0.73x what was predicted and a Choice Band attacker dealt 1.25x. These are the most
+# common items in the game, so that error was in a large share of every decision the search made.
+#
+# Mirrored here rather than in the estimator so the numbers sit beside the handlers they copy, the
+# same arrangement as `ability_absorbs`. 6144/4096 = 1.5, 5324 = 1.3, 4915 = 1.2.
+_CHOICE_BOOSTS: dict[Item, Category] = {Item.CHOICE_BAND: Category.PHYSICAL, Item.CHOICE_SPECS: Category.SPECIAL}
+# The legendary-line orbs, mirrored from the `_bind_legend_orb` registrations below: 1.2x on two
+# types, and only for the line that owns the orb.
+_LEGEND_ORBS: dict[Item, tuple[frozenset[str], frozenset[Type]]] = {
+    Item.SOUL_DEW: (frozenset({"Latios", "Latias"}), frozenset({Type.PSYCHIC, Type.DRAGON})),
+    Item.GRISEOUS_CORE: (frozenset({"Giratina", "Giratina-Origin"}), frozenset({Type.GHOST, Type.DRAGON})),
+    Item.GRISEOUS_ORB: (frozenset({"Giratina", "Giratina-Origin"}), frozenset({Type.GHOST, Type.DRAGON})),
+}
+
+
+def _monocle_power_mods(attacker: Pokemon, base_power: int | None) -> list[int]:
+    """The Monocle's Technician boost, for the estimator. Kept beside the binder it mirrors."""
+    if attacker.item is not Item.MEOWFREDS_MONOCLE or base_power is None or base_power > MONOCLE_POWER_CAP:
+        return []
+    return [MONOCLE_MOD_4096]
+
+
+def static_damage_modifiers(
+    move_type: Type, category: Category, attacker: Pokemon, defender: Pokemon, base_power: int | None = None
+) -> dict[str, list[int]]:
+    """The item multipliers a damage estimate can work out on its own, keyed as the payload wants.
+
+    Only what is decidable from the two Pokemon and the move: no berries (they fire once and are
+    spent), nothing that depends on the order of a turn that has not happened yet.
+    """
+    final: list[int] = []
+    defense: list[int] = []
+    power: list[int] = _monocle_power_mods(attacker, base_power)
+    if _CHOICE_BOOSTS.get(attacker.item) is category:
+        final.append(6144)
+    if attacker.item is Item.LIFE_ORB:
+        final.append(5324)
+
+    if attacker.item is Item.EXPERT_BELT and type_effectiveness(move_type, defender.types) >= 2:
+        final.append(4915)
+    orb = _LEGEND_ORBS.get(attacker.item)
+    if orb is not None and attacker.name in orb[0] and move_type in orb[1]:
+        final.append(4915)
+    if defender.item is Item.EVIOLITE and not defender.fully_evolved:
+        defense.append(6144)
+    if defender.item is Item.ASSAULT_VEST and category is Category.SPECIAL:
+        defense.append(6144)
+    modifiers: dict[str, list[int]] = {}
+    if final:
+        modifiers["final_mods_4096"] = final
+    if defense:
+        modifiers["defense_mods_4096"] = defense
+    if power:
+        modifiers["power_mods_4096"] = power
+    return modifiers

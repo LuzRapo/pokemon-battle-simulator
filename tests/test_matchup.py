@@ -1,5 +1,7 @@
 import math
 
+import pytest
+
 from battle_sim.analysis import entry_hazard_chip, exchange_edge, survival_turns
 from battle_sim.database.loader import get_move
 from battle_sim.matchup import MatchupPlayer
@@ -12,7 +14,7 @@ from battle_sim.models.stats import BaseStats, EVs, IVs
 from battle_sim.players import RandomPlayer
 from battle_sim.runner import run_battle
 from battle_sim.teams import parse_showdown_team
-from battle_sim.utils import Hazards, Item, Nature, Outcome, Status, Target, Type
+from battle_sim.utils import Ability, ExtraStatus, Hazards, Item, Nature, Outcome, Status, Target, Type
 from tests.test_teams import USER_SAMPLE_TEAM
 
 TACKLE = get_move("Tackle")
@@ -209,3 +211,225 @@ def test_runner_reports_survivors():
     assert all(0 <= count <= 6 for count in result.survivors)
     if result.outcome is Outcome.P1_WIN:
         assert result.survivors[0] > 0 and result.survivors[1] == 0
+
+
+def test_a_move_about_to_be_reflected_scores_as_a_no_op() -> None:
+    """Will-O-Wisp into Magic Bounce comes straight back and burns its own user.
+
+    Without this the effect features price it as though the burn stuck to the target, so a Pokemon
+    with nothing better to do throws status into the mirror turn after turn — while already burned
+    by the last one. Same treatment as a guaranteed fail: below anything that actually connects.
+    """
+    will_o_wisp = get_move("Will-O-Wisp")
+    charge_beam = get_move("Charge Beam")
+    attacker = _mk("A", moves=MoveSet(will_o_wisp, charge_beam, SPLASH, SPLASH))
+    mirror = _mk("B")
+    mirror.ability = Ability.MAGIC_BOUNCE
+    state = _battle([attacker], [mirror])
+
+    scored = {
+        action.move: score
+        for score, action in MatchupPlayer().score_actions(state, 0, [_use(MoveSlot.FIRST), _use(MoveSlot.SECOND)])
+    }
+    assert scored[MoveSlot.FIRST] < scored[MoveSlot.SECOND]
+    assert (
+        MatchupPlayer().choose_action(state, 0, [_use(MoveSlot.FIRST), _use(MoveSlot.SECOND)]).move is MoveSlot.SECOND
+    )
+
+
+def test_the_same_move_is_worth_more_against_anything_else() -> None:
+    """The control: the burn is only worthless because it is coming back, not in general."""
+    will_o_wisp = get_move("Will-O-Wisp")
+    charge_beam = get_move("Charge Beam")
+
+    def burn_score(mirrored: bool) -> float:
+        attacker = _mk("A", moves=MoveSet(will_o_wisp, charge_beam, SPLASH, SPLASH))
+        defender = _mk("B")
+        if mirrored:
+            defender.ability = Ability.MAGIC_BOUNCE
+        state = _battle([attacker], [defender])
+        scored = MatchupPlayer().score_actions(state, 0, [_use(MoveSlot.FIRST), _use(MoveSlot.SECOND)])
+        return next(score for score, action in scored if action.move is MoveSlot.FIRST)
+
+    assert burn_score(mirrored=False) > burn_score(mirrored=True)
+
+
+def test_hazards_are_worthless_against_a_last_pokemon() -> None:
+    """Reported from a live mirror match: the AI, 3-vs-1 ahead, spent turns 21, 22 and 23 setting
+    Spikes against an opponent who had nothing left to switch in, and lost the game it was winning.
+
+    Hazards only ever charge a Pokemon on the way in, and the one already out has come in. The
+    feature counted every unfainted member instead of the bench, so a lone survivor still scored.
+    """
+    setter = _mk("Setter", moves=MoveSet(STEALTH_ROCK, TACKLE, RECOVER, SPLASH))
+    alone = _mk("Alone")
+    state = _battle([setter], [alone])
+    player = MatchupPlayer()
+
+    scored = {
+        action.move: score
+        for score, action in player.score_actions(state, 0, [_use(MoveSlot.FIRST), _use(MoveSlot.SECOND)])
+    }
+    assert scored[MoveSlot.SECOND] > scored[MoveSlot.FIRST]  # hit them rather than set a toll nobody pays
+
+
+def test_hazards_are_still_worth_setting_while_a_bench_remains() -> None:
+    """The other half of the same rule: with somebody left to come in, the toll is real."""
+    setter = _mk("Setter", moves=MoveSet(STEALTH_ROCK, TACKLE, RECOVER, SPLASH))
+    state = _battle([setter], [_mk("Active"), _mk("Waiting"), _mk("AlsoWaiting")])
+    player = MatchupPlayer()
+
+    scored = {action.move: score for score, action in player.score_actions(state, 0, [_use(MoveSlot.FIRST)])}
+    assert scored[MoveSlot.FIRST] > 0.0
+
+
+def test_boots_holders_are_not_counted_as_hazard_targets() -> None:
+    """They walk over hazards, so a bench made only of them is no reason to set any."""
+    setter = _mk("Setter", moves=MoveSet(STEALTH_ROCK, TACKLE, RECOVER, SPLASH))
+    booted = [_mk("Active"), _mk("Booted", item=Item.HEAVY_DUTY_BOOTS)]
+    bare = [_mk("Active"), _mk("Bare")]
+    player = MatchupPlayer()
+
+    def hazard_score(bench: list[Pokemon]) -> float:
+        state = _battle([setter], bench)
+        return next(score for score, action in player.score_actions(state, 0, [_use(MoveSlot.FIRST)]))
+
+    assert hazard_score(booted) < hazard_score(bare)
+
+
+BRUISER = BaseStats(HP=100, ATTACK=255, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=100)
+
+
+def _bruiser() -> Pokemon:
+    """A foe that hits hard enough for `heal_turns` to stay off its cap, so the gradient is visible."""
+    return _mk("Bruiser", base_stats=BRUISER, moves=MoveSet(get_move("Hyper Beam"), TACKLE, RECOVER, SPLASH))
+
+
+def _heal_turns(player: MatchupPlayer, state: BattleState) -> float:
+    features, _ = player.feature_actions(state, 0, [_use(MoveSlot.FIRST, Target.SELF)])[0]
+    assert features is not None
+    return features.heal_turns
+
+
+def test_recovery_is_worthless_when_poison_outpaces_it() -> None:
+    """From a live mirror match: a badly poisoned Moltres used Roost eleven turns running while the
+    toxic counter climbed past what Roost restores, dealt no damage at all, and lost a won game.
+
+    Recovery is only worth the HP it keeps, so once the toll meets the heal it is worth nothing.
+    """
+    healer = _mk("Healer", moves=MoveSet(RECOVER, TACKLE, EMBER, SPLASH))
+    healer.live_stats.HP = healer.stat_totals.HP // 2
+    state = _battle([healer], [_mk("Foe")])
+    player = MatchupPlayer()
+
+    healthy = _heal_turns(player, state)
+    assert healthy > 0.0
+
+    healer.status = Status.TOXIC
+    healer.status_turns = 8  # deep into a counter: one tick now dwarfs what Recover gives back
+    assert _heal_turns(player, state) == 0.0
+
+
+def test_recovery_still_counts_when_it_stays_ahead_of_the_drain() -> None:
+    """A fresh burn is a tax, not a losing race, so healing through it is still worth something —
+    just less than healing clean."""
+    healer = _mk("Healer", moves=MoveSet(RECOVER, TACKLE, EMBER, SPLASH))
+    healer.live_stats.HP = healer.stat_totals.HP // 2
+    state = _battle([healer], [_bruiser()])
+    player = MatchupPlayer()
+    clean = _heal_turns(player, state)
+
+    healer.status = Status.BURN
+    burned = _heal_turns(player, state)
+    assert 0.0 < burned < clean
+
+
+def test_leftovers_can_keep_a_recovery_race_winnable() -> None:
+    """The drain nets both ways: a berry ticking up offsets a tick down."""
+    plain = _mk("Plain", moves=MoveSet(RECOVER, TACKLE, EMBER, SPLASH))
+    fed = _mk("Fed", moves=MoveSet(RECOVER, TACKLE, EMBER, SPLASH), item=Item.LEFTOVERS)
+    player = MatchupPlayer()
+    scores = []
+    for healer in (plain, fed):
+        healer.live_stats.HP = healer.stat_totals.HP // 2
+        healer.status = Status.POISON
+        scores.append(_heal_turns(player, _battle([healer], [_bruiser()])))
+    assert scores[1] > scores[0]
+
+
+def test_a_status_that_cannot_land_is_worth_nothing() -> None:
+    """Toxic at a Steel type starts a timer that never starts. It used to price as though it stuck,
+    which is how a status move gets thrown at something it can never touch, turn after turn."""
+    poisoner = _mk("Poisoner", moves=MoveSet(get_move("Toxic"), TACKLE, RECOVER, SPLASH))
+    player = MatchupPlayer()
+
+    def timer_value(target_types: tuple[Type, Type | None]) -> float:
+        state = _battle([poisoner], [_mk("Target", types=target_types)])
+        features, _ = player.feature_actions(state, 0, [_use(MoveSlot.FIRST)])[0]
+        assert features is not None
+        return features.timer_value
+
+    assert timer_value((Type.NORMAL, None)) > 0.0
+    assert timer_value((Type.STEEL, None)) == 0.0
+    assert timer_value((Type.POISON, None)) == 0.0
+
+
+# -- Denial and Leech Seed ----------------------------------------------------------
+# Haze, Taunt, Encore, Disable and Leech Seed produced the same feature vector as Splash, so the
+# scorer could not tell any of them from doing nothing and never played one. Worst of all where it
+# matters most: `sweep_threat` teaches the search to fear a Pokemon mid-setup, and these are the
+# moves that answer one.
+
+
+def _denial(move_name: str, their_boost: int = 0, my_boost: int = 0, volatiles: dict | None = None) -> float:
+    move = get_move(move_name)
+    mine = _mk("Mine", moves=MoveSet(move, EMBER, SWORDS_DANCE, SPLASH))
+    theirs = _mk("Theirs", moves=MoveSet(SWORDS_DANCE, TACKLE, RECOVER, SPLASH))
+    theirs.stat_stages.ATTACK = their_boost
+    mine.stat_stages.ATTACK = my_boost
+    for volatile, value in (volatiles or {}).items():
+        theirs.volatiles[volatile] = value
+    state = _battle([mine], [theirs])
+    features, _ = MatchupPlayer().feature_actions(state, 0, [_use(MoveSlot.FIRST, move.target)])[0]
+    assert features is not None
+    return features.setup_denial
+
+
+def test_haze_is_worth_more_the_further_ahead_they_are() -> None:
+    assert _denial("Haze", their_boost=0) == 0.0
+    assert 0 < _denial("Haze", their_boost=2) < _denial("Haze", their_boost=6)
+
+
+def test_haze_is_worthless_when_we_are_the_ones_who_set_up() -> None:
+    """It clears both sides, so hazing away our own sweep to undo their +2 pays less than it costs."""
+    assert _denial("Haze", their_boost=2, my_boost=2) == 0.0
+    assert _denial("Haze", their_boost=0, my_boost=4) == 0.0
+
+
+@pytest.mark.parametrize("move_name", ["Taunt", "Encore", "Disable"])
+def test_denial_moves_are_worth_something_against_a_threat(move_name: str) -> None:
+    assert _denial(move_name, their_boost=2) > 0.0
+
+
+@pytest.mark.parametrize(
+    ("move_name", "volatile"),
+    [("Taunt", ExtraStatus.TAUNT), ("Encore", ExtraStatus.ENCORE), ("Disable", ExtraStatus.DISABLE)],
+)
+def test_a_second_helping_of_the_same_denial_buys_nothing(move_name: str, volatile: ExtraStatus) -> None:
+    assert _denial(move_name, their_boost=2, volatiles={volatile: 3}) == 0.0
+
+
+def test_leech_seed_reads_as_the_timer_it_is() -> None:
+    def seed(defender_types: tuple, volatiles: dict | None = None) -> float:
+        mine = _mk("Mine", moves=MoveSet(get_move("Leech Seed"), EMBER, RECOVER, SPLASH))
+        theirs = _mk("Theirs", types=defender_types, moves=MoveSet(TACKLE, SPLASH, RECOVER, EMBER))
+        for volatile, value in (volatiles or {}).items():
+            theirs.volatiles[volatile] = value
+        state = _battle([mine], [theirs])
+        features, _ = MatchupPlayer().feature_actions(state, 0, [_use(MoveSlot.FIRST)])[0]
+        assert features is not None
+        return features.timer_value
+
+    assert seed((Type.NORMAL, None)) > 0.0
+    assert seed((Type.GRASS, None)) == 0.0  # Grass cannot be seeded
+    assert seed((Type.NORMAL, None), {ExtraStatus.LEECH_SEED: 1}) == 0.0  # already seeded

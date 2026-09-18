@@ -5,15 +5,18 @@ from dataclasses import dataclass, replace
 from battle_sim.analysis import (
     EDGE_CAP,
     HAZARD_LAYER_CAPS,
-    bootless_healthy,
+    bootless_bench,
     damage_range,
     entry_hazard_chip,
     exchange_edge,
     exchange_edge_from,
     hazard_pressure,
+    hazard_toll,
     posterior_threat,
+    residual_drain,
 )
 from battle_sim.engine.power import coded_move_fails
+from battle_sim.engine.status_apply import status_cannot_land
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, SideState
 from battle_sim.mechanics.priority import effective_speed
@@ -32,15 +35,22 @@ from battle_sim.models.moves import (
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.spec import PokemonSpec
 from battle_sim.teams import build_pokemon
-from battle_sim.utils import CHOICE_ITEMS, Category, ExtraStatus, Hazards, Item, Stats, Status
+from battle_sim.utils import CHOICE_ITEMS, Ability, Category, ExtraStatus, Hazards, Item, Stats, Status, Type
 from battle_sim.zmoves import z_move_for
 
 _ITEM_GRABBERS = frozenset({CodedMoveKind.KNOCK_OFF_ITEM, CodedMoveKind.TRICK})
 _DEAD_MOVE_MARGIN = 1e-6  # a dead action scores just below the worst real one, never a fixed constant
 _FODDER_THREAT_FRACTION = 0.2  # "setup fodder": their best hit costs less than this much of our HP
 _CATEGORY_STAT = {Category.PHYSICAL: Stats.ATTACK, Category.SPECIAL: Stats.SP_ATTACK}
+_BOOST_STATS = (Stats.ATTACK, Stats.SP_ATTACK, Stats.SPEED)
 _RELIEF_STATS = (Stats.ATTACK, Stats.DEFENCE, Stats.SP_ATTACK, Stats.SP_DEFENCE, Stats.SPEED)
 # What escaping each volatile is worth, relative to one another; switching clears all of them.
+_BOOST_CAP = 6.0  # what `_positive_boosts` is scaled against: two stats maxed is already decisive
+_SLEEP_TURNS = 2.0  # Gen 7 sleeps for one to three turns; the middle is what to plan around
+_FREE_TURN_SETUP = 0.85  # a boost nobody can punish is nearly the best a turn can do
+_DENIAL_BASE = 0.4  # shutting down a threat that has not started yet is still worth a turn
+# The volatiles that take an opponent's turn away rather than damaging them.
+_DENIAL_VOLATILES = frozenset({ExtraStatus.TAUNT, ExtraStatus.ENCORE, ExtraStatus.DISABLE})
 _VOLATILE_RELIEF: dict[ExtraStatus, float] = {
     ExtraStatus.CONFUSION: 1.0,
     ExtraStatus.LEECH_SEED: 0.8,
@@ -55,6 +65,7 @@ GENE_NAMES: tuple[str, ...] = (
     "exchange_edge",
     "timer_value",
     "para_speed_control",
+    "sleep_tempo",
     "burn_disable",
     "knock_progress",
     "hazard_value",
@@ -89,6 +100,12 @@ class MatchupWeights:
     exchange_edge: float = 0.6
     timer_value: float = 0.5
     para_speed_control: float = 0.5
+    # Outspeeding something and taking its next two turns away is close to the most valuable thing a
+    # turn can buy, and nothing scored it until now. Set beside `hko_progress` (1.05 in the deployed
+    # champion) on purpose: a landed sleep on a real threat should compete with making progress
+    # toward a knockout, because that is what it is. No fitted value exists -- this gene postdates
+    # the genome the ratings were measured with, so `load_weights` will default it.
+    sleep_tempo: float = 1.2
     burn_disable: float = 0.5
     knock_progress: float = 0.4
     hazard_value: float = 0.6
@@ -120,6 +137,7 @@ class MatchupWeights:
             self.exchange_edge,
             self.timer_value,
             self.para_speed_control,
+            self.sleep_tempo,
             self.burn_disable,
             self.knock_progress,
             self.hazard_value,
@@ -165,6 +183,7 @@ class ActionFeatures:
     exchange_edge: float = 0.0
     timer_value: float = 0.0
     para_speed_control: float = 0.0
+    sleep_tempo: float = 0.0
     burn_disable: float = 0.0
     knock_progress: float = 0.0
     hazard_value: float = 0.0
@@ -195,6 +214,7 @@ class ActionFeatures:
             self.exchange_edge,
             self.timer_value,
             self.para_speed_control,
+            self.sleep_tempo,
             self.burn_disable,
             self.knock_progress,
             self.hazard_value,
@@ -343,6 +363,12 @@ class MatchupPlayer:
             upgraded = z_move_for(turn.me.item, move)
             assert upgraded is not None  # legal_actions only offers the variant when it resolves
             move = upgraded
+        if move.reflectable and turn.opponent.ability is Ability.MAGIC_BOUNCE:
+            # Worse than useless: the move comes straight back, so the burn or the poison lands on
+            # its own user. The effect features below would price it as though the status stuck to
+            # the target, which is how a Weezing throws Will-O-Wisp at a Mega Sableye turn after turn
+            # while already burned by the last one. Dead, by the same route as the failures below.
+            return None
         if coded_move_fails(move, turn.me, turn.opponent, turn.state):
             # Dream Eater into an awake target, Sucker Punch into a target not about to attack, and
             # so on: the damage/effect math below has no idea these conditions exist and would score
@@ -417,11 +443,61 @@ class MatchupPlayer:
             heal_turns=self._heal_feature(move, turn),
             setup_value=self._setup_feature(move, turn),
             phaze_value=self._phaze_feature(move, turn),
+            setup_denial=self._denial_feature(move, turn),
+            timer_value=max(status.timer_value, self._seed_feature(move, turn)),
         )
+
+    def _denial_feature(self, move: Move, turn: _Turn) -> float:
+        """What taking their plan away is worth: Haze, Taunt, Encore, Disable.
+
+        None of these had a feature, so the scorer could not tell any of them from Splash and never
+        played one. That is worst precisely where it matters most — `sweep_threat` now teaches the
+        search to fear a Pokemon mid-setup, and these are the moves that answer one.
+
+        `setup_denial` already means "deny them the free turn they wanted", which is exactly this;
+        it was only ever set on switches before.
+        """
+        theirs = _positive_boosts(turn.opponent)
+        if _resets_stat_stages(move):
+            # Haze clears both sides, so it is only worth something when they are the ones ahead —
+            # and hazing away our own sweep to undo a +1 would be paying more than it collects.
+            return max(0.0, (theirs - _positive_boosts(turn.me)) / _BOOST_CAP)
+        blocked = _inflicted_volatile(move)
+        if blocked not in _DENIAL_VOLATILES:
+            return 0.0
+        if blocked in turn.opponent.volatiles:
+            return 0.0  # already taunted/encored; a second one buys nothing
+        if not self._opponent_gains_from_a_free_turn(turn) and theirs == 0:
+            return 0.0  # nothing to shut down: they have no setup and no recovery to deny
+        # Worth more against something already partway through setting up than against a fresh one.
+        return min(1.0, _DENIAL_BASE + theirs / _BOOST_CAP)
+
+    def _seed_feature(self, move: Move, turn: _Turn) -> float:
+        """Leech Seed as the timer it is — the same clock Toxic starts, plus the HP it hands back.
+
+        Priced through `timer_value` rather than a gene of its own because that is already "how much
+        of their life this quietly takes while I do something else", which is the whole move.
+        """
+        if _inflicted_volatile(move) is not ExtraStatus.LEECH_SEED:
+            return 0.0
+        if ExtraStatus.LEECH_SEED in turn.opponent.volatiles or Type.GRASS in turn.opponent.types:
+            return 0.0  # already seeded, or a Grass type, which cannot be
+        survival = (
+            math.ceil(turn.opponent.live_stats.HP / turn.mine.best_expected)
+            if turn.mine.best_expected > 0
+            else math.inf
+        )
+        return min(survival, 6.0) / 6
 
     def _status_features(self, move: Move, turn: _Turn) -> ActionFeatures:
         status = _inflicted_status(move)
         if status is None or turn.opponent.status is not Status.NONE:
+            return ActionFeatures()
+        if status_cannot_land(status, turn.opponent, turn.me, turn.state.field):
+            # Toxic at a Steel type, Thunder Wave at an Electric, Will-O-Wisp at a Fire: the timer
+            # this would start never starts. Scored as though it always sticks, these read as free
+            # value and get thrown repeatedly at something they can never touch — the same mistake
+            # as the Magic Bounce case above, arrived at from the other direction.
             return ActionFeatures()
         survival = (
             math.ceil(turn.opponent.live_stats.HP / turn.mine.best_expected)
@@ -432,16 +508,40 @@ class MatchupPlayer:
             timer_value=min(survival, 6.0) / 6,
             para_speed_control=1.0 if status is Status.PARALYSIS and turn.opponent_faster else 0.0,
             burn_disable=1.0 if status is Status.BURN and turn.theirs.best_category is Category.PHYSICAL else 0.0,
+            sleep_tempo=self._sleep_tempo(status, turn),
         )
 
+    def _sleep_tempo(self, status: Status, turn: _Turn) -> float:
+        """What taking their turns away is worth -- the one thing sleep does and nothing else models.
+
+        Every other status was a clock: poison and burn tick, paralysis halves speed, and
+        `timer_value` prices all of them by how long the target survives. Sleep ticks nothing. Scored
+        through `timer_value` alone it reads as a weaker Toxic, which is how a Darkrai carrying
+        80%-accurate Dark Void came to pick it 0 times out of 23 -- Dark Pulse simply scored higher
+        every turn.
+
+        Valued as the damage it prevents: roughly two turns of whatever they were about to do to us,
+        as a share of what we have left. Sleeping something that would two-shot us is worth the cap;
+        sleeping something that chips is worth little.
+        """
+        if status is not Status.SLEEP:
+            return 0.0
+        mine_left = max(1, turn.me.live_stats.HP)
+        return min(1.0, turn.theirs.best_expected * _SLEEP_TURNS / mine_left)
+
     def _hazard_feature(self, move: Move, turn: _Turn) -> float:
-        hazard = _set_hazard(move)
+        hazard = set_hazard(move)
         if hazard is None:
             return 0.0
         their_side = turn.state.sides[1 - turn.side_index]
         if their_side.hazards.get(hazard, 0) >= HAZARD_LAYER_CAPS.get(hazard, 1):
             return 0.0
-        return bootless_healthy(their_side) / 6
+        # The marginal toll of this layer, not a count of who is left to walk into it. Counting
+        # heads priced Stealth Rock against a bench of Ho-Oh and Yveltal -- half a bar each on the
+        # way in -- exactly as it priced rocks against a bench of Steel types.
+        mine = turn.state.sides[turn.side_index].active_pokemon
+        with_it = hazard_toll(their_side, extra=hazard, attacker=mine, state=turn.state)
+        return with_it - hazard_toll(their_side, attacker=mine, state=turn.state)
 
     def _removal_feature(self, move: Move, turn: _Turn) -> float:
         removal = next((e for e in move.effects if isinstance(e, RemoveHazardsEffect)), None)
@@ -463,11 +563,23 @@ class MatchupPlayer:
         return 0.6
 
     def _heal_feature(self, move: Move, turn: _Turn) -> float:
+        """What recovery is worth once the residuals have taken their cut.
+
+        Healing used to be priced on the HP it restores, as though attacks were the only thing
+        spending HP. Against a toxic counter it is a race, and one recovery loses by construction:
+        the toll climbs every turn while the heal stays the same size. Netting the drain off first
+        makes an unwinnable race score nothing, so the search attacks instead of roosting into its
+        own grave — and because toxic is quoted at its next tick, the value keeps falling the longer
+        the loop runs instead of holding steady forever.
+        """
         if not _heals(move):
             return 0.0
         fraction = next((e.fraction for e in move.effects if isinstance(e, HealEffect)), 0.5)
         healed = min(turn.me.stat_totals.HP - turn.me.live_stats.HP, fraction * turn.me.stat_totals.HP)
-        turns_gained = healed / max(1, turn.theirs.strongest)
+        kept = healed - residual_drain(turn.me, turn.state)
+        if kept <= 0:
+            return 0.0  # the toll meets or beats the heal: a race recovery cannot win
+        turns_gained = kept / max(1, turn.theirs.strongest)
         return min(turns_gained, 2.0) / 2
 
     def _setup_feature(self, move: Move, turn: _Turn) -> float:
@@ -481,21 +593,31 @@ class MatchupPlayer:
         a pure speed boost (Rock Polish, Agility, Autotomize) scoring zero even though outspeeding
         is the entire point of using one before the attacking half of a double-dance set — nothing
         else in this scorer credited turn order on its own.
+
+        Against something that cannot act the turn is *free*, and both halves of this changed:
+
+          * the "they would KO us first" gate was reading a sleeping Pokemon's damage as though it
+            were going to land. It cannot. Scored that way, a Nasty Plot next to a sleeping heavy
+            hitter was worth exactly zero — the one position where it is worth the most.
+          * the boost is credited a floor rather than only what it shaves, because the cost side of
+            the trade is nothing. They wake and lose the turn, or they switch and still lose it; in
+            neither branch do we pay for the boost.
         """
-        if turn.theirs.threat_expected >= turn.me.live_stats.HP:
+        free = _cannot_act(turn.opponent)
+        if not free and turn.theirs.threat_expected >= turn.me.live_stats.HP:
             return 0.0
         speed_bonus = self._speed_flip_bonus(move, turn)
         if turn.mine.best_expected <= 0 or turn.mine.best_category not in _CATEGORY_STAT:
-            return speed_bonus
+            return _with_free_turn(speed_bonus, free, move)
         stat = _CATEGORY_STAT[turn.mine.best_category]
         gain = _self_boost(move, stat)
         if gain == 0:
-            return speed_bonus
+            return _with_free_turn(speed_bonus, free, move)
         current = turn.me.stat_stages[stat]
         boosted = turn.mine.best_expected * _stage_multiplier(min(6, current + gain)) / _stage_multiplier(current)
         turns_now = math.ceil(turn.opponent.live_stats.HP / turn.mine.best_expected)
         turns_after = math.ceil(turn.opponent.live_stats.HP / boosted)
-        return min(turns_now - turns_after, 3) / 3 + speed_bonus
+        return _with_free_turn(min(turns_now - turns_after, 3) / 3 + speed_bonus, free, move)
 
     def _speed_flip_bonus(self, move: Move, turn: _Turn) -> float:
         """1.0 when a speed boost changes who acts first against the current opponent, else 0.0.
@@ -548,7 +670,7 @@ class MatchupPlayer:
         if not any(not p.is_fainted() and p is not turn.opponent for p in their_side.team):
             return 0.0  # nothing to drag in
         boosts = sum(max(0, turn.opponent.stat_stages[stat]) for stat in _CATEGORY_STAT.values()) / 4
-        chip = 0.5 if their_side.hazards and bootless_healthy(their_side) > 0 else 0.0
+        chip = 0.5 if their_side.hazards and bootless_bench(their_side) > 0 else 0.0
         return min(boosts + chip, 1.5)
 
     # -- Switch scoring -------------------------------------------------------------
@@ -703,6 +825,28 @@ def _offense(attacker: Pokemon, defender: Pokemon, state: BattleState) -> _Offen
     )
 
 
+def _positive_boosts(pokemon: Pokemon) -> float:
+    """How far ahead this Pokemon's offensive and speed stages have put it."""
+    return float(sum(max(0, pokemon.stat_stages[stat]) for stat in _BOOST_STATS))
+
+
+def _resets_stat_stages(move: Move) -> bool:
+    return any(isinstance(effect, CodedEffect) and effect.kind is CodedMoveKind.HAZE for effect in move.effects)
+
+
+def _inflicted_volatile(move: Move) -> ExtraStatus | None:
+    """The volatile this move puts on the *target*, if any."""
+    for effect in move.effects:
+        if (
+            isinstance(effect, InflictStatusEffect)
+            and isinstance(effect.status, ExtraStatus)
+            and not effect.to_self
+            and not effect.is_secondary
+        ):
+            return effect.status
+    return None
+
+
 def _inflicted_status(move: Move) -> Status | None:
     for effect in move.effects:
         if (
@@ -715,11 +859,29 @@ def _inflicted_status(move: Move) -> Status | None:
     return None
 
 
-def _set_hazard(move: Move) -> Hazards | None:
+def set_hazard(move: Move) -> Hazards | None:
     for effect in move.effects:
         if isinstance(effect, SideConditionEffect) and effect.kind in HAZARD_LAYER_CAPS:
             return effect.kind
     return None
+
+
+def _cannot_act(pokemon: Pokemon) -> bool:
+    """Whether this Pokemon is certain to lose its next turn.
+
+    Sleep needs more than one turn left on the counter: at exactly one it decrements to zero and
+    wakes on the spot, so that turn is not free at all.
+    """
+    if pokemon.status is Status.SLEEP:
+        return pokemon.status_turns > 1
+    return pokemon.status is Status.FREEZE
+
+
+def _with_free_turn(value: float, free: bool, move: Move) -> float:
+    """A boost taken against something that cannot act is worth a floor, whatever it shaves."""
+    if not free or not any(_self_boost(move, stat) > 0 for stat in _BOOST_STATS):
+        return value
+    return min(1.0, max(value, _FREE_TURN_SETUP))
 
 
 def _heals(move: Move) -> bool:

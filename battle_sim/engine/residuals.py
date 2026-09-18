@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 from battle_sim.engine.damage_apply import _apply_damage
 from battle_sim.engine.power import ROLLING_MOVES
+from battle_sim.engine.status_apply import sleep_duration
 from battle_sim.mechanics.battle import BattleState, SideState, effective_weather
 from battle_sim.mechanics.events import Event, EventBus, EventContext, HandlerResult, Payload, ResidualOrder
 from battle_sim.mechanics.log import BattleLog
@@ -180,7 +181,7 @@ def _yawn(context: EventContext, payload: Payload) -> HandlerResult | None:
     del active.volatiles[ExtraStatus.YAWN]
     if active.status is Status.NONE:
         active.status = Status.SLEEP
-        active.status_turns = context.rng.random_integer(1, 4)
+        active.status_turns = sleep_duration(context.rng)
         context.log.add(StatusInflicted(side=payload["side_index"], pokemon=active.nickname, status=Status.SLEEP))
     return None
 
