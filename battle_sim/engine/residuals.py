@@ -29,12 +29,18 @@ from battle_sim.models.log_events import (
     StatusInflicted,
     TailwindFaded,
     TerrainFaded,
+    TrapReleased,
+    TrapSqueezed,
     VolatileInflicted,
     WeatherFaded,
 )
 from battle_sim.models.moves import DamageEffect
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.utils import Ability, ExtraStatus, Status, Terrain, Type, Weather
+
+# An eighth of maximum health a turn, which is the Gen 6+ figure. (A Binding Band raises it to a
+# sixth and a Grip Claw lengthens the hold; neither item is modelled, so neither is read here.)
+PARTIAL_TRAP_FRACTION = 8
 
 _SANDSTORM_IMMUNE_TYPES = frozenset({Type.ROCK, Type.GROUND, Type.STEEL})
 
@@ -60,6 +66,7 @@ def _ensure_core_residual_handlers(bus: EventBus) -> None:
     bus.on(Event.ON_RESIDUAL, _leech_seed_sap, priority=ResidualOrder.LEECH_SEED)
     bus.on(Event.ON_RESIDUAL, _status_chip, priority=ResidualOrder.STATUS)
     bus.on(Event.ON_RESIDUAL, _nightmare, priority=ResidualOrder.NIGHTMARE)
+    bus.on(Event.ON_RESIDUAL, _partial_trap, priority=ResidualOrder.PARTIAL_TRAP)
     bus.on(Event.ON_RESIDUAL, _salt_cure, priority=ResidualOrder.SALT_CURE)
     bus.on(Event.ON_RESIDUAL, _curse_chip, priority=ResidualOrder.CURSE)
     bus.on(Event.ON_RESIDUAL, _yawn, priority=ResidualOrder.YAWN)
@@ -92,6 +99,31 @@ def _grassy_terrain_heal(context: EventContext, payload: Payload) -> HandlerResu
     healed = active.apply_healing(max(1, active.stat_totals.HP // 16))
     if healed > 0:
         context.log.add(Healed(side=payload["side_index"], pokemon=active.nickname, amount=healed))
+    return None
+
+
+def _partial_trap(context: EventContext, payload: Payload) -> HandlerResult | None:
+    """Wrap and friends: an eighth of maximum health a turn, for as long as the grip holds.
+
+    The counter comes down here rather than in `_tick_volatiles` so the chip and the countdown
+    cannot disagree: the turn a trap expires is a turn the victim still takes damage on, and
+    separating the two made that the turn it did not.
+
+    Magic Guard blocks the damage but not the grip -- being unable to switch is not damage.
+    """
+    active = context.actor
+    assert active is not None  # ON_RESIDUAL always carries the active pokemon
+    remaining = active.volatiles.get(ExtraStatus.PARTIALLY_TRAPPED)
+    if remaining is None:
+        return None
+    if not payload.get("magic_guard", False):
+        dealt = active.apply_damage(max(1, active.stat_totals.HP // PARTIAL_TRAP_FRACTION))
+        context.log.add(TrapSqueezed(side=payload["side_index"], pokemon=active.nickname, amount=dealt))
+    if remaining <= 1:
+        del active.volatiles[ExtraStatus.PARTIALLY_TRAPPED]
+        context.log.add(TrapReleased(side=payload["side_index"], pokemon=active.nickname))
+    else:
+        active.volatiles[ExtraStatus.PARTIALLY_TRAPPED] = remaining - 1
     return None
 
 
@@ -251,6 +283,7 @@ def _tick_countdown(
 
 def _tick_volatiles(active: Pokemon, side_index: int, log: BattleLog) -> None:
     active.volatiles.pop(ExtraStatus.FLINCH, None)
+    active.volatiles.pop(ExtraStatus.ROOSTED, None)  # the bird is back in the air
     active.volatiles.pop(ExtraStatus.PROTECT, None)
     active.volatiles.pop(ExtraStatus.ENDURE, None)
     if ExtraStatus.PERISH in active.volatiles:

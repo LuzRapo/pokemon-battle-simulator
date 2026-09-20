@@ -25,14 +25,14 @@ reached mid-battle through the stone, exactly as Palafin-Hero is reached through
 from collections.abc import Sequence
 from functools import cache
 
-from battle_sim.database.loader import get_all_species, get_species, normalize_id
+from battle_sim.database.loader import get_all_species, get_all_z_moves, get_species, normalize_id
 from battle_sim.mechanics.effects import EffectRegistry, rewire_active
 from battle_sim.mechanics.events import EventBus
 from battle_sim.mechanics.log import BattleLog
 from battle_sim.models.log_events import FormeChanged
 from battle_sim.models.moves import Move
 from battle_sim.models.pokemon import Pokemon
-from battle_sim.teams import ability_from_showdown, item_from_showdown
+from battle_sim.teams import ability_from_showdown, item_from_showdown, item_showdown_name
 from battle_sim.utils import Ability, Category, Item
 from battle_sim.zmoves import crystal_type
 
@@ -314,3 +314,56 @@ def apply_forme(pokemon: Pokemon, forme: str) -> None:
     pokemon.weight_kg = species.weight_kg
     pokemon.refresh_stats()
     pokemon.live_stats.HP = max(1, round(fraction * pokemon.stat_totals.HP)) if fraction > 0 else 0
+
+
+# Arceus, whose plates the dex does not record as forme requirements, and the two names one item
+# goes by. See `is_fused_to`.
+_PLATE_HOLDER = "arceus"
+_GRISEOUS = frozenset({Item.GRISEOUS_CORE, Item.GRISEOUS_ORB})
+
+
+@cache
+def _items_fused_to() -> dict[str, frozenset[Item]]:
+    """Base species key -> the items that are part of what it *is* rather than what it holds.
+
+    Built from the same `requiredItem` field the mega table is built from, but without the
+    mega-only filter: an Arceus plate, a Silvally memory, a Genesect drive and Giratina's Griseous
+    Orb are all the same kind of thing as a Mega Stone, and the games treat them the same way.
+    """
+    fused: dict[str, set[Item]] = {}
+    for species in get_all_species().values():
+        if species.required_item is None or species.base_species is None:
+            continue
+        item = item_from_showdown(species.required_item)
+        if item is not None:
+            fused.setdefault(normalize_id(species.base_species), set()).add(item)
+    return {key: frozenset(items) for key, items in fused.items()}
+
+
+def is_fused_to(species: str, item: Item) -> bool:
+    """Whether this item is welded to this Pokemon and cannot be taken off it.
+
+    Knock Off, Trick, Thief and friends all refuse the same short list: a Z-Crystal on anybody, and
+    a forme-defining item on the species it defines a forme for. Knocking a Garchompite off a
+    Garchomp would take the Pokemon's own identity away with it, and the games simply do not allow
+    it — while the same stone on a Pikachu is an ordinary held item, and comes off like one.
+
+    Z-Crystals are refused on any holder, which is the rule as written: they are not tied to a
+    species, but they are still not something an opponent can take.
+
+    Two entries the species table cannot supply on its own. Arceus's formes carry no `requiredItem`
+    at all — the dex leaves that to Multitype — so its plates are named here instead. And Giratina's
+    forme asks for the Gen 9 "Griseous Core" while a Gen 7 set holds the "Griseous Orb"; they are
+    one item under two names, so both are refused.
+    """
+    if crystal_type(item) is not None or normalize_id(item_showdown_name(item)) in get_all_z_moves():
+        return True
+    # By base species, not by whatever it is standing there as: a Garchomp that has already Mega
+    # Evolved is a "Garchomp-Mega", and looking that up found nothing — so the stone that made it
+    # could be knocked straight back off it.
+    entry = get_all_species().get(normalize_id(species))
+    key = normalize_id(entry.base_species or species) if entry is not None else normalize_id(species)
+    if key == _PLATE_HOLDER and item.name.endswith("_PLATE"):
+        return True
+    fused = _items_fused_to().get(key, frozenset())
+    return item in fused or (item in _GRISEOUS and bool(fused & _GRISEOUS))

@@ -87,6 +87,8 @@ GREEDY_GOURMAND_DIVISOR = 2
 # These carry a real DamageEffect for engine.residuals to apply two turns on (see CodedMoveKind.
 # FUTURE_SIGHT); the effect must not also land immediately on the turn the move is used.
 _DELAYED_DAMAGE_MOVES = frozenset({"Future Sight", "Doom Desire"})
+# The one move whose healing has a cost: the bird comes down to do it. See `_apply_heal`.
+ROOST = "Roost"
 
 
 def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bottom in priority order; that IS the contract
@@ -286,12 +288,19 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
         and not move.bypass_substitute
         and attacker.ability is not Ability.INFILTRATOR
     )
+    # A disguise takes the whole move, not merely its damage. Decided here rather than inside the
+    # damage effect for the same reason the substitute is: by the time the flinch is reached the
+    # disguise has already busted, so a Mimikyu that was never actually hit would flinch anyway.
+    # Showdown does this by returning 0 from Disguise's `onTryHit`, which skips secondaries too.
+    disguised = _disguise_intercepts(defender, move)
     log_before = len(log)
     for effect in move.effects:
         if move.name in _DELAYED_DAMAGE_MOVES and isinstance(effect, DamageEffect):
             continue  # the CodedEffect alongside it queues this for engine.residuals instead
         if defender.is_fainted() and _targets_defender(effect, move):
             continue  # self/side effects (boosts, hazard clearing) still apply after a KO
+        if disguised and _targets_defender(effect, move) and not isinstance(effect, DamageEffect):
+            continue  # the damage effect still runs — absorbing it is what breaks the disguise
         _apply_effect(effect, move, attacker, side_index, defender, opponent_side, state, log, behind_substitute)
 
     if move.force_switch and not defender.is_fainted():
@@ -355,6 +364,22 @@ def _skips_charge_turn(move: Move, attacker: Pokemon, state: BattleState, side_i
     return False
 
 
+def _disguise_intercepts(defender: Pokemon, move: Move) -> bool:
+    """Whether an intact disguise is about to take this move on the defender's behalf.
+
+    Asked before the move resolves, so callers can tell a move that was absorbed from one that
+    landed — `damage_apply._disguise_absorbs` does the absorbing itself, and by then the forme has
+    already changed and the question can no longer be answered.
+
+    Damaging moves only, which is the Gen 7 rule: a status move goes straight through a disguise.
+    """
+    from battle_sim.formes import disguise_broken
+
+    if defender.ability is not Ability.DISGUISE or disguise_broken(defender) or move.target is Target.SELF:
+        return False
+    return any(isinstance(effect, (DamageEffect, FixedDamageEffect)) for effect in move.effects)
+
+
 def _targets_defender(effect: MoveEffect, move: Move) -> bool:
     if isinstance(effect, (DamageEffect, FixedDamageEffect)):
         return True
@@ -384,10 +409,16 @@ def _apply_status_routed(
         )
 
 
-def _apply_heal(effect: HealEffect, attacker: Pokemon, attacker_side_index: int, log: BattleLog) -> None:
+def _apply_heal(effect: HealEffect, move: Move, attacker: Pokemon, attacker_side_index: int, log: BattleLog) -> None:
     healed = attacker.apply_healing(max(1, int(attacker.stat_totals.HP * effect.fraction)))
     if healed > 0:
         log.add(Healed(side=attacker_side_index, pokemon=attacker.nickname, amount=healed))
+    if move.name == ROOST:
+        # The bird comes down to heal. Its Flying type is ignored for the rest of the turn, which is
+        # the whole cost of the move: a roosting Zapdos is Electric alone, so Earthquake lands on it
+        # and Ice Beam stops being doubly effective. `Pokemon.battle_types` reads the volatile;
+        # `_tick_volatiles` drops it at the end of the turn.
+        attacker.volatiles[ExtraStatus.ROOSTED] = 1
 
 
 def _continue_rolling(attacker: Pokemon, slot: MoveSlot) -> None:
@@ -630,7 +661,7 @@ def _apply_effect(
     elif isinstance(effect, FixedDamageEffect):
         _apply_fixed_damage(effect, move, attacker, defender, 1 - attacker_side_index, log, behind_substitute, state)
     elif isinstance(effect, HealEffect):
-        _apply_heal(effect, attacker, attacker_side_index, log)
+        _apply_heal(effect, move, attacker, attacker_side_index, log)
     elif isinstance(effect, (InflictStatusEffect, StatStageChangeEffect)):
         _apply_status_or_stages(effect, move, attacker, attacker_side_index, defender, state, log, behind_substitute)
     elif isinstance(effect, RemoveHazardsEffect):

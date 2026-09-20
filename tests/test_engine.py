@@ -1,7 +1,8 @@
 import pytest
 
 from battle_sim.database.loader import get_move
-from battle_sim.engine import apply_forced_switch, step
+from battle_sim.engine import apply_forced_switch, legal_actions, step
+from battle_sim.maths.damage import move_effectiveness
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.mechanics.events import Event, EventContext, HandlerResult, Payload
@@ -35,11 +36,14 @@ from battle_sim.models.log_events import (
     Switched,
     TailwindSet,
     TauntBlocked,
+    TrapSqueezed,
 )
 from battle_sim.models.moves import MoveSet, MoveSlot
 from battle_sim.models.pokemon import Pokemon
+from battle_sim.models.spec import PokemonSpec
 from battle_sim.models.stats import BaseStats, EVs, IVs
 from battle_sim.models.type_matchups import TypePair
+from battle_sim.teams import build_pokemon
 from battle_sim.utils import (
     Ability,
     ExtraStatus,
@@ -1900,3 +1904,90 @@ def test_forced_switch_into_lethal_hazards_ends_the_battle():
     assert b2.is_fainted()
     assert state.outcome is Outcome.P1_WIN
     assert BattleEnded(outcome=Outcome.P1_WIN) in log.entries
+
+
+# -- Roost, and the moves that hold you in place -------------------------------------------------
+
+
+def _built(species: str, moves: list[str], item: Item = Item.NONE) -> Pokemon:
+    return build_pokemon(PokemonSpec(species=species, level=50, moves=moves, item=item))
+
+
+def _first(mine: Pokemon, theirs: Pokemon, seed: int = 1) -> BattleState:
+    return BattleState(sides=(SideState(team=[mine]), SideState(team=[theirs])), rng=RNG(seed=seed))
+
+
+def test_roosting_puts_the_bird_on_the_ground() -> None:
+    """The cost of the heal, and the whole reason Roost is not simply Recover with feathers: a
+    roosting Zapdos is Electric alone, so Ground moves reach it and Ice Beam stops doubling."""
+    zapdos = _built("Zapdos", ["Roost", "Thunderbolt"])
+    golem = _built("Golem", ["Earthquake", "Rock Slide"])
+    earthquake, ice_beam = get_move("Earthquake"), get_move("Ice Beam")
+    assert move_effectiveness(earthquake, golem, zapdos) == 0.0
+    assert move_effectiveness(ice_beam, golem, zapdos) == 2.0
+
+    zapdos.volatiles[ExtraStatus.ROOSTED] = 1
+
+    assert move_effectiveness(earthquake, golem, zapdos) == 2.0, "Ground still could not touch a roosting bird"
+    assert move_effectiveness(ice_beam, golem, zapdos) == 1.0, "the Flying weakness survived the roost"
+    assert zapdos.is_grounded(), "a roosting bird is on the ground, hazards and all"
+
+
+def test_the_bird_is_back_in_the_air_next_turn() -> None:
+    """It lasts the turn it is used and not a moment longer."""
+    zapdos = _built("Zapdos", ["Roost", "Thunderbolt"])
+    zapdos.live_stats.HP = zapdos.stat_totals.HP // 2
+    state = _first(zapdos, _built("Snorlax", ["Splash"]))
+
+    step(state, {0: SELF_MOVE, 1: SELF_MOVE})
+
+    assert zapdos.live_stats.HP > zapdos.stat_totals.HP // 2, "Roost did not even heal"
+    assert ExtraStatus.ROOSTED not in zapdos.volatiles
+    assert not zapdos.is_grounded()
+
+
+def test_a_wrap_squeezes_every_turn_and_holds_its_victim_there() -> None:
+    """Magma Storm, Whirlpool, Wrap and the rest loaded as weak attacks with no rider at all: the
+    volatile they carry had no mapping, so Heatran's signature move did its damage and nothing."""
+    heatran = _built("Heatran", ["Magma Storm", "Earth Power"])
+    blissey = _built("Blissey", ["Soft-Boiled", "Seismic Toss"])
+    spare = _built("Snorlax", ["Splash", "Body Slam"])
+    state = BattleState(
+        sides=(SideState(team=[heatran]), SideState(team=[blissey, spare])), rng=RNG(seed=0)
+    )  # seed 0: Magma Storm is 75% accurate, and this is a turn it lands on
+
+    step(state, {0: ATTACK_FIRST, 1: SELF_MOVE})
+
+    assert ExtraStatus.PARTIALLY_TRAPPED in blissey.volatiles, "Magma Storm let go immediately"
+    assert not any(action.action is ActionType.SWITCH_OUT for action in legal_actions(state, 1)), "it walked away"
+    # Read off the log rather than the health bar: Blissey is holding Soft-Boiled, which out-heals
+    # an eighth a turn several times over, so the damage is real and invisible in the total.
+    played = step(state, {0: SECOND_MOVE, 1: SELF_MOVE})
+    squeezes = [entry for entry in played.entries if isinstance(entry, TrapSqueezed)]
+    assert squeezes, "the grip did no damage at all"
+    assert squeezes[0].amount == blissey.stat_totals.HP // 8
+
+
+def test_the_grip_lets_go_when_whoever_tied_it_leaves() -> None:
+    """Otherwise wrapping and then switching out leaves somebody held by nobody."""
+    heatran = _built("Heatran", ["Magma Storm", "Earth Power"])
+    blissey = _built("Blissey", ["Soft-Boiled", "Seismic Toss"])
+    spare = _built("Snorlax", ["Splash", "Body Slam"])
+    opposite = _built("Snorlax", ["Splash", "Body Slam"])
+    state = BattleState(
+        sides=(SideState(team=[heatran, spare]), SideState(team=[blissey, opposite])),
+        rng=RNG(seed=0),
+    )
+    step(state, {0: ATTACK_FIRST, 1: SELF_MOVE})
+    assert ExtraStatus.PARTIALLY_TRAPPED in blissey.volatiles
+
+    step(state, {0: Action(action=ActionType.SWITCH_OUT, switch_in=spare), 1: SELF_MOVE})
+
+    assert ExtraStatus.PARTIALLY_TRAPPED not in blissey.volatiles
+    assert any(action.action is ActionType.SWITCH_OUT for action in legal_actions(state, 1))
+
+
+# The three actions the Roost and wrap tests above use, named for what they do rather than by slot.
+ATTACK_FIRST = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+SECOND_MOVE = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.SECOND)
+SELF_MOVE = Action(action=ActionType.USE_MOVE, target=Target.SELF, move=MoveSlot.FIRST)

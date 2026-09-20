@@ -10,6 +10,20 @@ from battle_sim.models.pokemon import Pokemon
 from battle_sim.utils import Ability, ExtraStatus, Status
 
 
+def _release_anyone_it_was_holding(state: BattleState, side_index: int) -> None:
+    """A wrap ends when whoever was doing the wrapping leaves.
+
+    No need to record which Pokemon tied the knot: in singles, a side whose opponent is wrapped is
+    the side holding them, because a wrapped Pokemon is exactly the one that cannot switch. So the
+    Pokemon walking out is always the one letting go — whether it chose to leave or fainted.
+
+    Without this, Magma Storm followed by a switch would leave the victim held by nobody for four
+    more turns, which is not a clever play in the games: the grip goes with its owner.
+    """
+    victim = state.sides[1 - side_index].active_pokemon
+    victim.volatiles.pop(ExtraStatus.PARTIALLY_TRAPPED, None)
+
+
 def _execute_switch(state: BattleState, side_index: int, action: Action, log: BattleLog) -> None:
     assert action.switch_in is not None
     side = state.sides[side_index]
@@ -30,6 +44,7 @@ def _execute_switch(state: BattleState, side_index: int, action: Action, log: Ba
     outgoing.locked_slot = None
     outgoing.charging_slot = None
     outgoing.rolling_hits = 0
+    _release_anyone_it_was_holding(state, side_index)
     if outgoing.status is Status.TOXIC:
         outgoing.status_turns = 0
     unregister_active(state.bus, state.effects, outgoing)

@@ -15,8 +15,13 @@ from battle_sim.models.log_events import (
 )
 from battle_sim.models.moves import MoveSet, MoveSlot
 from battle_sim.models.pokemon import Pokemon
+from battle_sim.models.spec import PokemonSpec
 from battle_sim.models.stats import BaseStats, EVs, IVs
+from battle_sim.teams import build_pokemon
 from battle_sim.utils import Ability, Hazards, Item, Nature, Stats, Status, Target, Type
+
+# Whatever is in the first slot, aimed at the other side: Knock Off or Trick, depending on the set.
+KNOCK = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
 
 TACKLE = get_move("Tackle")
 EMBER = get_move("Ember")
@@ -680,3 +685,61 @@ def test_the_monocle_never_bites_back():
         step(_battle([attacker], [_mk("Dummy")]), {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
     assert monocled.live_stats.HP == monocled.stat_totals.HP
     assert orbed.live_stats.HP < orbed.stat_totals.HP
+
+
+# -- what cannot be taken off a Pokemon ----------------------------------------------------------
+
+
+def _holder(species: str, item: Item, moves: list[str]) -> Pokemon:
+    return build_pokemon(PokemonSpec(species=species, level=50, item=item, moves=moves))
+
+
+def _knock_off_at(target: Pokemon) -> Pokemon:
+    """One turn of Knock Off against `target`, returning the target."""
+    attacker = _holder("Tyranitar", Item.NONE, ["Knock Off"])
+    state = BattleState(sides=(SideState(team=[attacker]), SideState(team=[target])), rng=RNG(seed=1))
+    step(state, {0: KNOCK, 1: KNOCK})
+    return target
+
+
+def test_knock_off_cannot_take_a_mega_stone_from_the_pokemon_it_belongs_to() -> None:
+    """Knocking a Garchompite off a Garchomp takes the Pokemon's own identity with it, and the
+    games do not allow it."""
+    assert _knock_off_at(_holder("Garchomp", Item.GARCHOMPITE, ["Outrage"])).item is Item.GARCHOMPITE
+
+
+def test_the_same_stone_on_somebody_else_is_an_ordinary_held_item() -> None:
+    """It is fused to the species it transforms, not to whoever picked it up."""
+    assert _knock_off_at(_holder("Snorlax", Item.GARCHOMPITE, ["Body Slam"])).item is Item.NONE
+
+
+def test_knock_off_cannot_take_a_z_crystal_from_anybody() -> None:
+    """Z-Crystals are tied to no species and still cannot be taken — the rule as written."""
+    assert _knock_off_at(_holder("Snorlax", Item.NORMALIUM_Z, ["Body Slam"])).item is Item.NORMALIUM_Z
+    assert _knock_off_at(_holder("Pikachu", Item.PIKANIUM_Z, ["Thunderbolt"])).item is Item.PIKANIUM_Z
+
+
+def test_knock_off_still_takes_an_ordinary_item() -> None:
+    """The fix must not have quietly disarmed the move."""
+    assert _knock_off_at(_holder("Snorlax", Item.LEFTOVERS, ["Body Slam"])).item is Item.NONE
+
+
+def test_trick_refuses_a_trade_either_half_of_which_is_welded_on() -> None:
+    """Otherwise Trick launders exactly what Knock Off cannot touch."""
+    garchomp = _holder("Garchomp", Item.GARCHOMPITE, ["Trick"])
+    snorlax = _holder("Snorlax", Item.LEFTOVERS, ["Body Slam"])
+    state = BattleState(sides=(SideState(team=[garchomp]), SideState(team=[snorlax])), rng=RNG(seed=1))
+
+    step(state, {0: KNOCK, 1: KNOCK})
+
+    assert garchomp.item is Item.GARCHOMPITE and snorlax.item is Item.LEFTOVERS
+
+
+def test_trick_still_trades_two_ordinary_items() -> None:
+    tricker = _holder("Alakazam", Item.CHOICE_SCARF, ["Trick"])
+    victim = _holder("Snorlax", Item.LEFTOVERS, ["Body Slam"])
+    state = BattleState(sides=(SideState(team=[tricker]), SideState(team=[victim])), rng=RNG(seed=1))
+
+    step(state, {0: KNOCK, 1: KNOCK})
+
+    assert tricker.item is Item.LEFTOVERS and victim.item is Item.CHOICE_SCARF

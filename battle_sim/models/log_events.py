@@ -756,6 +756,23 @@ class LeechSeedSap:
 
 
 @dataclass(frozen=True, slots=True)
+class TrapSqueezed:
+    """Wrap, Magma Storm and friends: the end-of-turn squeeze on whoever is caught."""
+
+    side: int
+    pokemon: str
+    amount: int
+
+
+@dataclass(frozen=True, slots=True)
+class TrapReleased:
+    """The grip finally lets go, which is also the turn the victim can switch again."""
+
+    side: int
+    pokemon: str
+
+
+@dataclass(frozen=True, slots=True)
 class BattleEnded:
     outcome: Outcome
 
@@ -848,6 +865,8 @@ type LogEntry = (
     | PseudoWeatherEnded
     | ResidualDamage
     | LeechSeedSap
+    | TrapSqueezed
+    | TrapReleased
     | Protected
     | SubstituteTookHit
     | SubstituteBroke

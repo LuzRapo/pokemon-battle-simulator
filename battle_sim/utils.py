@@ -116,6 +116,8 @@ class ExtraStatus(Enum):
     MUST_RECHARGE = auto()  # Hyper Beam-likes: the next turn is lost
     SLOW_START = auto()  # Regigigas: value counts down from 5, halves Attack/Speed while present
     LOAFING = auto()  # Truant: present means the next move attempt is skipped, then it is removed
+    ROOSTED = auto()  # Roost: the user's Flying type is ignored for the rest of the turn
+    PARTIALLY_TRAPPED = auto()  # Wrap/Magma Storm/Whirlpool: value counts down; chips and blocks switching
 
 
 class Weather(Enum):

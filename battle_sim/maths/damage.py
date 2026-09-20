@@ -173,10 +173,10 @@ def move_effectiveness(move: Move, attacker: Pokemon, defender: Pokemon, weather
         return 1.0
     bypass = immunity_bypass(defender)
     scrappy = attacker.ability in (Ability.SCRAPPY, Ability.MINDS_EYE) and move.type in (Type.NORMAL, Type.FIGHTING)
-    if scrappy and Type.GHOST in defender.types:
+    if scrappy and Type.GHOST in defender.battle_types:
         bypass = bypass | {Type.GHOST}
-    multiplier = type_effectiveness(move.type, defender.types, immunity_bypass=bypass)
-    if weather is Weather.STRONG_WINDS and Type.FLYING in defender.types:
+    multiplier = type_effectiveness(move.type, defender.battle_types, immunity_bypass=bypass)
+    if weather is Weather.STRONG_WINDS and Type.FLYING in defender.battle_types:
         against_flying = type_effectiveness(move.type, (Type.FLYING, None))
         if against_flying > 1:
             multiplier /= against_flying  # the Flying half stops being a weakness; the other half stands
@@ -184,7 +184,7 @@ def move_effectiveness(move: Move, attacker: Pokemon, defender: Pokemon, weather
     if overrides is None:
         return multiplier
     for defending_type, forced in overrides.items():
-        if defending_type in defender.types:
+        if defending_type in defender.battle_types:
             natural = type_effectiveness(move.type, (defending_type, None))
             if natural > 0:
                 multiplier = multiplier / natural * forced
@@ -194,9 +194,9 @@ def move_effectiveness(move: Move, attacker: Pokemon, defender: Pokemon, weather
 def immunity_bypass(defender: Pokemon) -> set[Type]:
     """Defending types whose 0× immunity is bypassed by the defender's current volatiles."""
     bypass: set[Type] = set()
-    if Type.GHOST in defender.types and ExtraStatus.IDENTIFIED in defender.volatiles:
+    if Type.GHOST in defender.battle_types and ExtraStatus.IDENTIFIED in defender.volatiles:
         bypass.add(Type.GHOST)
-    if Type.DARK in defender.types and ExtraStatus.MIRACLE_EYE in defender.volatiles:
+    if Type.DARK in defender.battle_types and ExtraStatus.MIRACLE_EYE in defender.volatiles:
         bypass.add(Type.DARK)
     return bypass
 

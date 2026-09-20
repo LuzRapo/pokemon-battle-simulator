@@ -31,13 +31,15 @@ def legal_actions(state: BattleState, side_index: int) -> list[Action]:
 
 
 def _trapped(active: Pokemon, opponent: Pokemon) -> bool:
-    """Shadow Tag / Magnet Pull / Arena Trap; ghosts are free to leave (gen 6+).
+    """Shadow Tag / Magnet Pull / Arena Trap, and being wrapped; ghosts are free to leave (gen 6+).
 
     Shed Shell is the item answer to all of it, and the only reason a wall carries one instead of
     Leftovers — a Blissey that cannot escape a Shadow Tag is simply removed from the game.
     """
     if opponent.is_fainted() or Type.GHOST in active.types or active.item is Item.SHED_SHELL:
         return False
+    if ExtraStatus.PARTIALLY_TRAPPED in active.volatiles:
+        return True  # held until the grip runs out; `residuals._partial_trap` counts it down
     if opponent.ability is Ability.SHADOW_TAG and active.ability is not Ability.SHADOW_TAG:
         return True
     if opponent.ability is Ability.ARENA_TRAP and active.is_grounded():

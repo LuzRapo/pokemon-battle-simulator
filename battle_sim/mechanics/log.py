@@ -92,6 +92,8 @@ from battle_sim.models.log_events import (
     TerrainFaded,
     TerrainSetByAbility,
     Transformed,
+    TrapReleased,
+    TrapSqueezed,
     TypeChanged,
     VolatileInflicted,
     WeatherChanged,
@@ -145,6 +147,7 @@ _VOLATILE_INFLICTED_VERB: dict[ExtraStatus, str] = {
     ExtraStatus.IDENTIFIED: "was identified",
     ExtraStatus.MIRACLE_EYE: "is in Miracle Eye's sight",
     ExtraStatus.LEECH_SEED: "was seeded",
+    ExtraStatus.PARTIALLY_TRAPPED: "can no longer escape",
     ExtraStatus.NIGHTMARE: "fell into a nightmare",
     ExtraStatus.PROTECT: "protected itself",
     ExtraStatus.SUBSTITUTE: "put in a substitute",
@@ -425,5 +428,9 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)} already has a substitute!"
         case LeechSeedSap(side, pokemon, amount):
             return f"{_label(side, pokemon)}'s health is sapped by Leech Seed! ({amount} HP)"
+        case TrapSqueezed(side, pokemon, amount):
+            return f"{_label(side, pokemon)} is hurt by the trap! ({amount} HP)"
+        case TrapReleased(side, pokemon):
+            return f"{_label(side, pokemon)} was freed!"
         case BattleEnded(outcome):
             return _OUTCOME_TEXT[outcome]

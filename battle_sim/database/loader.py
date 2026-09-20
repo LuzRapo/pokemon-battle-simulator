@@ -86,6 +86,10 @@ _VOLATILE_MAP: dict[str, ExtraStatus] = {
     "foresight": ExtraStatus.IDENTIFIED,
     "miracleeye": ExtraStatus.MIRACLE_EYE,
     "leechseed": ExtraStatus.LEECH_SEED,
+    # Wrap, Bind, Clamp, Fire Spin, Whirlpool, Sand Tomb, Infestation, Magma Storm, Snap Trap and
+    # Thunder Cage. Unmapped, every one of them loaded as a weak attack with no rider at all --
+    # Magma Storm is Heatran's signature move and was doing nothing but its damage.
+    "partiallytrapped": ExtraStatus.PARTIALLY_TRAPPED,
     "lockedmove": ExtraStatus.LOCKED_MOVE,
     "nightmare": ExtraStatus.NIGHTMARE,
     "protect": ExtraStatus.PROTECT,

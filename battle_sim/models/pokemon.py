@@ -256,10 +256,29 @@ class Pokemon(BaseModel):
     def is_fainted(self) -> bool:
         return self.live_stats.HP <= 0
 
+    @property
+    def battle_types(self) -> "TypePair":
+        """What this Pokemon counts as right now, which is not always what it is.
+
+        Roost puts a bird on the ground for the rest of the turn: its Flying type is ignored, so
+        Earthquake hits it and Ice Beam stops being four times effective. Read rather than written,
+        because a Pokemon whose `types` were edited in place and then switched out, fainted or
+        changed forme mid-turn would carry the edit for the rest of the battle.
+
+        A pure Flying-type has nothing left to be, and the engine has no way to say "typeless", so
+        it keeps its typing. That is Tornadus alone, and the alternative is a crash.
+        """
+        if ExtraStatus.ROOSTED not in self.volatiles or Type.FLYING not in self.types:
+            return self.types
+        remaining = [kind for kind in self.types if kind is not None and kind is not Type.FLYING]
+        return (remaining[0], None) if remaining else self.types
+
     def is_grounded(self) -> bool:
         """Intrinsic grounding only (types, item, ability); field effects like Gravity would need field state."""
         return (
-            Type.FLYING not in self.types and self.item is not Item.AIR_BALLOON and self.ability is not Ability.LEVITATE
+            Type.FLYING not in self.battle_types
+            and self.item is not Item.AIR_BALLOON
+            and self.ability is not Ability.LEVITATE
         )
 
     def known_moves(self) -> list[Move]:

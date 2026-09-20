@@ -1,5 +1,6 @@
 """Engine implementations for CodedEffect move behaviours (PS onHit code, not move data)."""
 
+from battle_sim.formes import is_fused_to
 from battle_sim.mechanics.battle import BattleState, effective_weather
 from battle_sim.mechanics.effects import rewire_active
 from battle_sim.mechanics.log import BattleLog
@@ -239,7 +240,7 @@ def _revival_blessing(side_index: int, state: BattleState, log: BattleLog) -> No
 def _knock_off_item(
     attacker: Pokemon, attacker_side_index: int, defender: Pokemon, state: BattleState, log: BattleLog
 ) -> None:
-    if defender.is_fainted() or defender.item is Item.NONE:
+    if defender.is_fainted() or defender.item is Item.NONE or is_fused_to(defender.name, defender.item):
         return
     removed = defender.item
     defender.consume_item()
@@ -250,6 +251,12 @@ def _knock_off_item(
 
 def _trick(attacker: Pokemon, attacker_side_index: int, defender: Pokemon, state: BattleState, log: BattleLog) -> None:
     if attacker.item is Item.NONE and defender.item is Item.NONE:
+        log.add(MoveFailed())
+        return
+    # A trade needs both halves to be tradeable. Trick refuses outright rather than taking the one
+    # side it can, which is how the games play it -- and is what stops it laundering a Z-Crystal or
+    # a Mega Stone off a Pokemon that Knock Off cannot touch.
+    if is_fused_to(attacker.name, attacker.item) or is_fused_to(defender.name, defender.item):
         log.add(MoveFailed())
         return
     taken_from_attacker, taken_from_defender = attacker.item, defender.item

@@ -11,13 +11,14 @@ from battle_sim.engine import step
 from battle_sim.formes import hp_forme, stance_forme
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, SideState
+from battle_sim.mechanics.log import BattleLog
 from battle_sim.models.actions import Action, ActionType
-from battle_sim.models.log_events import FormeChanged
+from battle_sim.models.log_events import FormeChanged, VolatileInflicted
 from battle_sim.models.moves import MoveSlot
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.spec import PokemonSpec
 from battle_sim.teams import build_pokemon
-from battle_sim.utils import Ability, Target
+from battle_sim.utils import Ability, ExtraStatus, Status, Target
 
 ATTACK = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
 SECOND = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.SECOND)
@@ -348,3 +349,51 @@ def test_the_randbats_set_actually_carries_the_ability() -> None:
 
     abilities = {build(random_set("Zygarde", random.Random(seed))).ability for seed in range(5)}
     assert abilities == {Ability.POWER_CONSTRUCT}
+
+
+def test_a_disguise_takes_the_flinch_along_with_the_hit() -> None:
+    """From a real match: Iron Head broke the disguise and the Mimikyu behind it flinched anyway.
+
+    Gen 7 Disguise absorbs the whole move rather than only its damage — Showdown does it by
+    returning 0 from `onTryHit`, which skips secondaries too — so a Mimikyu that was never actually
+    hit cannot be made to flinch. Twenty attempts against a 30% flinch is not luck.
+    """
+    for seed in range(20):
+        mimikyu = _mimikyu()
+        state = BattleState(sides=(SideState(team=[mimikyu]), SideState(team=[_foe("Iron Head")])), rng=RNG(seed=seed))
+
+        played = step(state, {0: ATTACK, 1: ATTACK})
+
+        assert mimikyu.name == "Mimikyu-Busted", "the disguise did not take the hit at all"
+        assert not _flinched(played), "flinched through an intact disguise"
+
+
+def test_a_busted_disguise_can_be_flinched_like_anything_else() -> None:
+    """The disguise is one free move, not a standing immunity to being flinched."""
+    flinched = False
+    for seed in range(30):
+        state = BattleState(
+            sides=(SideState(team=[_mimikyu()]), SideState(team=[_foe("Iron Head")])), rng=RNG(seed=seed)
+        )
+        step(state, {0: ATTACK, 1: ATTACK})  # this one goes on the disguise
+        flinched = flinched or _flinched(step(state, {0: ATTACK, 1: ATTACK}))  # and this one lands
+    assert flinched, "thirty Iron Heads at a busted disguise and never a single flinch"
+
+
+def _flinched(played: BattleLog) -> bool:
+    """Read off the log rather than the volatile: a flinch is cleared at the end of the turn it
+    happens in, so by the time `step` returns there is nothing left on the Pokemon to find."""
+    return any(
+        isinstance(entry, VolatileInflicted) and entry.volatile is ExtraStatus.FLINCH for entry in played.entries
+    )
+
+
+def test_a_status_move_goes_straight_through_a_disguise() -> None:
+    """It absorbs attacks. Will-O-Wisp is not an attack, and Gen 7 lets it through."""
+    mimikyu = _mimikyu()
+    state = _battle(mimikyu, _foe("Will-O-Wisp"))
+
+    step(state, {0: ATTACK, 1: ATTACK})
+
+    assert mimikyu.name == "Mimikyu", "a status move broke the disguise"
+    assert mimikyu.status is Status.BURN

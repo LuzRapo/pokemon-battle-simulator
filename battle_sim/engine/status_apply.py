@@ -65,6 +65,9 @@ _VOLATILE_INITIAL_DURATIONS: dict[ExtraStatus, tuple[int, int]] = {
     ExtraStatus.TAUNT: (3, 4),  # fixed at 3
     ExtraStatus.FLINCH: (1, 2),  # cleared at end of turn anyway
     ExtraStatus.YAWN: (2, 3),  # fixed at 2: drowsy through this turn, asleep at the end of the next
+    # Four or five turns of squeezing. Counted down at the end of each turn, so the number here is
+    # the number of chips the victim actually takes.
+    ExtraStatus.PARTIALLY_TRAPPED: (4, 6),
 }
 
 # The sleep counter, as a half-open span: 2, 3 or 4. It is spent one per *move attempt* rather than
