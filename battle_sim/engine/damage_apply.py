@@ -13,6 +13,7 @@ from battle_sim.models.log_events import (
     Fainted,
     ItemRestored,
     ItemsSwapped,
+    LastStand,
     MultiHitSummary,
     NineLivesRestored,
     NoEffect,
@@ -292,6 +293,9 @@ def _log_revival(state: BattleState, defender: Pokemon, defender_index: int, log
     member of the clone's own state, which is what gets passed -- which is why `state` is used here
     only to reach the bus, and never to decide whether this revival is one worth announcing.
     """
+    if defender.made_last_stand and not defender.just_revived:
+        _the_butler_yields(state, defender, defender_index, log)
+        return
     if not defender.just_revived:
         return
     defender.just_revived = False
@@ -316,6 +320,34 @@ def _log_revival(state: BattleState, defender: Pokemon, defender_index: int, log
         rewire_active(state.bus, state.effects, defender)
     _hand_back_the_trade(state, defender, defender_index, taken_back, log)
     _sweep_the_opposing_board(state, defender_index, log)
+
+
+def _the_butler_yields(state: BattleState, defender: Pokemon, defender_index: int, log: BattleLog) -> None:
+    """The ninth life is spent, the tenth blow has landed, and he is still on his feet at 1 HP.
+
+    Everything wearing anybody down goes with it — the weather, the terrain, the hazards, the
+    screens, every stat stage on the board. He is not fighting on, so nothing that was there to help
+    him fight has any business remaining, and the trainer who got him here should not have to pick
+    their way out through somebody else's sandstorm.
+
+    Then the battle is over, and won by whoever did it: this is a concession, not a stalemate. The
+    engine says so rather than leaving it to a caller, because a battle with a Pokemon standing at
+    1 HP that will not fight looks exactly like a battle still in progress.
+    """
+    from battle_sim.utils import Outcome, Terrain, Weather
+
+    log.add(LastStand(side=defender_index, pokemon=defender.nickname))
+    state.field.weather = Weather.NONE
+    state.field.weather_turns_left = 0
+    state.field.terrain = Terrain.NONE
+    state.field.terrain_turns_left = 0
+    state.field.pseudo_weather.clear()
+    for side in state.sides:
+        side.hazards.clear()
+        side.screens.clear()
+        side.tailwind_turns = 0
+        side.active_pokemon.reset_stat_stages()
+    state.outcome = Outcome.P1_WIN if defender_index == 1 else Outcome.P2_WIN
 
 
 def _hand_back_the_trade(

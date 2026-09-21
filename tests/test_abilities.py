@@ -7,11 +7,24 @@ from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.mechanics.priority import effective_speed
 from battle_sim.models.actions import Action, ActionType
-from battle_sim.models.log_events import CantAct, DoesNotAffect, ScreenFaded, StatChangesSwept
+from battle_sim.models.log_events import CantAct, DoesNotAffect, LastStand, ScreenFaded, StatChangesSwept
 from battle_sim.models.moves import DamageEffect, Move, MoveSet, MoveSlot
 from battle_sim.models.pokemon import NINE_LIVES, Pokemon
 from battle_sim.models.stats import BaseStats, EVs, IVs
-from battle_sim.utils import Ability, ExtraStatus, Hazards, Item, Nature, Stats, Status, Target, Terrain, Type, Weather
+from battle_sim.utils import (
+    Ability,
+    ExtraStatus,
+    Hazards,
+    Item,
+    Nature,
+    Outcome,
+    Stats,
+    Status,
+    Target,
+    Terrain,
+    Type,
+    Weather,
+)
 
 TACKLE = get_move("Tackle")
 EMBER = get_move("Ember")
@@ -2051,6 +2064,11 @@ def test_nine_lives_runs_out():
         step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
         assert not butler.is_fainted()
     assert butler.lives_used == NINE_LIVES
+    # The tenth blow is the last stand: he takes it standing, at one hit point, and yields.
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert not butler.is_fainted() and butler.made_last_stand and butler.live_stats.HP == 1
+    # And the eleventh is simply a Pokemon being knocked out.
+    state.outcome = None  # the concession ended the battle; this test is about what is left of him
     step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
     assert butler.is_fainted()
 
@@ -2714,3 +2732,70 @@ def test_everybody_else_keeps_the_pp_their_moves_list() -> None:
 
     assert set(ordinary.pp.values()) != {99}
     assert ordinary.pp[MoveSlot.FIRST] == TACKLE.pp
+
+
+def test_the_tenth_blow_finds_him_standing():
+    """Nine lives spent is not nine deaths and a tenth: the blow that follows finds him with nothing
+    left to spend, and he takes it on his feet at a single hit point."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert not butler.is_fainted(), "he fell with a last stand still in him"
+    assert butler.live_stats.HP == 1
+    assert butler.made_last_stand
+
+
+def test_and_the_blow_after_that_does_not():
+    """Once. A butler who cannot be killed twice cannot be killed at all."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    butler.made_last_stand = True
+
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert butler.is_fainted()
+
+
+def test_the_last_stand_sweeps_the_field_and_ends_the_battle():
+    """He is not fighting on, so nothing that was there to help anybody fight has any business
+    remaining — and a Pokemon standing at 1 HP that will not fight looks exactly like a battle still
+    in progress unless somebody says otherwise."""
+    state, butler, foe = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    state.field.weather = Weather.SANDSTORM
+    state.field.weather_turns_left = 5
+    state.sides[0].hazards[Hazards.STEALTH_ROCK] = 1
+    state.sides[0].screens[Hazards.REFLECT] = 5
+
+    played = step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert any(isinstance(entry, LastStand) for entry in played.entries)
+    assert state.field.weather is Weather.NONE
+    assert not state.sides[0].hazards and not state.sides[0].screens
+    assert state.outcome is Outcome.P1_WIN, "the trainer who got him there won"
+
+
+def test_the_last_stand_takes_the_status_with_it():
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    butler.status = Status.BURN
+
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert butler.status is Status.NONE
+
+
+def test_somebody_without_nine_lives_simply_faints():
+    """The whole ceremony hangs off the ability, not off being on low health."""
+    foe = _mk("Foe", base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200))
+    ordinary = _mk(
+        "Ordinary", base_stats=BaseStats(HP=200, ATTACK=1, DEFENCE=100, SP_ATTACK=1, SP_DEFENCE=100, SPEED=1)
+    )
+    ordinary.live_stats.HP = 1
+    state = _battle([foe], [ordinary])
+
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert ordinary.is_fainted() and not ordinary.made_last_stand

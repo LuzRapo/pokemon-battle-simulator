@@ -756,6 +756,14 @@ class LeechSeedSap:
 
 
 @dataclass(frozen=True, slots=True)
+class LastStand:
+    """Nine lives spent and a tenth blow landed: the butler stays up at 1 HP, and yields."""
+
+    side: int
+    pokemon: str
+
+
+@dataclass(frozen=True, slots=True)
 class TrapSqueezed:
     """Wrap, Magma Storm and friends: the end-of-turn squeeze on whoever is caught."""
 
@@ -865,6 +873,7 @@ type LogEntry = (
     | PseudoWeatherEnded
     | ResidualDamage
     | LeechSeedSap
+    | LastStand
     | TrapSqueezed
     | TrapReleased
     | Protected

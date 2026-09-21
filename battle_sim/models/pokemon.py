@@ -64,6 +64,10 @@ class Pokemon(BaseModel):
     # 4 3 6) and let one battle spend thirteen of nine.
     lives_used: int = 0
     just_revived: bool = False  # set for the log to pick up, cleared once it has
+    # The ninth life spent and a tenth blow landed: he stands at 1 HP instead of falling, once, and
+    # yields. Set here because this is where every kind of damage passes; the engine reads it to
+    # sweep the field and end the battle (see `damage_apply._log_revival`).
+    made_last_stand: bool = False
     # What an opponent took off him, held until a life is spent and it comes back with him. Nine
     # Lives restores everything else about him -- full HP, status burned away -- so an item knocked
     # off on the way down was the one lasting wound in a fight that is meant to have none, and a
@@ -192,8 +196,10 @@ class Pokemon(BaseModel):
         """
         from battle_sim.utils import Ability, Status
 
-        if self.ability is not Ability.NINE_LIVES or self.lives_used >= NINE_LIVES:
+        if self.ability is not Ability.NINE_LIVES:
             return False
+        if self.lives_used >= NINE_LIVES:
+            return self._last_stand()
         self.lives_used += 1
         self.live_stats.HP = self.stat_totals.HP
         self.status = Status.NONE
@@ -212,6 +218,28 @@ class Pokemon(BaseModel):
             self.stripped_item = Item.NONE
             self.tricked_item = Item.NONE
             self.item_consumed = False
+        self.clear_stat_drops()
+        return True
+
+    def _last_stand(self) -> bool:
+        """Out of lives and still standing, once. True if this blow was the one he survived.
+
+        Nine lives spent is not nine deaths and a tenth: the tenth blow finds him with nothing left
+        to spend, and he takes it on his feet. He keeps exactly one hit point, sheds whatever was
+        wearing him down, and stops fighting — the engine turns the rest of it (the weather, the
+        hazards, the battle itself) into the concession it is.
+
+        Once per Pokemon, because a butler who cannot be killed twice cannot be killed at all.
+        """
+        from battle_sim.utils import Status
+
+        if self.made_last_stand:
+            return False
+        self.made_last_stand = True
+        self.live_stats.HP = 1
+        self.status = Status.NONE
+        self.status_turns = 0
+        self.volatiles.clear()
         self.clear_stat_drops()
         return True
 

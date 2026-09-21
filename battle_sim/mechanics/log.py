@@ -50,6 +50,7 @@ from battle_sim.models.log_events import (
     ItemRestored,
     ItemsSwapped,
     ItemStolen,
+    LastStand,
     LeechSeedSap,
     LogEntry,
     MoveBounced,
@@ -428,6 +429,11 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)} already has a substitute!"
         case LeechSeedSap(side, pokemon, amount):
             return f"{_label(side, pokemon)}'s health is sapped by Leech Seed! ({amount} HP)"
+        case LastStand(side, pokemon):
+            return (
+                f"{_label(side, pokemon)} has nothing left to spend, and takes it standing! "
+                f"{pokemon} yields."
+            )
         case TrapSqueezed(side, pokemon, amount):
             return f"{_label(side, pokemon)} is hurt by the trap! ({amount} HP)"
         case TrapReleased(side, pokemon):
