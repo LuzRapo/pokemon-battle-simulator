@@ -93,6 +93,11 @@ class Pokemon(BaseModel):
     times_hit: int = Field(default=0, ge=0)  # lifetime hits taken (Rage Fist)
     last_hit_taken: int = Field(default=0, ge=0)  # damage from the most recent hit this turn (Counter family)
     last_hit_category: Category | None = None
+    # Whether this one's own strength can be turned back on it: Counter and Mirror Coat fail against
+    # a Pokemon that sets this. Nothing in the games does, and neither does anything in the bot bar
+    # the butler's desperate form, which is a single Pokemon with one HP bar and no lives left —
+    # the most Counter-vulnerable thing that can exist, and a ceremony rather than a ladder match.
+    counter_proof: bool = False
     eject_pending: bool = False  # an Eject Pack waits for the action to resolve before pulling the holder
     flee_pending: bool = False  # Emergency Exit / Wimp Out, waiting on the action the same way
     turns_active: int = Field(default=0, ge=0)  # whole turns since this stint's switch-in (Fake Out)

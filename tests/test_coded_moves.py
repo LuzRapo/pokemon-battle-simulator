@@ -438,6 +438,19 @@ def test_counter_returns_double_the_physical_hit():
     assert returned == 2 * taken
 
 
+def test_counter_fails_against_a_counter_proof_target():
+    """Its own strength cannot be turned back on it — see `Pokemon.counter_proof`."""
+    countering = _mk(
+        first="Counter", base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=10)
+    )
+    attacker = _mk()
+    attacker.counter_proof = True
+    state = _battle([countering], [attacker])
+    step(state, {0: USE_FIRST, 1: USE_TACKLE_2})
+    assert countering.stat_totals.HP - countering.live_stats.HP > 0, "it still took the hit"
+    assert attacker.live_stats.HP == attacker.stat_totals.HP, "and nothing came back"
+
+
 def test_final_gambit_deals_the_users_hp_and_faints_it():
     gambler = _mk(
         first="Final Gambit",
