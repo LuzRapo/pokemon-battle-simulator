@@ -105,6 +105,14 @@ class Pokemon(BaseModel):
 
     live_stats: LiveStats = Field(default_factory=lambda: LiveStats())
     stat_stages: StatStages = Field(default_factory=lambda: StatStages())
+    # The lowest a named stage may ever go, empty for everything in the game. Where it is set it
+    # makes a boost part of what the Pokemon *is* rather than something it did: Haze, Clear Smog,
+    # Intimidate, a switch-out and a Sticky Web all take that stage down to its floor and no
+    # further. Only stats listed here are held up, so a form that is locked at +3 Attack can still
+    # be Sand-Attacked. Only the butler's desperate form sets it (see `last_stand_ui._past_caring`
+    # in the bot), and only because a ceremony that ends in his execution should not be winnable by
+    # opening with Haze.
+    stage_floor: dict[Stats, int] = Field(default_factory=dict)
     status: Status = Status.NONE
     status_turns: int = Field(default=0, ge=0)
     volatiles: dict[ExtraStatus, int] = Field(default_factory=dict)
@@ -270,12 +278,15 @@ class Pokemon(BaseModel):
 
     def change_stat_stage(self, stat: Stats, stages: int) -> int:
         old_stage = self.stat_stages[stat]
-        new_stage = max(-6, min(6, old_stage + stages))
+        new_stage = max(self.stage_floor.get(stat, -6), min(6, old_stage + stages))
         self.stat_stages[stat] = new_stage
         return new_stage - old_stage
 
     def reset_stat_stages(self) -> None:
+        """Back to nothing — or back to the floor, for the stages that have one."""
         self.stat_stages = StatStages()
+        for stat, floor in self.stage_floor.items():
+            self.stat_stages[stat] = floor
 
     def effective_stat(self, stat: Stats) -> int:
         assert stat in (Stats.ATTACK, Stats.DEFENCE, Stats.SP_ATTACK, Stats.SP_DEFENCE, Stats.SPEED)
