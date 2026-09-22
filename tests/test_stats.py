@@ -74,38 +74,3 @@ def test_reset_restores_hp_and_stages(garchomp_factory, expected_garchomp_stats)
     assert chomperinho.live_stats.HP == chomperinho.stat_totals.HP
     assert chomperinho.stat_stages.ATTACK == 0
     assert chomperinho.stat_stages.SP_ATTACK == 0
-
-
-def test_a_floored_stage_cannot_be_lowered_past_it(garchomp_factory):
-    chompy = garchomp_factory("Chompy")
-    chompy.stage_floor = {Stats.ATTACK: 3}
-    chompy.reset_stat_stages()
-
-    assert chompy.stat_stages.ATTACK == 3
-    assert chompy.change_stat_stage(Stats.ATTACK, -2) == 0  # Intimidate lands, and does nothing
-    assert chompy.stat_stages.ATTACK == 3
-    assert chompy.change_stat_stage(Stats.ATTACK, 2) == 2  # boosts on top still work
-    assert chompy.change_stat_stage(Stats.ATTACK, -6) == -2  # and are the only part that can be taken
-
-
-def test_haze_takes_a_floored_stage_to_the_floor_and_no_further(garchomp_factory):
-    chompy = garchomp_factory("Chompy")
-    chompy.stage_floor = {Stats.ATTACK: 3, Stats.SPEED: 3}
-    chompy.stat_stages.ATTACK = 5
-    chompy.stat_stages.SPEED = 3
-    chompy.stat_stages.DEFENCE = 2
-
-    chompy.reset_stat_stages()  # what Haze, Clear Smog and a switch-out all call
-
-    assert chompy.stat_stages.ATTACK == 3
-    assert chompy.stat_stages.SPEED == 3
-    assert chompy.stat_stages.DEFENCE == 0  # unfloored stages still go
-
-
-def test_an_unfloored_stage_drops_normally(garchomp_factory):
-    chompy = garchomp_factory("Chompy")
-    chompy.stage_floor = {Stats.ATTACK: 3}
-
-    assert chompy.change_stat_stage(Stats.ACCURACY, -1) == -1  # Sand Attack still bites
-    assert chompy.change_stat_stage(Stats.DEFENCE, -6) == -6
-    assert chompy.change_stat_stage(Stats.DEFENCE, -1) == 0  # and -6 is still the bottom

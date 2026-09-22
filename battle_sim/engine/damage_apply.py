@@ -420,10 +420,10 @@ def _fixed_amount(effect: FixedDamageEffect, attacker: Pokemon, defender: Pokemo
             return difference if difference > 0 else None
         case "COUNTER":
             valid = attacker.last_hit_category is Category.PHYSICAL and attacker.last_hit_taken > 0
-            return 2 * attacker.last_hit_taken if valid and not defender.counter_proof else None
+            return 2 * attacker.last_hit_taken if valid else None
         case "MIRROR_COAT":
             valid = attacker.last_hit_category is Category.SPECIAL and attacker.last_hit_taken > 0
-            return 2 * attacker.last_hit_taken if valid and not defender.counter_proof else None
+            return 2 * attacker.last_hit_taken if valid else None
         case "USER_HP":
             return attacker.live_stats.HP
         case "TARGET_HP":
