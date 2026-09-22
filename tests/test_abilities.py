@@ -2787,6 +2787,22 @@ def test_the_last_stand_takes_the_status_with_it():
     assert butler.status is Status.NONE
 
 
+def test_he_only_yields_the_once():
+    """A stand already made is a permanent fact about him, and a fact is not news. Read as news, it
+    conceded the battle again on every hit that followed — which is how the desperate form, which
+    starts with that fact already true and a full bar of health, yielded to the first scratch."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    butler.made_last_stand = True
+    butler.live_stats.HP = butler.stat_totals.HP  # whole, and out of lives: the desperate form
+
+    played = step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert not any(isinstance(entry, LastStand) for entry in played.entries), "he conceded twice"
+    assert state.outcome is None, "and ended a battle that had barely started"
+    assert not butler.is_fainted() and butler.live_stats.HP < butler.stat_totals.HP, "he took the hit"
+
+
 def test_somebody_without_nine_lives_simply_faints():
     """The whole ceremony hangs off the ability, not off being on low health."""
     foe = _mk("Foe", base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200))

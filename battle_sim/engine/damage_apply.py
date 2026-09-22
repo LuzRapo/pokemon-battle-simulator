@@ -293,7 +293,8 @@ def _log_revival(state: BattleState, defender: Pokemon, defender_index: int, log
     member of the clone's own state, which is what gets passed -- which is why `state` is used here
     only to reach the bus, and never to decide whether this revival is one worth announcing.
     """
-    if defender.made_last_stand and not defender.just_revived:
+    if defender.just_stood:
+        defender.just_stood = False
         _the_butler_yields(state, defender, defender_index, log)
         return
     if not defender.just_revived:

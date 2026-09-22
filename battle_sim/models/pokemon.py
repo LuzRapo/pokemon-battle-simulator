@@ -68,6 +68,12 @@ class Pokemon(BaseModel):
     # yields. Set here because this is where every kind of damage passes; the engine reads it to
     # sweep the field and end the battle (see `damage_apply._log_revival`).
     made_last_stand: bool = False
+    # Set the instant the stand is made, cleared once the log has said so — `just_revived`'s twin,
+    # and needed for the same reason. `made_last_stand` is a permanent fact ("he has had his one"),
+    # so a log reading it directly announced a fresh concession on every hit that followed, and the
+    # butler's desperate form — which starts with that fact already true — conceded the second
+    # anybody scratched it.
+    just_stood: bool = False
     # What an opponent took off him, held until a life is spent and it comes back with him. Nine
     # Lives restores everything else about him -- full HP, status burned away -- so an item knocked
     # off on the way down was the one lasting wound in a fight that is meant to have none, and a
@@ -249,6 +255,7 @@ class Pokemon(BaseModel):
         if self.made_last_stand:
             return False
         self.made_last_stand = True
+        self.just_stood = True
         self.live_stats.HP = 1
         self.status = Status.NONE
         self.status_turns = 0
