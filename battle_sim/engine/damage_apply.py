@@ -331,6 +331,32 @@ def _log_revival(state: BattleState, defender: Pokemon, defender_index: int, log
     _sweep_the_opposing_board(state, defender_index, log)
 
 
+def concede_if_stood(state: BattleState, log: BattleLog) -> None:
+    """Announce a last stand that was made somewhere `_log_revival` is not watching.
+
+    The stand lives in `Pokemon._last_stand`, at the one point every kind of damage passes through,
+    so *anything* can trigger it: a move, a residual tick of poison or a trap, an attacker's own
+    Liquid Ooze backfire. Only the first of those routes reaches `_log_revival`, which is called on
+    the defender of a move and nothing else.
+
+    So a stand made by chip damage happened in silence. He stood at 1 HP with nothing saying so, the
+    field was never swept, the battle never conceded and no reward was ever offered -- and then the
+    next scratch killed him outright, because his one stand had already been spent on a moment
+    nobody was told about. Exactly how the first trainer ever to take all nine lives got nothing for
+    it: burn and a Magma Storm trap took the tenth blow on turn 53, and his own Draining Kiss
+    finished him on turn 54.
+
+    Called at every point the turn loop asks whether the battle is over, which is what makes the
+    route the damage arrived by stop mattering. A stand `_log_revival` already announced has
+    cleared the flag, so this is a no-op on the common path.
+    """
+    for side_index, side in enumerate(state.sides):
+        for pokemon in side.team:
+            if pokemon.just_stood:
+                pokemon.just_stood = False
+                _the_butler_yields(state, pokemon, side_index, log)
+
+
 def _the_butler_yields(state: BattleState, defender: Pokemon, defender_index: int, log: BattleLog) -> None:
     """The ninth life is spent, the tenth blow has landed, and he is still on his feet at 1 HP.
 

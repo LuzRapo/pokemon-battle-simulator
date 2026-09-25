@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from battle_sim.engine.actions import _execute_action
+from battle_sim.engine.damage_apply import concede_if_stood
 from battle_sim.engine.outcome import _update_outcome
 from battle_sim.engine.residuals import _apply_residuals
 from battle_sim.engine.switching import _execute_switch, _sync_neutralizing_gas
@@ -65,11 +66,13 @@ def step(state: BattleState, actions: dict[int, Action], switch_chooser: SwitchC
         _resolve_eject_packs(state, log)
         if switch_chooser is not None:
             _resolve_pending_switches(state, switch_chooser, log)
+        concede_if_stood(state, log)
         _update_outcome(state, log)
 
     if state.outcome is None:
         _apply_residuals(state, log)
         _resolve_hp_formes(state, log)  # residual chip crosses thresholds too
+        concede_if_stood(state, log)  # the chip may have been the blow he took standing
         _update_outcome(state, log)
 
     _tick_turns_active(state, choosers)

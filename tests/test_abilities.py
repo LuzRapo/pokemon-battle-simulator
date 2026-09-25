@@ -2826,6 +2826,39 @@ def test_the_grip_that_takes_his_last_life_does_not_crash_the_turn():
     assert ExtraStatus.PARTIALLY_TRAPPED not in butler.volatiles, "he swept the field but is still held"
 
 
+def test_he_yields_when_the_tenth_blow_is_chip_damage():
+    """The stand has to be announced whatever took it, not only a move.
+
+    `_log_revival` runs on the defender of a move and nowhere else, so a stand made by poison, by a
+    trap, or by an attacker's own Liquid Ooze backfire used to happen in silence: 1 HP, no line in
+    the log, no field sweep, no concession, no reward — and the next scratch killed him outright
+    because his one stand was already spent. The first trainer ever to take all nine lives lost the
+    whole ceremony to it.
+    """
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    butler.status = Status.BURN  # the chip that will take the tenth blow
+    butler.live_stats.HP = 1
+
+    # Both sides set up rather than attack, so nothing but the burn touches him this turn — which
+    # is the whole point: no move means no `_log_revival`, which is where the stand used to be lost.
+    played = step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+
+    assert butler.made_last_stand and butler.live_stats.HP == 1
+    assert any(isinstance(entry, LastStand) for entry in played.entries), "he stood in silence"
+    assert state.outcome is Outcome.P1_WIN, "the battle never conceded"
+
+
+def test_the_stand_is_announced_once_however_it_arrived():
+    """The sweep must not double up with the move path that already handles the common case."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+
+    played = step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert len([e for e in played.entries if isinstance(e, LastStand)]) == 1
+
+
 def test_somebody_without_nine_lives_simply_faints():
     """The whole ceremony hangs off the ability, not off being on low health."""
     foe = _mk("Foe", base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200))
