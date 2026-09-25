@@ -119,6 +119,13 @@ def _partial_trap(context: EventContext, payload: Payload) -> HandlerResult | No
     if not payload.get("magic_guard", False):
         dealt = active.apply_damage(max(1, active.stat_totals.HP // PARTIAL_TRAP_FRACTION))
         context.log.add(TrapSqueezed(side=payload["side_index"], pokemon=active.nickname, amount=dealt))
+        if ExtraStatus.PARTIALLY_TRAPPED not in active.volatiles:
+            # That squeeze was the blow that spent the last of Nine Lives, and `Pokemon._last_stand`
+            # sweeps every volatile off him as he makes it — the grip included. The countdown below
+            # is read before the damage and applied after it, so it was tidying up a volatile that
+            # no longer existed (a `KeyError`, mid-search, that took the whole battle down) or, on
+            # the other branch, re-gripping a Pokémon that had just cleared the field.
+            return None
     if remaining <= 1:
         del active.volatiles[ExtraStatus.PARTIALLY_TRAPPED]
         context.log.add(TrapReleased(side=payload["side_index"], pokemon=active.nickname))

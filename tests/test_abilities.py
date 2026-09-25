@@ -2803,6 +2803,29 @@ def test_he_only_yields_the_once():
     assert not butler.is_fainted() and butler.live_stats.HP < butler.stat_totals.HP, "he took the hit"
 
 
+def test_the_grip_that_takes_his_last_life_does_not_crash_the_turn():
+    """Magma Storm's squeeze, on the blow that spends his ninth life.
+
+    `_last_stand` sweeps every volatile off him — the grip included — and the residual that dealt
+    the damage was still holding a countdown for it. It went back to tidy up a volatile that was no
+    longer there and took the whole battle down with a `KeyError`, mid-search, on every press.
+    """
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    butler.live_stats.HP = butler.stat_totals.HP
+    butler.volatiles[ExtraStatus.PARTIALLY_TRAPPED] = 1
+    # Enough squeezes to get him there, each one an eighth of his bar.
+    for _ in range(9):
+        butler.volatiles[ExtraStatus.PARTIALLY_TRAPPED] = 1
+        step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+        if butler.made_last_stand:
+            break
+
+    assert butler.made_last_stand, "he never got low enough for the squeeze to finish him"
+    assert not butler.is_fainted() and butler.live_stats.HP == 1
+    assert ExtraStatus.PARTIALLY_TRAPPED not in butler.volatiles, "he swept the field but is still held"
+
+
 def test_somebody_without_nine_lives_simply_faints():
     """The whole ceremony hangs off the ability, not off being on low health."""
     foe = _mk("Foe", base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200))
