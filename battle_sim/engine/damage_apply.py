@@ -8,6 +8,7 @@ from battle_sim.mechanics.log import BattleLog
 from battle_sim.models.log_events import (
     CriticalHit,
     DamageDealt,
+    DrainBackfired,
     Drained,
     Effectiveness,
     Fainted,
@@ -207,7 +208,14 @@ def _apply_recoil_and_drain(
         heal = max(1, int(total_dealt * effect.drain_percent))
         if defender.ability is Ability.LIQUID_OOZE:
             attacker.apply_damage(heal)
-            log.add(RecoilDamage(side=attacker_side_index, pokemon=attacker.nickname, amount=heal))
+            log.add(
+                DrainBackfired(
+                    side=attacker_side_index,
+                    pokemon=attacker.nickname,
+                    ability=Ability.LIQUID_OOZE,
+                    amount=heal,
+                )
+            )
         else:
             attacker.apply_healing(heal)
             log.add(Drained(side=attacker_side_index, pokemon=attacker.nickname, amount=heal))

@@ -433,3 +433,87 @@ def test_leech_seed_reads_as_the_timer_it_is() -> None:
     assert seed((Type.NORMAL, None)) > 0.0
     assert seed((Type.GRASS, None)) == 0.0  # Grass cannot be seeded
     assert seed((Type.NORMAL, None), {ExtraStatus.LEECH_SEED: 1}) == 0.0  # already seeded
+
+
+# -- draining moves ---------------------------------------------------------------
+
+DRAINING_KISS = get_move("Draining Kiss")
+METAL_CLAW = get_move("Metal Claw")
+
+
+# Physically frail, specially unbreakable: the shape of the Tentacruel this was found against, and
+# the shape that makes the physical move obviously right. Against a symmetric wall a drain really is
+# the better of two equal-power moves, which is why the bug hid for so long.
+SPECIAL_WALL = BaseStats(HP=255, ATTACK=10, DEFENCE=50, SP_ATTACK=10, SP_DEFENCE=250, SPEED=10)
+
+
+def _drainer(hp_fraction: float = 0.5) -> Pokemon:
+    """Something holding a drain and an ordinary attack, hurt enough to want healing."""
+    user = _mk("Drainer", moves=MoveSet(DRAINING_KISS, METAL_CLAW, SPLASH, SPLASH))
+    user.live_stats.HP = int(user.stat_totals.HP * hp_fraction)
+    return user
+
+
+def _heal_feature_of(user: Pokemon, target: Pokemon, slot: MoveSlot = MoveSlot.FIRST) -> float:
+    """The `heal_turns` feature alone, which is the number this fix is about. Read through
+    `feature_actions` rather than off the total score: an aggregate hides it behind a dozen other
+    terms, and a test that watches the total passes for reasons that have nothing to do with the
+    change."""
+    featured, _ = MatchupPlayer().feature_actions(_battle([user], [target]), 0, [_use(slot)])[0]
+    assert featured is not None
+    return featured.heal_turns
+
+
+def test_a_drain_is_priced_off_the_hit_it_lands():
+    """Draining Kiss carries no `HealEffect` — its recovery is a percentage of the damage it does —
+    so it fell through to the flat 0.5 default and was priced as restoring *half of maximum health*,
+    exactly like Recover. It really restores about 7 HP here."""
+    user = _mk("Drainer", moves=MoveSet(DRAINING_KISS, RECOVER, SPLASH, SPLASH))
+    user.live_stats.HP = user.stat_totals.HP // 2
+    wall = _mk("Wall", base_stats=SPECIAL_WALL, moves=MoveSet(TACKLE, SPLASH, SPLASH, SPLASH))
+
+    drain = _heal_feature_of(user, wall, MoveSlot.FIRST)
+    recover = _heal_feature_of(user, wall, MoveSlot.SECOND)
+
+    assert drain < recover, "the drain was priced like a full Recover"
+
+
+def test_a_bigger_hit_drains_more():
+    """The other half of pricing it off the damage. Under the flat default these were identical,
+    because neither of them looked at the hit at all."""
+
+    def drained_against(types: tuple[Type, Type | None]) -> float:
+        user = _mk("Drainer", moves=MoveSet(DRAINING_KISS, SPLASH, SPLASH, SPLASH))
+        user.live_stats.HP = user.stat_totals.HP // 2
+        wall = _mk("Wall", types=types, base_stats=SPECIAL_WALL, moves=MoveSet(TACKLE, SPLASH, SPLASH, SPLASH))
+        return _heal_feature_of(user, wall)
+
+    assert drained_against((Type.NORMAL, None)) > drained_against((Type.STEEL, None)), (
+        "the drain fed the same heal into a resist as into a neutral hit"
+    )
+
+
+def test_liquid_ooze_turns_the_drain_into_something_to_avoid():
+    """The engine takes the drain off the attacker instead (`damage_apply`), so the scorer has to
+    agree — otherwise it goes on recommending a move the simulation is busy punishing."""
+    user = _drainer()
+    oozing = _mk("Tentacruel", base_stats=SPECIAL_WALL, moves=MoveSet(TACKLE, SPLASH, SPLASH, SPLASH))
+    oozing.ability = Ability.LIQUID_OOZE
+    clean = _mk("Blissey", base_stats=SPECIAL_WALL, moves=MoveSet(TACKLE, SPLASH, SPLASH, SPLASH))
+    against_ooze = _heal_feature_of(user, oozing)
+    against_clean = _heal_feature_of(_drainer(), clean)
+
+    assert against_clean > 0, "the drain should be worth something against an ordinary target"
+    assert against_ooze < 0, "Liquid Ooze makes the drain a self-inflicted hit, not a smaller heal"
+
+
+def test_an_ordinary_recovery_move_is_unchanged():
+    """The drain path must not disturb Recover, Roost and the rest, which really do restore a flat
+    fraction of maximum health."""
+    hurt = _mk("A")
+    hurt.live_stats.HP = hurt.stat_totals.HP // 4
+    state = _battle([hurt], [_mk("Wall", base_stats=TANK, moves=MoveSet(TACKLE, SPLASH, SPLASH, SPLASH))])
+
+    chosen = MatchupPlayer().choose_action(state, 0, [_use(MoveSlot.FIRST), _use(MoveSlot.THIRD, Target.SELF)])
+
+    assert chosen.move is MoveSlot.THIRD

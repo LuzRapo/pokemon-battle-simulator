@@ -24,6 +24,7 @@ from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.moves import (
     CodedEffect,
     CodedMoveKind,
+    DamageEffect,
     HealEffect,
     InflictStatusEffect,
     Move,
@@ -380,7 +381,7 @@ class MatchupPlayer:
             return None
         low, high = damage_range(move, turn.me, turn.opponent, turn.state)
         damage = self._damage_features(move, low, high, turn)
-        effects = self._effect_features(move, turn)
+        effects = self._effect_features(move, turn, low, high)
         threatened = turn.theirs.strongest / turn.me.stat_totals.HP
         # The fodder bonus keys on *any* effect feature firing. The pre-feature code tested the
         # weighted effect sum instead, which differs only when the sole contributing effect has a
@@ -433,14 +434,16 @@ class MatchupPlayer:
         immune = sum(1 for member in their_team if damage_range(move, turn.me, member, turn.state)[1] == 0)
         return -immune / len(their_team)
 
-    def _effect_features(self, move: Move, turn: _Turn) -> ActionFeatures:
+    def _effect_features(self, move: Move, turn: _Turn, low: int = 0, high: int = 0) -> ActionFeatures:
+        """`low`/`high` are the hit this move is expected to land, which only the drain half of
+        `_heal_feature` needs — everything else here is about the move rather than its damage."""
         status = self._status_features(move, turn)
         return replace(
             status,
             hazard_value=self._hazard_feature(move, turn),
             hazard_removal=self._removal_feature(move, turn),
             knock_progress=self._knock_feature(move, turn),
-            heal_turns=self._heal_feature(move, turn),
+            heal_turns=self._heal_feature(move, turn, low, high),
             setup_value=self._setup_feature(move, turn),
             phaze_value=self._phaze_feature(move, turn),
             setup_denial=self._denial_feature(move, turn),
@@ -562,7 +565,7 @@ class MatchupPlayer:
             return 1.0  # stripping Boots re-enables the hazard tax: the highest-value Knock
         return 0.6
 
-    def _heal_feature(self, move: Move, turn: _Turn) -> float:
+    def _heal_feature(self, move: Move, turn: _Turn, low: int = 0, high: int = 0) -> float:
         """What recovery is worth once the residuals have taken their cut.
 
         Healing used to be priced on the HP it restores, as though attacks were the only thing
@@ -571,11 +574,27 @@ class MatchupPlayer:
         makes an unwinnable race score nothing, so the search attacks instead of roosting into its
         own grave — and because toxic is quoted at its next tick, the value keeps falling the longer
         the loop runs instead of holding steady forever.
+
+        A draining move is priced off the hit it is attached to (`low`/`high`), never off the flat
+        fraction the recovery moves use. Draining Kiss carries no `HealEffect` — its recovery is a
+        `drain_percent` on the damage — so it fell through to the 0.5 default and was scored as
+        restoring *half of maximum health*. On the butler that read as 98 HP for a move that really
+        drains about 8, and it was enough to make him spam Draining Kiss at a specially bulky wall
+        for the rest of every battle, from the first moment he was damaged enough to want healing.
         """
         if not _heals(move):
             return 0.0
-        fraction = next((e.fraction for e in move.effects if isinstance(e, HealEffect)), 0.5)
-        healed = min(turn.me.stat_totals.HP - turn.me.live_stats.HP, fraction * turn.me.stat_totals.HP)
+        healed = _drain_heal(move, turn, low, high)
+        if healed is None:  # an ordinary recovery move: a flat fraction of its own maximum
+            fraction = next((e.fraction for e in move.effects if isinstance(e, HealEffect)), 0.5)
+            healed = fraction * turn.me.stat_totals.HP
+        elif healed < 0:
+            # Liquid Ooze turns the drain into damage, which is the engine's rule (`damage_apply`)
+            # and so has to be this scorer's too. A negative feature is the honest price: the move
+            # is not merely a poor heal, it is a self-inflicted hit the genome should be paying to
+            # avoid.
+            return max(-1.0, healed / max(1, turn.me.stat_totals.HP))
+        healed = min(turn.me.stat_totals.HP - turn.me.live_stats.HP, healed)
         kept = healed - residual_drain(turn.me, turn.state)
         if kept <= 0:
             return 0.0  # the toll meets or beats the heal: a race recovery cannot win
@@ -886,6 +905,21 @@ def _with_free_turn(value: float, free: bool, move: Move) -> float:
 
 def _heals(move: Move) -> bool:
     return move.healing or any(isinstance(e, HealEffect) for e in move.effects)
+
+
+def _drain_heal(move: Move, turn: _Turn, low: int, high: int) -> float | None:
+    """What a draining move gives its user, or None if it is not one.
+
+    Negative against Liquid Ooze, which takes the same amount off the attacker instead — the rule
+    the engine applies in `damage_apply._apply_damage`, mirrored here so the scorer cannot go on
+    recommending a move the simulation is busy punishing.
+    """
+    drained = next((e.drain_percent for e in move.effects if isinstance(e, DamageEffect) and e.drain_percent), None)
+    if drained is None:
+        return None
+    dealt = min((low + high) / 2, turn.opponent.live_stats.HP)  # no draining off HP that is not there
+    healed = drained * dealt
+    return -healed if turn.opponent.ability is Ability.LIQUID_OOZE else healed
 
 
 def _self_boost(move: Move, stat: Stats) -> int:

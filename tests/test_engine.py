@@ -6,7 +6,7 @@ from battle_sim.maths.damage import move_effectiveness
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.mechanics.events import Event, EventContext, HandlerResult, Payload
-from battle_sim.mechanics.log import BattleLog
+from battle_sim.mechanics.log import BattleLog, render_text
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.log_events import (
     BattleEnded,
@@ -16,6 +16,8 @@ from battle_sim.models.log_events import (
     DisableApplied,
     DisabledBlocked,
     DoesNotAffect,
+    DrainBackfired,
+    Drained,
     Effectiveness,
     Fainted,
     LeechSeedSap,
@@ -68,6 +70,7 @@ WILL_O_WISP = get_move("Will-O-Wisp")
 ROCK_SLIDE = get_move("Rock Slide")
 
 USE_TACKLE = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+USE_FIRST_MOVE = USE_TACKLE  # the same slot, named for tests whose first move is not Tackle
 USE_QUICK_ATTACK = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.SECOND)
 USE_EMBER = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.THIRD)
 USE_SWORDS_DANCE = Action(action=ActionType.USE_MOVE, target=Target.SELF, move=MoveSlot.FOURTH)
@@ -1991,3 +1994,39 @@ def test_the_grip_lets_go_when_whoever_tied_it_leaves() -> None:
 ATTACK_FIRST = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
 SECOND_MOVE = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.SECOND)
 SELF_MOVE = Action(action=ActionType.USE_MOVE, target=Target.SELF, move=MoveSlot.FIRST)
+
+
+def test_liquid_ooze_turns_a_drain_into_damage_and_says_whose_fault_it_was() -> None:
+    """Draining Kiss into Liquid Ooze takes the drain off the attacker instead of giving it.
+
+    The damage was always right; the log was not. It went out as a `RecoilDamage`, so a transcript
+    read "took 18 recoil damage" about a move that has no recoil on it — leaving the one line that
+    explains why the attacker is losing health saying something untrue.
+    """
+    thief = _built("Sylveon", ["Draining Kiss"])
+    thief.live_stats.HP = thief.stat_totals.HP // 2
+    oozing = _built("Tentacruel", ["Scald"])
+    oozing.ability = Ability.LIQUID_OOZE
+    state = _first(thief, oozing)
+    before = thief.live_stats.HP
+
+    played = step(state, {0: USE_FIRST_MOVE, 1: USE_FIRST_MOVE})
+
+    assert before > thief.live_stats.HP, "the drain healed him instead of hurting him"
+    backfires = [entry for entry in played.entries if isinstance(entry, DrainBackfired)]
+    assert len(backfires) == 1 and backfires[0].ability is Ability.LIQUID_OOZE
+    assert not any(isinstance(entry, RecoilDamage) for entry in played.entries), "still logged as recoil"
+    assert "Liquid Ooze" in render_text(backfires[0])
+
+
+def test_a_drain_against_anything_else_still_heals() -> None:
+    hurt = _built("Sylveon", ["Draining Kiss"])
+    hurt.live_stats.HP = hurt.stat_totals.HP // 2
+    state = _first(hurt, _built("Tentacruel", ["Scald"]))
+    before = hurt.live_stats.HP
+
+    played = step(state, {0: USE_FIRST_MOVE, 1: USE_FIRST_MOVE})
+
+    assert any(isinstance(entry, Drained) for entry in played.entries)
+    assert not any(isinstance(entry, DrainBackfired) for entry in played.entries)
+    assert before - hurt.stat_totals.HP // 4 < hurt.live_stats.HP, "it should have drained some back"

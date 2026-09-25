@@ -192,6 +192,27 @@ class RecoilDamage:
 
 
 @dataclass(frozen=True, slots=True)
+class DrainBackfired:
+    """Liquid Ooze: a draining move took HP off its user instead of giving it any.
+
+    Its own entry rather than a `RecoilDamage`, which is what it used to be logged as — a
+    transcript that says "took 18 recoil damage" for a move with no recoil on it tells the reader
+    nothing about why their opponent is losing health, and tells anybody reading the logs back
+    something false.
+
+    Deliberately *not* in `observation._observe_ability`: `side` here is the Pokemon that was hurt,
+    which is the opposite side from the one whose ability did it. The entries that do feed ability
+    learning all name the owner, and the one place that already breaks that rule (Rough Skin) is a
+    misattribution rather than a pattern worth copying.
+    """
+
+    side: int
+    pokemon: str
+    ability: Ability
+    amount: int
+
+
+@dataclass(frozen=True, slots=True)
 class Drained:
     side: int
     pokemon: str
@@ -802,6 +823,7 @@ type LogEntry = (
     | DamageDealt
     | MultiHitSummary
     | RecoilDamage
+    | DrainBackfired
     | Drained
     | Healed
     | Fainted
