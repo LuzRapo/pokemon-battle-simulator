@@ -74,11 +74,16 @@ pub fn is_damaging(the_move: &Move) -> bool {
     damage_effect(the_move).is_some_and(|(power, _, _)| power.unwrap_or(0) > 0)
 }
 
-/// One hit of one move. `rolls` supplies the crit draw and the damage roll in the same order the
-/// Python asks for them, which is what keeps both engines on the same place in the tape.
-pub struct Rolls<'a> {
-    pub next_probability: &'a mut dyn FnMut() -> f64,
-    pub next_integer: &'a mut dyn FnMut(i32, i32) -> i32,
+/// The two draws this formula consumes, taken by the caller so the order is visible where the
+/// tape is read rather than buried in here.
+///
+/// Safe to take in advance *only* because `resolve_move` has already established everything the
+/// Python checks before its own draws: the move has a fixed, non-zero power, and the matchup is
+/// not an immunity. Both draws are therefore certain to be consumed. Push another early return
+/// into this function and that stops being true, and the tape silently slips by one.
+pub struct Rolls {
+    pub crit: f64,
+    pub damage: i32,
 }
 
 pub fn calculate_hit(
@@ -88,7 +93,7 @@ pub fn calculate_hit(
     field: &Field,
     defender_side: &Side,
     db: &Database,
-    rolls: &mut Rolls,
+    rolls: Rolls,
 ) -> Hit {
     let Some((power, category, crit_stage)) = damage_effect(the_move) else {
         return Hit::nothing();
@@ -111,7 +116,7 @@ pub fn calculate_hit(
 
     // The crit is rolled here and only here, which is what keeps the tape aligned: every early
     // return above happens *before* a draw, exactly as in the Python.
-    let is_crit = (rolls.next_probability)() < crit_chance(crit_stage);
+    let is_crit = rolls.crit < crit_chance(crit_stage);
 
     let (attack_stat, defense_stat) = if category == "PHYSICAL" {
         ("ATTACK", "DEFENCE")
@@ -128,8 +133,7 @@ pub fn calculate_hit(
         damage = chain(damage, 6144);
     }
 
-    let roll = (rolls.next_integer)(85, 101);
-    damage = damage * roll / 100;
+    damage = damage * rolls.damage / 100;
 
     if attacker.types.iter().flatten().any(|t| t == &the_move.move_type) {
         damage = chain(damage, 6144);

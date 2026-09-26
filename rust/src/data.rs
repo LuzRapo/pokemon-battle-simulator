@@ -106,6 +106,7 @@ struct SpeciesFile {
 
 #[derive(Debug, Deserialize)]
 struct RulesFile {
+    special_power_moves: Vec<String>,
     types: Vec<String>,
     type_chart: HashMap<String, HashMap<String, f64>>,
     natures: HashMap<String, NatureEffect>,
@@ -116,6 +117,10 @@ struct RulesFile {
 pub struct Database {
     pub moves: HashMap<String, Move>,
     pub species: HashMap<String, Species>,
+    /// Moves whose power is computed from the board rather than read from the data — Revenge,
+    /// Gyro Ball, Weather Ball and the rest. Exported by Python rather than listed here, because a
+    /// second copy of this list is a second thing to keep in step.
+    pub special_power_moves: std::collections::HashSet<String>,
     pub types: Vec<String>,
     pub type_chart: HashMap<String, HashMap<String, f64>>,
     pub natures: HashMap<String, NatureEffect>,
@@ -135,6 +140,7 @@ impl Database {
         Ok(Database {
             moves: moves.moves,
             species: species.species,
+            special_power_moves: rules.special_power_moves.into_iter().collect(),
             types: rules.types,
             type_chart: rules.type_chart,
             natures: rules.natures,

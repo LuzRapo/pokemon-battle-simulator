@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from battle_sim.database.loader import get_all_moves, get_all_species
+from battle_sim.engine import power as power_rules
 from battle_sim.models.type_matchups import TYPE_CHART
 from battle_sim.utils import Nature, Type
 
@@ -56,7 +57,18 @@ def rules_json() -> dict[str, Any]:
     Exported for the same reason as the rest — a hand-copied type chart in a second language is a
     transcription error waiting to change one matchup by a factor of two, silently, forever.
     """
+    # Moves whose power is not the number in the data: Revenge doubles when its user was hit, Gyro
+    # Ball reads the speed difference, Weather Ball changes type. None of that lives in the effect
+    # list, so a second engine reading only the effects would quietly compute the wrong damage —
+    # which is exactly how Revenge was found, at 96 against the Python's 150.
+    special_power = sorted(
+        set(power_rules._POWER_FORMULAS)
+        | set(power_rules._POWER_CONDITIONS)
+        | set(power_rules._SE_BONUS_MOVES)
+        | set(power_rules._HITS_PHYSICAL_DEFENCE)
+    )
     return {
+        "special_power_moves": special_power,
         "types": [t.name for t in Type],
         "type_chart": {
             attacker.name: {defender.name: TYPE_CHART[attacker].get(defender, 1.0) for defender in Type}

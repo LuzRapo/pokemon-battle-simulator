@@ -1,0 +1,168 @@
+//! Replay a recorded scenario through this engine and print the trace, for diffing against the
+//! Python's.
+//!
+//!     replay <scenario.json> <data-dir>
+//!
+//! Exit 0 with a trace on stdout, or exit 2 with a reason on stderr when the scenario needs
+//! something this engine has not learned yet. The second case is not a failure of the comparison —
+//! it is this engine declining to guess, which is the only honest thing it can do while most of the
+//! game is still unported.
+
+use pokemon_engine::battle::{Pokemon, Side, Spec, State, SLOT_NAMES, STAGE_NAMES};
+use pokemon_engine::data::Database;
+use pokemon_engine::tape::{Draw, Tape};
+use pokemon_engine::turn::{step, Action};
+use serde::Deserialize;
+use serde_json::json;
+use std::path::Path;
+
+#[derive(Debug, Deserialize)]
+struct Scenario {
+    version: u32,
+    teams: Vec<Vec<Spec>>,
+    actions: Vec<Vec<String>>,
+    tape: Vec<serde_json::Value>,
+}
+
+const FORMAT_VERSION: u32 = 1;
+
+fn draws(raw: &[serde_json::Value]) -> Vec<Draw> {
+    raw.iter()
+        .map(|value| {
+            // A recorded integer arrives as a JSON integer and a probability as a float. `is_i64`
+            // is the only thing separating them, and the distinction is load-bearing: asking for
+            // the wrong kind is how the harness notices the engines have parted.
+            if value.is_i64() {
+                Draw::Integer(value.as_i64().expect("checked"))
+            } else {
+                Draw::Probability(value.as_f64().expect("a draw is a number"))
+            }
+        })
+        .collect()
+}
+
+/// "move:Tackle" / "switch:Onix", resolved against who is actually out.
+fn parse_action(named: &str, side: &Side) -> Result<Action, String> {
+    let (kind, rest) = named.split_once(':').ok_or_else(|| format!("malformed action {named:?}"))?;
+    match kind {
+        "move" => {
+            // "move:THIRD:Power Whip" — the slot decides, and the name is carried alongside so a
+            // scenario stays readable and so a mismatch between the two is caught rather than
+            // trusted. Two slots can hold the same move once a short set has been padded.
+            let (slot_name, move_name) = rest
+                .split_once(':')
+                .ok_or_else(|| format!("action {named:?} does not name a slot"))?;
+            let slot = SLOT_NAMES
+                .iter()
+                .position(|s| *s == slot_name)
+                .ok_or_else(|| format!("no slot called {slot_name:?}"))?;
+            let actor = side.active_pokemon();
+            match actor.moves.get(slot) {
+                Some(found) if found == move_name => Ok(Action::Move { slot }),
+                Some(found) => Err(format!("slot {slot_name} holds {found:?}, not {move_name:?}")),
+                None => Err(format!("{} has no slot {slot_name}", actor.nickname)),
+            }
+        }
+        "switch" => side
+            .team
+            .iter()
+            .position(|p| p.nickname == rest)
+            .map(|to| Action::Switch { to })
+            .ok_or_else(|| format!("nobody on this side is called {rest:?}")),
+        other => Err(format!("unsupported action kind {other:?}")),
+    }
+}
+
+fn pokemon_digest(p: &Pokemon) -> serde_json::Value {
+    json!({
+        "nickname": p.nickname,
+        "species": p.species_name,
+        "hp": p.hp,
+        "max_hp": p.totals.hp,
+        "status": p.status.name(),
+        "status_turns": p.status_turns,
+        "fainted": p.fainted(),
+        "item": p.item,
+        "item_consumed": p.item_consumed,
+        "ability": p.ability,
+        "types": p.types.iter().flatten().collect::<Vec<_>>(),
+        "stages": STAGE_NAMES.iter().map(|s| (s.to_string(), json!(p.stage(s))))
+            .collect::<serde_json::Map<String, serde_json::Value>>(),
+        "volatiles": p.volatiles,
+        "pp": p.pp,
+        "lives_used": p.lives_used,
+        "made_last_stand": p.made_last_stand,
+    })
+}
+
+fn state_digest(state: &State) -> serde_json::Value {
+    json!({
+        "turn": state.turn,
+        "outcome": state.outcome.map(|o| o.name()),
+        "weather": state.field.weather,
+        "weather_turns_left": state.field.weather_turns_left,
+        "terrain": state.field.terrain,
+        "terrain_turns_left": state.field.terrain_turns_left,
+        "sides": state.sides.iter().map(|side| json!({
+            "active": serde_json::Value::Null,
+            "team": side.team.iter().map(pokemon_digest).collect::<Vec<_>>(),
+            "hazards": side.hazards,
+            "screens": side.screens,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn main() {
+    let mut args = std::env::args().skip(1);
+    let (scenario_path, data_dir) = match (args.next(), args.next()) {
+        (Some(s), Some(d)) => (s, d),
+        _ => {
+            eprintln!("usage: replay <scenario.json> <data-dir>");
+            std::process::exit(64);
+        }
+    };
+    let text = std::fs::read_to_string(&scenario_path).unwrap_or_else(|e| fail(&format!("{scenario_path}: {e}")));
+    let scenario: Scenario = serde_json::from_str(&text).unwrap_or_else(|e| fail(&format!("scenario: {e}")));
+    if scenario.version != FORMAT_VERSION {
+        fail(&format!("scenario format v{}, this build reads v{FORMAT_VERSION}", scenario.version));
+    }
+    let db = Database::load(Path::new(&data_dir)).unwrap_or_else(|e| fail(&e));
+
+    let build = |team: &Vec<Spec>| -> Side {
+        Side::new(
+            team.iter()
+                .map(|spec| Pokemon::build(spec, &db).unwrap_or_else(|e| fail(&e)))
+                .collect(),
+        )
+    };
+    let mut state = State::new(build(&scenario.teams[0]), build(&scenario.teams[1]));
+    let mut tape = Tape::new(draws(&scenario.tape));
+
+    let mut turns = Vec::new();
+    for pair in &scenario.actions {
+        if state.outcome.is_some() {
+            break;
+        }
+        let chosen = [
+            parse_action(&pair[0], &state.sides[0]).unwrap_or_else(|e| fail(&e)),
+            parse_action(&pair[1], &state.sides[1]).unwrap_or_else(|e| fail(&e)),
+        ];
+        let log = match step(&mut state, chosen, &db, &mut tape) {
+            Ok(log) => log,
+            Err(why) => fail(&why.0),
+        };
+        turns.push(json!({
+            "actions": pair,
+            "events": log.entries,
+            "state": state_digest(&state),
+        }));
+    }
+    println!("{}", serde_json::Value::Array(turns));
+}
+
+/// Exit 2 and say why. Every refusal in this binary goes through here so "we cannot play this" is
+/// always distinguishable from "we played it and got a different answer".
+fn fail(why: &str) -> ! {
+    eprintln!("{why}");
+    std::process::exit(2);
+}

@@ -134,7 +134,7 @@ def test_an_action_the_engine_will_not_offer_is_a_loud_failure() -> None:
     state, _ = build_state(scenario)
 
     with pytest.raises(LookupError, match="not legal"):
-        find_action("move:Fissure Of The Damned", state, 0)
+        find_action("move:FIRST:Fissure Of The Damned", state, 0)
 
 
 def test_naming_round_trips_through_finding() -> None:

@@ -11,4 +11,7 @@
 pub mod battle;
 pub mod damage;
 pub mod data;
+pub mod log;
 pub mod stats;
+pub mod tape;
+pub mod turn;

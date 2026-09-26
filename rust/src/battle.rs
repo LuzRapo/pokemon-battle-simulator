@@ -131,11 +131,18 @@ impl Pokemon {
             spec.level,
             nature,
         );
+        // Four slots, always. `build_pokemon` pads a short set by repeating the *first* move
+        // rather than leaving the slot empty, so a two-move Pokemon really does carry four moves
+        // and four PP counters — which is what the digest compares, and how this was found.
+        let mut filled: Vec<String> = spec.moves.clone();
+        while filled.len() < 4 {
+            filled.push(filled.first().cloned().unwrap_or_else(|| "Tackle".to_string()));
+        }
         // PP Ups, as `Pokemon._init_pp` applies them: each is a fifth of the listed PP, floored
         // after the multiplication rather than per-up.
         let bonus = 1.0 + spec.pp_ups as f64 / 5.0;
         let mut pp = BTreeMap::new();
-        for (index, name) in spec.moves.iter().enumerate() {
+        for (index, name) in filled.iter().enumerate() {
             let listed = db
                 .move_named(name)
                 .ok_or_else(|| format!("unknown move {name:?}"))?
@@ -156,7 +163,7 @@ impl Pokemon {
             ability: spec.ability.clone(),
             stages: STAGE_NAMES.iter().map(|s| (s.to_string(), 0)).collect(),
             volatiles: BTreeMap::new(),
-            moves: spec.moves.clone(),
+            moves: filled,
             pp,
             lives_used: 0,
             made_last_stand: false,

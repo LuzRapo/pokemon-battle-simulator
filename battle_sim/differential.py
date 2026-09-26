@@ -14,7 +14,7 @@ compute it and diffed:
     the single least portable thing in the codebase and precisely what a vectorised engine cannot
     reproduce. Neither engine has to agree on *how* to roll; they only have to agree on what to do
     with the same rolls.
-  * **Canonical actions.** Recorded by name ("move:Tackle", "switch:Onix") rather than by index
+  * **Canonical actions.** Recorded by name ("move:FIRST:Tackle", "switch:Onix") rather than by index
     into the legal-action list. An index would silently select a different move if the two engines
     disagreed about legality — turning the most interesting class of bug into a quiet divergence
     twenty turns later. By name, a legality disagreement is an immediate, loud failure.
@@ -103,7 +103,10 @@ def name_action(action: Action, state: BattleState, side_index: int) -> str:
     assert action.move is not None
     move = state.sides[side_index].active_pokemon.moves[action.move]
     prefix = "zmove" if action.z_move else "move"
-    return f"{prefix}:{move.name if move is not None else action.move.name}"
+    # The slot as well as the name, because `build_pokemon` pads a short moveset by repeating the
+    # first move — so a two-move Pokemon carries the same move in three slots and the name alone
+    # does not say which one was used. Found by the Rust engine spending PP from the wrong slot.
+    return f"{prefix}:{action.move.name}:{move.name if move is not None else '?'}"
 
 
 def find_action(named: str, state: BattleState, side_index: int) -> Action:
