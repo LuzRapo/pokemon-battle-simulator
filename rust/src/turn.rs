@@ -156,11 +156,25 @@ fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'
 /// sweep.
 pub const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
 
+/// `_DEFENDER_FACING_TARGETS`: the targets a Protect can stand in the way of.
+const DEFENDER_FACING: [&str; 3] = ["SINGLE_OPPONENT", "ALL_ADJACENT_ENEMIES", "ALL_ADJACENT"];
+
 /// The volatiles this engine knows. Everything else in `ExtraStatus` still makes a move unplayable.
 ///
 /// These two are most of what volatiles actually are in practice: 32 moves can flinch and 18 can
 /// confuse, against one apiece for Leech Seed, Taunt, Encore and the rest.
-pub const PORTED_VOLATILES: [&str; 2] = ["FLINCH", "CONFUSION"];
+pub const PORTED_VOLATILES: [&str; 10] = [
+    "FLINCH",
+    "CONFUSION",
+    "PROTECT",
+    "ENDURE",
+    "FOCUS_ENERGY",
+    "LEECH_SEED",
+    "NIGHTMARE",
+    "SALT_CURE",
+    "PARTIALLY_TRAPPED",
+    "YAWN",
+];
 
 /// Everything this engine has implemented, gathered from the modules that implement it so a name
 /// cannot be claimed in one place and missing from the other.
@@ -322,7 +336,7 @@ pub fn step(
         match &actions[side] {
             Action::Switch { to } => {
                 let sent_out = state.sides[side].team[*to].nickname.clone();
-                let withdrew = switch_out(&mut state.sides[side], *to);
+                let withdrew = switch_out(state, side, *to);
                 state.register_active(side);
                 state.sides[side].active_mut().just_switched_in = true;
                 log.push(Event::Switched { side: side as i32, withdrew, sent_out });
@@ -455,7 +469,16 @@ fn confusion_allows_acting(state: &mut State, side: usize, tape: &mut Tape, log:
 ///
 /// The rest of `_execute_switch` clears fields this engine does not have yet (choice lock, encore,
 /// charging slot). They arrive with the volatiles milestone; until then there is nothing to clear.
-fn switch_out(side: &mut Side, to: usize) -> String {
+fn switch_out(state: &mut State, side: usize, to: usize) -> String {
+    // `_release_anyone_it_was_holding`: a wrap ends when whoever was doing the wrapping leaves. In
+    // singles the side whose opponent is wrapped is the side holding them, because a wrapped
+    // Pokemon is exactly the one that cannot switch — so the one walking out is always the one
+    // letting go, whether it chose to or fainted.
+    state.sides[1 - side].active_mut().volatiles.remove("PARTIALLY_TRAPPED");
+    withdraw(&mut state.sides[side], to)
+}
+
+fn withdraw(side: &mut Side, to: usize) -> String {
     let outgoing = side.active_mut();
     for value in outgoing.stages.values_mut() {
         *value = 0;
@@ -497,8 +520,10 @@ fn residuals(state: &mut State, tape: &mut Tape, log: &mut Log) -> Result<(), Re
                 log.push(Event::Fainted { side: side as i32, pokemon: nickname });
             }
             // `_tick_volatiles`, which runs for the active whatever its status was — including one
-            // that just fainted to a chip above. A flinch lasts exactly the turn it was inflicted.
-            state.sides[side].active_mut().volatiles.remove("FLINCH");
+            // that just fainted to a chip above. Each of these lasts exactly the turn it started.
+            for gone in ["FLINCH", "PROTECT", "ENDURE"] {
+                state.sides[side].active_mut().volatiles.remove(gone);
+            }
         }
         crate::field::tick_side(state, side, log);
     }
@@ -674,6 +699,18 @@ fn resolve_move(
         return Ok(());
     }
 
+    // Protect and its relatives. *After* the stall check, which is where the Python puts it — a
+    // move turned aside by a Protect has still spent its own stalling roll if it had one.
+    if the_move.protectable
+        && DEFENDER_FACING.contains(&the_move.target.as_str())
+        && state.sides[other].active_pokemon().volatiles.contains_key("PROTECT")
+    {
+        let nickname = state.sides[other].active_pokemon().nickname.clone();
+        log.push(Event::Protected { side: other as i32, pokemon: nickname });
+        crash_damage(state, side, &the_move, log);
+        return Ok(());
+    }
+
     // Accuracy first, and only when the move has one — `_accuracy_check` returns True without
     // drawing when `accuracy_probability` is None, which is how a never-missing move leaves the
     // tape untouched.
@@ -741,7 +778,11 @@ fn resolve_move(
                 apply_damage(state, side, &the_move, effectiveness, db, tape, log)?;
             }
             Effect::InflictStatusEffect { status, probability, to_self, .. } => {
-                apply_status(state, side, status, *probability, *to_self, tape, log)?;
+                // `_apply_status_routed`: the *move* targeting its user is enough, whatever the
+                // effect says. Endure's effect is not marked `to_self` and it is plainly not
+                // something you do to somebody else.
+                let at_self = *to_self || the_move.target == "SELF";
+                apply_status(state, side, status, *probability, at_self, tape, log)?;
             }
             Effect::StatStageChangeEffect { stages, probability, target, .. } => {
                 apply_stages(state, side, stages, *probability, target, tape, log)?;
@@ -825,7 +866,7 @@ fn force_random_switch(
     }
     let chosen = bench[tape.integer(0, bench.len() as i32)? as usize];
     let sent_out = state.sides[side].team[chosen].nickname.clone();
-    let withdrew = switch_out(&mut state.sides[side], chosen);
+    let withdrew = switch_out(state, side, chosen);
     state.register_active(side);
     state.sides[side].active_mut().just_switched_in = true;
     log.push(Event::Switched { side: side as i32, withdrew, sent_out });
@@ -1023,7 +1064,15 @@ fn apply_side_condition(
 fn remove_hazards(state: &mut State, side: usize, style: &str, log: &mut Log) {
     clear_hazards(state, side, log);
     if style == "RAPID_SPIN" {
-        // Leech Seed is still an unported volatile, so there is nothing here to free anybody from.
+        // The spin also tears off a Leech Seed, which is half of why the move is worth carrying.
+        if state.sides[side].active_mut().volatiles.remove("LEECH_SEED").is_some() {
+            let nickname = state.sides[side].active_pokemon().nickname.clone();
+            log.push(Event::StatusCleared {
+                side: side as i32,
+                pokemon: nickname,
+                clearance: "freed_from_leech_seed".into(),
+            });
+        }
         return;
     }
     let other = 1 - side;
@@ -1157,7 +1206,21 @@ fn apply_damage(
             }
         };
         critical = hit.is_crit;
-        let dealt = state.sides[other].active_mut().take_damage(hit.amount);
+        // `_land_hit`: Endure clamps the blow to leave exactly one hit point.
+        let mut incoming = hit.amount;
+        {
+            let defender = state.sides[other].active_pokemon();
+            if defender.volatiles.contains_key("ENDURE") && incoming >= defender.hp {
+                incoming = defender.hp - 1;
+                let nickname = defender.nickname.clone();
+                log.push(Event::SurvivedAtOneHp {
+                    side: other as i32,
+                    pokemon: nickname,
+                    cause: "endure".into(),
+                });
+            }
+        }
+        let dealt = state.sides[other].active_mut().take_damage(incoming);
         if dealt > 0 {
             // `_land_hit`: what Counter and Mirror Coat read back on their own turn.
             let defender = state.sides[other].active_mut();
@@ -1317,10 +1380,26 @@ fn apply_volatile(
         // does so *before* the duration draw, so Inner Focus costs the tape nothing.
         return Ok(());
     }
+    // `_VOLATILE_TYPE_IMMUNITY`: a Grass type cannot be seeded, and says so.
+    if volatile == "LEECH_SEED" && target.types.iter().flatten().any(|t| t == "GRASS") {
+        let nickname = target.nickname.clone();
+        log.push(Event::DoesNotAffect { side: target_side as i32, pokemon: nickname });
+        return Ok(());
+    }
+    // Nightmare needs a sleeping target and Yawn an unstatused one. Neither logs; the move then
+    // falls through to the empty-log "But it failed!".
+    if volatile == "NIGHTMARE" && target.status != Status::Sleep {
+        return Ok(());
+    }
+    if volatile == "YAWN" && target.status != Status::None {
+        return Ok(());
+    }
     // `_initial_volatile_duration`: a span whose ends are adjacent is a constant and costs no draw,
     // which is why a flinch never touches the tape and a confusion always does.
     let turns = match volatile {
         "CONFUSION" => tape.integer(2, 6)?,
+        "PARTIALLY_TRAPPED" => tape.integer(4, 6)?,
+        "YAWN" => 2,
         _ => 1,
     };
     let pokemon = state.sides[target_side].active_mut();

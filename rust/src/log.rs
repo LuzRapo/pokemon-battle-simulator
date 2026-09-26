@@ -126,6 +126,31 @@ pub enum Event {
         pokemon: String,
         amount: i32,
     },
+    /// A Protect turning a move aside, and an Endure surviving one.
+    Protected {
+        side: i32,
+        pokemon: String,
+    },
+    SurvivedAtOneHp {
+        side: i32,
+        pokemon: String,
+        cause: String,
+    },
+    /// Leech Seed's drink, and a trap squeezing or letting go.
+    LeechSeedSap {
+        side: i32,
+        pokemon: String,
+        amount: i32,
+    },
+    TrapSqueezed {
+        side: i32,
+        pokemon: String,
+        amount: i32,
+    },
+    TrapReleased {
+        side: i32,
+        pokemon: String,
+    },
     /// A volatile taking hold — a flinch, a confusion.
     VolatileInflicted {
         side: i32,

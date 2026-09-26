@@ -182,7 +182,8 @@ pub fn crit_overrides(attacker: &Pokemon, defender: &Pokemon, rolled: bool) -> b
     (rolled || merciless) && !matches!(defender.ability.as_str(), "BATTLE_ARMOR" | "SHELL_ARMOR")
 }
 
-/// The extra crit stages an item or ability buys. Focus Energy's two are a volatile, still unported.
+/// The extra crit stages an item or ability buys. Focus Energy's two are added at the call site,
+/// because they come off the volatile rather than off either of these.
 pub fn crit_stage_bonus(attacker: &Pokemon) -> i32 {
     i32::from(attacker.item == "SCOPE_LENS") + i32::from(attacker.ability == "SUPER_LUCK")
 }

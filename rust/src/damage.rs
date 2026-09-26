@@ -154,7 +154,9 @@ pub fn calculate_hit(
     //
     // Merciless does not raise the stage, it overrules the roll — and the two armors refuse the
     // result however it was reached. So the draw happens either way; only its verdict changes.
-    let stage = crit_stage + crate::inline::crit_stage_bonus(attacker);
+    let stage = crit_stage
+        + crate::inline::crit_stage_bonus(attacker)
+        + if attacker.volatiles.contains_key("FOCUS_ENERGY") { 2 } else { 0 };
     let is_crit = crate::inline::crit_overrides(attacker, defender, rolls.crit < crit_chance(stage));
 
     let (attack_stat, defense_stat) = if category == "PHYSICAL" {

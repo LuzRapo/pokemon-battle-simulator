@@ -423,6 +423,19 @@ pub fn residual_before_status(state: &mut State, side: usize, tape: &mut Tape, l
         }
     }
 
+    // LEECH_SEED (7000): a share of the victim's health, straight into whoever is opposite.
+    let guarded = crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon());
+    if state.sides[side].active_pokemon().volatiles.contains_key("LEECH_SEED") && !guarded {
+        let active = state.sides[side].active_mut();
+        let dealt = active.take_damage(std::cmp::max(1, active.totals.hp / 8));
+        let nickname = active.nickname.clone();
+        log.push(Event::LeechSeedSap { side: side as i32, pokemon: nickname, amount: dealt });
+        let drainer = state.sides[1 - side].active_mut();
+        if !drainer.fainted() {
+            drainer.hp = std::cmp::min(drainer.totals.hp, drainer.hp + dealt);
+        }
+    }
+
     // POISON_HEAL (6500), which the status chip then declines to undo.
     let poisoned = matches!(state.sides[side].active_pokemon().status, Status::Poison | Status::Toxic);
     if ability == "POISON_HEAL" && poisoned {
@@ -435,6 +448,42 @@ pub fn residual_before_status(state: &mut State, side: usize, tape: &mut Tape, l
 pub fn residual_after_status(state: &mut State, side: usize, tape: &mut Tape, log: &mut Log) -> Result<(), Refusal> {
     let other = 1 - side;
     let ability = state.sides[side].active_pokemon().ability.clone();
+
+    let guarded = crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon());
+
+    // NIGHTMARE (5000): only while its victim is still asleep, and it lifts the moment they wake.
+    if state.sides[side].active_pokemon().volatiles.contains_key("NIGHTMARE") {
+        if state.sides[side].active_pokemon().status != Status::Sleep {
+            state.sides[side].active_mut().volatiles.remove("NIGHTMARE");
+        } else if !guarded {
+            chip_named(state, side, 4, "nightmare", log);
+        }
+    }
+
+    // PARTIAL_TRAP (4900). The counter is read before the damage and written after it, so the turn
+    // a grip expires is still a turn its victim is squeezed on.
+    if let Some(remaining) = state.sides[side].active_pokemon().volatiles.get("PARTIALLY_TRAPPED").copied() {
+        if !guarded {
+            let active = state.sides[side].active_mut();
+            let dealt = active.take_damage(std::cmp::max(1, active.totals.hp / 8));
+            let nickname = active.nickname.clone();
+            log.push(Event::TrapSqueezed { side: side as i32, pokemon: nickname, amount: dealt });
+        }
+        if remaining <= 1 {
+            state.sides[side].active_mut().volatiles.remove("PARTIALLY_TRAPPED");
+            let nickname = state.sides[side].active_pokemon().nickname.clone();
+            log.push(Event::TrapReleased { side: side as i32, pokemon: nickname });
+        } else {
+            state.sides[side].active_mut().volatiles.insert("PARTIALLY_TRAPPED".to_string(), remaining - 1);
+        }
+    }
+
+    // SALT_CURE (4800): twice as fast against Water and Steel, which is the whole of the move.
+    if state.sides[side].active_pokemon().volatiles.contains_key("SALT_CURE") && !guarded {
+        let active = state.sides[side].active_pokemon();
+        let brittle = active.types.iter().flatten().any(|t| t == "WATER" || t == "STEEL");
+        chip_named(state, side, if brittle { 4 } else { 8 }, "salt_cure", log);
+    }
 
     // BAD_DREAMS (4500): the foe's sleep, not this Pokemon's.
     if ability == "BAD_DREAMS" {
@@ -452,6 +501,27 @@ pub fn residual_after_status(state: &mut State, side: usize, tape: &mut Tape, lo
             });
             if fainted {
                 log.push(Event::Fainted { side: other as i32, pokemon: nickname });
+            }
+        }
+    }
+
+    // YAWN (3000): drowsy through this turn, asleep at the end of the next.
+    if let Some(left) = state.sides[side].active_pokemon().volatiles.get("YAWN").copied() {
+        if left - 1 > 0 {
+            state.sides[side].active_mut().volatiles.insert("YAWN".to_string(), left - 1);
+        } else {
+            state.sides[side].active_mut().volatiles.remove("YAWN");
+            if state.sides[side].active_pokemon().status == Status::None {
+                let turns = tape.integer(2, 5)?;
+                let active = state.sides[side].active_mut();
+                active.status = Status::Sleep;
+                active.status_turns = turns;
+                let nickname = active.nickname.clone();
+                log.push(Event::StatusInflicted {
+                    side: side as i32,
+                    pokemon: nickname,
+                    status: "SLEEP".into(),
+                });
             }
         }
     }
@@ -526,6 +596,19 @@ fn heal_by(state: &mut State, side: usize, divisor: i32, by: Healer, log: &mut L
             ability: ability.to_string(),
             amount: healed,
         },
+    });
+}
+
+/// A residual chip reported under a source name, as `ResidualDamage`.
+fn chip_named(state: &mut State, side: usize, divisor: i32, source: &str, log: &mut Log) {
+    let active = state.sides[side].active_mut();
+    let dealt = active.take_damage(std::cmp::max(1, active.totals.hp / divisor));
+    let nickname = active.nickname.clone();
+    log.push(Event::ResidualDamage {
+        side: side as i32,
+        pokemon: nickname,
+        source: source.to_string(),
+        amount: dealt,
     });
 }
 

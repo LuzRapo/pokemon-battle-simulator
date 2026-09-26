@@ -249,7 +249,12 @@ def test_status_and_stat_stages_agree_too(seed: int, tmp_path: Path) -> None:
 @needs_rust
 def test_a_move_it_has_not_learned_is_refused_rather_than_guessed(tmp_path: Path) -> None:
     """The failure mode this project cannot afford is a quiet wrong answer. Everything unported has
-    to come back as a refusal, loudly, with the reason."""
+    to come back as a refusal, loudly, with the reason.
+
+    The move is chosen rather than named, for the same reason the ability is: this test was written
+    against Leech Seed and started failing the day Leech Seed landed.
+    """
+    unported = _a_move_carrying_an_unported_volatile()
     rng = random.Random(99)
     team = [
         PokemonSpec(
@@ -259,14 +264,14 @@ def test_a_move_it_has_not_learned_is_refused_rather_than_guessed(tmp_path: Path
             ability=Ability.NONE,
             item=Item.NONE,
             nature=Nature.HARDY,
-            moves=["Leech Seed", "Earthquake"],  # a volatile: the next milestone, not this one
+            moves=[unported, "Earthquake"],
         )
     ]
     scenario, _ = record((team, team), _chooser(rng), seed=1, max_turns=4)
 
     theirs = _rust_trace(scenario, tmp_path)
 
-    assert isinstance(theirs, str) and "Leech Seed" in theirs, theirs
+    assert isinstance(theirs, str) and unported in theirs, theirs
 
 
 @needs_rust
@@ -339,8 +344,27 @@ def test_the_ported_volatiles_actually_land_in_the_swept_battles() -> None:
                 elif event["type"] in ("ConfusionSelfHit", "CantAct"):
                     seen[event.get("reason") or "self_hit"] += 1
 
-    for wanted in ("FLINCH", "CONFUSION", "flinch", "confused", "self_hit"):
+    for wanted in ("FLINCH", "CONFUSION", "PROTECT", "flinch", "confused", "self_hit"):
         assert seen[wanted] > 0, f"{wanted} never happened across 120 battles: {dict(seen)}"
+
+
+def _a_move_carrying_an_unported_volatile() -> str:
+    """Some move whose volatile the engine has not learned, whichever one that happens to be."""
+    # The real statuses are not volatiles and are all ported, so they are excluded by name.
+    known = set(PORTED["volatiles"]) | {"BURN", "FREEZE", "PARALYSIS", "POISON", "TOXIC", "SLEEP", "NONE"}
+    for move in sorted(get_all_moves().values(), key=lambda m: m.name):
+        for effect in move.effects:
+            name = getattr(getattr(effect, "status", None), "name", None)
+            if type(effect).__name__ == "InflictStatusEffect" and name and name not in known:
+                return move.name
+    raise AssertionError("every volatile in the database is ported; this test needs rewriting")
+
+
+def _inflicts(effect: object, volatile: str) -> bool:
+    """A move effect that lands this particular volatile."""
+    return type(effect).__name__ == "InflictStatusEffect" and getattr(
+        getattr(effect, "status", None), "name", None
+    ) == volatile
 
 
 def _moves_where(predicate) -> list[str]:  # type: ignore[no-untyped-def]
@@ -363,6 +387,9 @@ def _moves_where(predicate) -> list[str]:  # type: ignore[no-untyped-def]
         ("HazardSet", lambda e: type(e).__name__ == "SideConditionEffect"),
         ("HazardDamage", lambda e: type(e).__name__ == "SideConditionEffect"),
         ("ResidualDamage", lambda e: type(e).__name__ == "WeatherEffect"),
+        ("Protected", lambda e: _inflicts(e, "PROTECT")),
+        ("LeechSeedSap", lambda e: _inflicts(e, "LEECH_SEED")),
+        ("TrapSqueezed", lambda e: _inflicts(e, "PARTIALLY_TRAPPED")),
     ],
 )
 def test_the_rarer_move_classes_agree_when_the_teams_are_built_for_them(
