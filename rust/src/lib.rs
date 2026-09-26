@@ -17,6 +17,7 @@ pub mod hooks;
 pub mod inline;
 pub mod items;
 pub mod log;
+pub mod power;
 pub mod stats;
 pub mod tape;
 pub mod turn;

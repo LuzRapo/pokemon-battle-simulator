@@ -108,6 +108,12 @@ pub struct Payload {
     pub stab_4096: i64,
     /// Air Lock: the weather still blows, it just stops mattering.
     pub weather_suppressed: bool,
+    /// What a coded move's power rule computed, standing in for the number in the data.
+    pub power_override: Option<i32>,
+    /// Psyshock and friends: a Special move landing on physical Defence.
+    pub defense_stat_override: Option<&'static str>,
+    /// Hydro Steam, which thrives in the sun instead of wilting in it.
+    pub ignore_weather_drop: bool,
 }
 
 impl Payload {
@@ -133,8 +139,8 @@ pub fn calculate_hit(
     let Some((power, category, crit_stage)) = damage_effect(the_move) else {
         return Hit::nothing();
     };
-    let Some(mut power) = *power else {
-        return Hit::nothing(); // variable power: not modelled until the coded moves are ported
+    let Some(mut power) = payload.power_override.or(*power) else {
+        return Hit::nothing(); // variable power with no formula: not modelled
     };
     if power == 0 {
         return Hit::nothing();
@@ -164,6 +170,9 @@ pub fn calculate_hit(
     } else {
         ("SP_ATTACK", "SP_DEFENCE")
     };
+    // Psyshock and friends are Special moves that land on physical Defence. Not expressible as a
+    // category, which is why the Python overrides the stat rather than the move.
+    let defense_stat = payload.defense_stat_override.unwrap_or(defense_stat);
     let mut attack = crit_aware(
         attacker.stat(attack_stat),
         attacker.stage(attack_stat),
@@ -191,7 +200,11 @@ pub fn calculate_hit(
     let mut damage = ((2 * attacker.level) / 5 + 2) * power * attack / defense / 50 + 2;
 
     let active_weather = if payload.weather_suppressed { "NONE" } else { field.weather.as_str() };
-    damage = chain(damage, weather_modifier(&the_move.move_type, active_weather));
+    let mut weather_mod = weather_modifier(&the_move.move_type, active_weather);
+    if weather_mod < 4096 && payload.ignore_weather_drop {
+        weather_mod = 4096;
+    }
+    damage = chain(damage, weather_mod);
     if is_crit {
         // Sniper's crits are half again as hard as anybody else's.
         damage = chain(damage, if attacker.ability == "SNIPER" { 9216 } else { 6144 });

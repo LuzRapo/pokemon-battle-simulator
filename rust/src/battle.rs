@@ -93,6 +93,14 @@ pub struct Pokemon {
     /// What the last hit this turn took off, and whether it was physical or special. Counter and
     /// Mirror Coat are the readers; the Python clears both at the top of every turn, so they mean
     /// "this turn" rather than "ever".
+    /// How many hits this Pokemon has taken all battle (Rage Fist) and how many times its
+    /// current run of Fury Cutter has connected.
+    pub times_hit: i32,
+    pub rolling_hits: i32,
+    /// The species' base Attack, which Beat Up sums over the whole team, and its weight, which
+    /// Low Kick and Heavy Slam weigh against each other.
+    pub base_attack: i32,
+    pub weight_kg: f64,
     pub last_hit_taken: i32,
     pub last_hit_category: Option<String>,
     /// Consecutive stalling moves. Protect-likes fail with odds 1 - 1/3^n, and the counter is
@@ -214,6 +222,10 @@ impl Pokemon {
             just_switched_in: true,
             registered_at: 0,
             switch_in_boost_used: false,
+            times_hit: 0,
+            rolling_hits: 0,
+            base_attack: species.base_stats.attack,
+            weight_kg: species.weight_kg,
             last_hit_taken: 0,
             last_hit_category: None,
             protect_streak: 0,

@@ -116,7 +116,7 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
 /// moment the Python was rolling accuracy for somebody else, and the two engines never recovered.
 /// Everything else in the Python's version is an ability, an item or a field effect, none of them
 /// ported, and each will have to be added here as it lands.
-fn effective_speed(pokemon: &Pokemon, side: &Side, field: &crate::battle::Field) -> i32 {
+pub fn effective_speed(pokemon: &Pokemon, side: &Side, field: &crate::battle::Field) -> i32 {
     let mut speed = pokemon.effective("SPEED");
     if pokemon.status == Status::Paralysis && pokemon.ability != "QUICK_FEET" {
         speed /= 2;
@@ -155,6 +155,14 @@ fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'
 /// only comes off it once its Python behaviour has been read, ported, and agreed about across a
 /// sweep.
 pub const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
+
+/// Every coded move this engine has learned: Struggle, plus the power rules in `power.rs`.
+pub fn ported_coded_moves() -> Vec<&'static str> {
+    let mut all: Vec<&str> = PORTED_CODED_MOVES.to_vec();
+    all.extend(crate::power::PORTED);
+    all.sort_unstable();
+    all
+}
 
 /// `_DEFENDER_FACING_TARGETS`: the targets a Protect can stand in the way of.
 const DEFENDER_FACING: [&str; 3] = ["SINGLE_OPPONENT", "ALL_ADJACENT_ENEMIES", "ALL_ADJACENT"];
@@ -242,7 +250,7 @@ impl Gap {
 /// front rather than played wrongly — the whole point of the differential work is that silence is
 /// the one unacceptable failure mode.
 pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
-    if db.coded_moves.contains(&the_move.name) && !PORTED_CODED_MOVES.contains(&the_move.name.as_str()) {
+    if db.coded_moves.contains(&the_move.name) && !ported_coded_moves().contains(&the_move.name.as_str()) {
         return Some(Gap::CodedByName);
     }
     // `healing` is deliberately absent. It is Showdown's `heal` flag, and the Python branches on it
@@ -262,7 +270,9 @@ pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
     // right, not this comment.
     for effect in &the_move.effects {
         match effect {
-            Effect::DamageEffect { power: None, .. } => return Some(Gap::VariablePower),
+            Effect::DamageEffect { power: None, .. } if !crate::power::PORTED.contains(&the_move.name.as_str()) => {
+                return Some(Gap::VariablePower)
+            }
             Effect::InflictStatusEffect { status, .. }
                 if Status::parse(status).is_none() && !PORTED_VOLATILES.contains(&status.as_str()) =>
             {
@@ -485,6 +495,8 @@ fn withdraw(side: &mut Side, to: usize) -> String {
     }
     outgoing.volatiles.clear();
     outgoing.protect_streak = 0;
+    // A Fury Cutter run does not survive its owner leaving the field.
+    outgoing.rolling_hits = 0;
     if outgoing.status == Status::Toxic {
         outgoing.status_turns = 0;
     }
@@ -690,6 +702,12 @@ fn resolve_move(
         unleashed_as: None,
     });
 
+    // Any other move ends the run, so the next Fury Cutter starts from base. Set here rather than
+    // where the counter is incremented, because the run ends whether or not *this* move lands.
+    if the_move.name != "Fury Cutter" {
+        state.sides[side].active_mut().rolling_hits = 0;
+    }
+
     // `_stall_check`, which sits after the move is announced and before anything is rolled for it.
     // A second Protect in a row usually fails, and the roll it fails on is a real draw even though
     // nothing in the log says so — which is exactly how this was found: identical events, and the
@@ -707,6 +725,7 @@ fn resolve_move(
     {
         let nickname = state.sides[other].active_pokemon().nickname.clone();
         log.push(Event::Protected { side: other as i32, pokemon: nickname });
+        state.sides[side].active_mut().rolling_hits = 0; // `_break_rolling`
         crash_damage(state, side, &the_move, log);
         return Ok(());
     }
@@ -729,6 +748,7 @@ fn resolve_move(
             crate::inline::accuracy_multiplier(attacker, defender, &the_move.category, &state.field.weather);
         if tape.probability()? >= (accuracy * multiplier).min(1.0) {
             log.push(Event::MoveMissed);
+            state.sides[side].active_mut().rolling_hits = 0; // `_break_rolling`
             crash_damage(state, side, &the_move, log);
             return Ok(());
         }
@@ -833,6 +853,11 @@ fn resolve_move(
         return Ok(());
     }
 
+    // `ESCALATING_MOVES`: Fury Cutter counts its run without being locked into it. Rollout and
+    // Ice Ball, which pay for their doubling with a lock, are still refused.
+    if the_move.name == "Fury Cutter" {
+        state.sides[side].active_mut().rolling_hits += 1;
+    }
     if the_move.recharges {
         state.sides[side].active_mut().volatiles.insert("MUST_RECHARGE".to_string(), 1);
     }
@@ -1161,12 +1186,23 @@ fn apply_damage(
     let other = 1 - side;
     let (is_multi_hit, planned) = planned_hits(the_move, tape)?;
     log.effectiveness(effectiveness);
+    // Once for the whole move, after the hit count and the effectiveness line — which is where
+    // the Python builds `hit_payload_base`. Only Magnitude notices, because only Magnitude draws.
+    let listed = the_move.effects.iter().find_map(|e| match e {
+        Effect::DamageEffect { power, .. } => Some(*power),
+        _ => None,
+    });
+    let power_override = crate::power::effective_power(the_move, listed.flatten(), state, side, db, tape)?;
 
     let (mut total_dealt, mut hits_landed, mut critical) = (0, 0, false);
     for _ in 0..planned {
         // Re-collected every hit, as the Python re-emits ON_DAMAGE_CALC every hit: a berry eaten
         // on the first blow has to be gone by the second.
-        let (payload, eaten) = collect_damage_payload(state, side, the_move, db);
+        let (mut payload, eaten) = collect_damage_payload(state, side, the_move, db);
+        payload.power_override = power_override;
+        payload.defense_stat_override = crate::power::defense_stat_override(the_move);
+        payload.ignore_burn |= crate::power::ignores_burn(the_move);
+        payload.ignore_weather_drop = crate::power::ignores_weather_drop(the_move);
         // An Air Balloon eats a Ground move whole, and the Python returns before rolling anything
         // — so the draws are skipped too, which is why this is here and not inside the formula.
         let absorbed = the_move.move_type == "GROUND"
@@ -1222,8 +1258,10 @@ fn apply_damage(
         }
         let dealt = state.sides[other].active_mut().take_damage(incoming);
         if dealt > 0 {
-            // `_land_hit`: what Counter and Mirror Coat read back on their own turn.
+            // `_land_hit`: what Counter and Mirror Coat read back on their own turn, and the
+            // running tally Rage Fist charges itself from.
             let defender = state.sides[other].active_mut();
+            defender.times_hit += 1;
             defender.last_hit_taken = dealt;
             defender.last_hit_category = Some(hit_shape(the_move).0.to_string());
         }

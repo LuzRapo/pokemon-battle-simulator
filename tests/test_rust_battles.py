@@ -88,7 +88,7 @@ def _status_and_stage_move_names() -> list[str]:
     """
     landable = {"BURN", "FREEZE", "PARALYSIS", "POISON", "TOXIC", "SLEEP", *PORTED["volatiles"]}
 
-    def ported(effect: object) -> bool:
+    def ported(move, effect: object) -> bool:  # type: ignore[no-untyped-def]
         kind = type(effect).__name__
         if kind == "StatStageChangeEffect":
             return True
@@ -98,15 +98,17 @@ def _status_and_stage_move_names() -> list[str]:
             return True
         if kind in ("SideConditionEffect", "RemoveHazardsEffect"):
             return True
-        return kind == "DamageEffect" and _plain_damage(effect)
+        # A coded move the engine has learned may carry no listed power at all — its formula
+        # supplies one — so the plain-damage test is waived for those.
+        return kind == "DamageEffect" and (_plain_damage(effect) or move.name in PORTED["coded_moves"])
 
-    coded = set(json.loads((DATA / "rules.json").read_text())["coded_moves"])
+    coded = set(json.loads((DATA / "rules.json").read_text())["coded_moves"]) - set(PORTED["coded_moves"])
     return sorted(
         move.name
         for move in get_all_moves().values()
         if move.name not in coded
         and not _attached(move)
-        and all(ported(effect) for effect in move.effects)
+        and all(ported(move, effect) for effect in move.effects)
     )
 
 
