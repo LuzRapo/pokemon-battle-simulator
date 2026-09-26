@@ -23,6 +23,16 @@ pub enum Event {
     /// this by checking whether the log grew, so it is a statement about the log rather than about
     /// the move, and it is ported the same way.
     MoveFailed,
+    /// How many times a multi-hit move landed, reported once after the blows.
+    MultiHitSummary {
+        hits: i32,
+    },
+    /// A draining move giving its user back a share of what it dealt.
+    Drained {
+        side: i32,
+        pokemon: String,
+        amount: i32,
+    },
     /// A volatile taking hold — a flinch, a confusion.
     VolatileInflicted {
         side: i32,

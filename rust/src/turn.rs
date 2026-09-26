@@ -188,43 +188,71 @@ pub fn unsupported_pokemon(pokemon: &Pokemon, db: &Database) -> Option<String> {
     None
 }
 
-pub fn unsupported_reason(the_move: &Move, db: &Database) -> Option<String> {
-    if db.coded_moves.contains(&the_move.name) && !PORTED_CODED_MOVES.contains(&the_move.name.as_str()) {
-        return Some(format!("{} is special-cased by name in the Python engine", the_move.name));
+/// A class of thing this engine has not learned. Named separately from the message so progress can
+/// be counted by cause — a message has the move's name in it, and grouping on that counts moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Gap {
+    CodedByName,
+    NoModelledEffect,
+    UserOrFieldEffect,
+    VariablePower,
+    Volatile,
+}
+
+impl Gap {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Gap::CodedByName => "special-cased by name in the Python engine",
+            Gap::NoModelledEffect => "carries an effect kind this engine cannot read",
+            Gap::UserOrFieldEffect => "does something to its user or the field",
+            Gap::VariablePower => "power is computed at use time",
+            Gap::Volatile => "inflicts an unported volatile",
+        }
     }
+}
+
+/// Everything this engine has not learned yet. A scenario containing one of these is refused up
+/// front rather than played wrongly — the whole point of the differential work is that silence is
+/// the one unacceptable failure mode.
+pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
+    if db.coded_moves.contains(&the_move.name) && !PORTED_CODED_MOVES.contains(&the_move.name.as_str()) {
+        return Some(Gap::CodedByName);
+    }
+    // `healing` is deliberately absent. It is Showdown's `heal` flag, and the Python branches on it
+    // in exactly one rule — Triage's +3 priority — which is an ability this engine still refuses.
+    // Everything else reading it is AI policy, not mechanics. A healing move that actually heals
+    // carries a `HealEffect`, which arrives here as `Unmodelled` and is refused on its own merits;
+    // refusing the flag as well cost the engine all twelve draining moves for nothing.
     if the_move.self_switch
-        || the_move.healing
         || the_move.force_switch
         || the_move.recharges
         || the_move.charge
         || the_move.self_destructs
     {
-        return Some(format!("{} does something to its user or the field that is not ported", the_move.name));
+        return Some(Gap::UserOrFieldEffect);
     }
-    if the_move.effects.is_empty() {
-        return Some(format!("{} has no modelled effect", the_move.name));
-    }
+    // An effect list that is empty is not a gap: the Python has nothing to apply either, so the
+    // move announces itself, does nothing, and reports MoveFailed — which this engine already does.
+    // 102 moves are in that state, and the differential is what decides whether that reading is
+    // right, not this comment.
     for effect in &the_move.effects {
         match effect {
-            Effect::DamageEffect { power: None, .. } => {
-                return Some(format!("{}'s power is computed at use time", the_move.name))
-            }
-            Effect::DamageEffect { multi_hit: Some(_), .. } => {
-                return Some(format!("{} hits more than once", the_move.name))
-            }
-            Effect::DamageEffect { drain_percent: Some(_), .. }
-            | Effect::DamageEffect { recoil_percent: Some(_), .. } => {
-                return Some(format!("{} drains or recoils", the_move.name))
-            }
+            Effect::DamageEffect { power: None, .. } => return Some(Gap::VariablePower),
             Effect::InflictStatusEffect { status, .. }
                 if Status::parse(status).is_none() && !PORTED_VOLATILES.contains(&status.as_str()) =>
             {
-                return Some(format!("{} inflicts {status}, which is a volatile", the_move.name))
+                return Some(Gap::Volatile)
             }
+            Effect::Unmodelled => return Some(Gap::NoModelledEffect),
             _ => {}
         }
     }
     None
+}
+
+/// The same question, answered with a sentence naming the move — what a refusal actually prints.
+pub fn unsupported_reason(the_move: &Move, db: &Database) -> Option<String> {
+    unsupported(the_move, db).map(|gap| format!("{}: {}", the_move.name, gap.label()))
 }
 
 pub fn step(
@@ -283,6 +311,9 @@ pub fn step(
                 };
                 if can_act(state, side, defrosting, tape, &mut log)? {
                     resolve_move(state, side, *slot, db, tape, &mut log)?
+                } else {
+                    // A skipped turn breaks the consecutive-Protect chain.
+                    state.sides[side].active_mut().protect_streak = 0;
                 }
             }
         }
@@ -316,6 +347,28 @@ pub fn step(
     }
     state.turn += 1;
     Ok(log)
+}
+
+/// `_stall_check`: consecutive Protect-likes fail with odds 1 - 1/3^n, capped at n = 6.
+///
+/// Any non-stalling move clears the streak, so the counter really does mean "in a row". A failed
+/// check clears it too — the chain is broken by the failure itself, not only by doing something
+/// else.
+fn stall_check(state: &mut State, side: usize, the_move: &Move, tape: &mut Tape) -> Result<bool, Refusal> {
+    let actor = state.sides[side].active_mut();
+    if !the_move.stalling {
+        actor.protect_streak = 0;
+        return Ok(true);
+    }
+    if actor.protect_streak > 0 {
+        let odds = 3.0_f64.powi(-actor.protect_streak.min(6));
+        if tape.probability()? >= odds {
+            state.sides[side].active_mut().protect_streak = 0;
+            return Ok(false);
+        }
+    }
+    state.sides[side].active_mut().protect_streak += 1;
+    Ok(true)
 }
 
 /// `_confusion_allows_acting`: tick the counter, then a third of the time hurt yourself instead.
@@ -358,6 +411,10 @@ fn confusion_allows_acting(state: &mut State, side: usize, tape: &mut Tape, log:
 /// toxic counter, so it comes back poisoned but counting from zero again. Leaving the stages on was
 /// how a Rust battle reached -6 Special Attack against a Python that had long since reset to 0.
 ///
+/// The Protect streak goes with them. It is invisible in the log — a Protect that fails to the
+/// streak and one that fails for having no effect both print `MoveFailed` — so the only sign of
+/// getting it wrong is the draw count, which is what caught it.
+///
 /// The rest of `_execute_switch` clears fields this engine does not have yet (choice lock, encore,
 /// charging slot). They arrive with the volatiles milestone; until then there is nothing to clear.
 fn switch_out(side: &mut Side, to: usize) -> String {
@@ -366,6 +423,7 @@ fn switch_out(side: &mut Side, to: usize) -> String {
         *value = 0;
     }
     outgoing.volatiles.clear();
+    outgoing.protect_streak = 0;
     if outgoing.status == Status::Toxic {
         outgoing.status_turns = 0;
     }
@@ -536,6 +594,15 @@ fn resolve_move(
         unleashed_as: None,
     });
 
+    // `_stall_check`, which sits after the move is announced and before anything is rolled for it.
+    // A second Protect in a row usually fails, and the roll it fails on is a real draw even though
+    // nothing in the log says so — which is exactly how this was found: identical events, and the
+    // two engines one draw apart.
+    if !stall_check(state, side, &the_move, tape)? {
+        log.push(Event::MoveFailed);
+        return Ok(());
+    }
+
     // Accuracy first, and only when the move has one — `_accuracy_check` returns True without
     // drawing when `accuracy_probability` is None, which is how a never-missing move leaves the
     // tape untouched.
@@ -585,8 +652,8 @@ fn resolve_move(
         }
         match effect {
             Effect::DamageEffect { .. } => {
-                log.effectiveness(effectiveness);
-                apply_damage(state, side, &the_move, db, tape, log)?;
+                // Effectiveness is logged inside, because the hit-count roll comes before it.
+                apply_damage(state, side, &the_move, effectiveness, db, tape, log)?;
             }
             Effect::InflictStatusEffect { status, probability, to_self, .. } => {
                 apply_status(state, side, status, *probability, *to_self, tape, log)?;
@@ -695,58 +762,109 @@ fn collect_damage_payload(
     (payload, consumed)
 }
 
+/// `_planned_hits`: how many times this move strikes, and the draw that decides it.
+///
+/// Taken *before* the effectiveness line is logged and before any crit or damage roll, which is
+/// where the Python takes it. A fixed count — Double Kick's two, Triple Axel's three — costs no
+/// draw at all. Skill Link and Loaded Dice change the answer and are both still refused.
+fn planned_hits(the_move: &Move, tape: &mut Tape) -> Result<(bool, i32), Refusal> {
+    let span = the_move.effects.iter().find_map(|e| match e {
+        Effect::DamageEffect { multi_hit, .. } => multi_hit.as_ref(),
+        _ => None,
+    });
+    let Some(span) = span else { return Ok((false, 1)) };
+    let (low, high) = (span[0], span[1]);
+    if low == high {
+        return Ok((true, low));
+    }
+    Ok((true, tape.integer(low, high + 1)?))
+}
+
 fn apply_damage(
     state: &mut State,
     side: usize,
     the_move: &Move,
+    effectiveness: f64,
     db: &Database,
     tape: &mut Tape,
     log: &mut Log,
 ) -> Result<(), Refusal> {
     let other = 1 - side;
-    // Drawn here, in the Python's order: the crit first, then the damage roll. Both are certain
-    // to be consumed by the time the formula is entered — see `Rolls`.
-    let rolls = Rolls { crit: tape.probability()?, damage: tape.integer(85, 101)? };
-    let (payload, eaten) = collect_damage_payload(state, side, the_move, db);
-    // The berry is spent whether or not the hit goes on to kill, exactly where the Python's
-    // handler spends it: during the calculation, before the damage lands.
-    if let Some(consumed) = eaten {
-        let holder = state.sides[consumed.side].active_mut();
-        crate::items::consume(holder, consumed.side, &consumed.item, log);
-    }
-    let hit = {
-        let (mine, theirs) = state.sides.split_at(1);
-        let (attacker, defender_side) = if side == 0 {
-            (mine[0].active_pokemon(), &theirs[0])
-        } else {
-            (theirs[0].active_pokemon(), &mine[0])
+    let (is_multi_hit, planned) = planned_hits(the_move, tape)?;
+    log.effectiveness(effectiveness);
+
+    let (mut total_dealt, mut hits_landed, mut critical) = (0, 0, false);
+    for _ in 0..planned {
+        // Re-collected every hit, as the Python re-emits ON_DAMAGE_CALC every hit: a berry eaten
+        // on the first blow has to be gone by the second.
+        let (payload, eaten) = collect_damage_payload(state, side, the_move, db);
+        // Drawn here, in the Python's order: the crit first, then the damage roll. Both are certain
+        // to be consumed by the time the formula is entered — see `Rolls`.
+        let rolls = Rolls { crit: tape.probability()?, damage: tape.integer(85, 101)? };
+        // The berry is spent whether or not the hit goes on to kill, exactly where the Python's
+        // handler spends it: during the calculation, before the damage lands.
+        if let Some(consumed) = eaten {
+            let holder = state.sides[consumed.side].active_mut();
+            crate::items::consume(holder, consumed.side, &consumed.item, log);
+        }
+        let hit = {
+            let (mine, theirs) = state.sides.split_at(1);
+            let (attacker, defender_side) = if side == 0 {
+                (mine[0].active_pokemon(), &theirs[0])
+            } else {
+                (theirs[0].active_pokemon(), &mine[0])
+            };
+            calculate_hit(
+                attacker,
+                defender_side.active_pokemon(),
+                the_move,
+                &state.field,
+                defender_side,
+                db,
+                rolls,
+                &payload,
+            )
         };
-        calculate_hit(
-            attacker,
-            defender_side.active_pokemon(),
-            the_move,
-            &state.field,
-            defender_side,
-            db,
-            rolls,
-            &payload,
-        )
-    };
-    let dealt = state.sides[other].active_mut().take_damage(hit.amount);
-    // Inside the per-hit loop in the Python, which for a single hit means *before* the crit and
-    // damage entries that get logged after it. So Rough Skin's chip is announced before the damage
-    // that caused it, and a berry is eaten before the number that made it ripen is printed.
-    let (category, contact) = hit_shape(the_move);
-    let shape = Hit { attacker_side: side, move_type: &the_move.move_type, category, contact, dealt };
-    on_after_hit(state, &shape, db, tape, log)?;
-    if hit.is_crit {
-        log.push(Event::CriticalHit);
+        critical = hit.is_crit;
+        let dealt = state.sides[other].active_mut().take_damage(hit.amount);
+        total_dealt += dealt;
+        hits_landed += 1;
+        // A multi-hit move reports each blow where it happened; everything else reports one total
+        // after the loop. Either way the crit is announced immediately before the damage it
+        // explains, and nowhere else.
+        if is_multi_hit {
+            if hit.is_crit {
+                log.push(Event::CriticalHit);
+            }
+            log.push(Event::DamageDealt {
+                side: other as i32,
+                pokemon: state.sides[other].active_pokemon().nickname.clone(),
+                amount: dealt,
+            });
+        }
+        // Inside the per-hit loop in the Python, which for a single hit means *before* the crit and
+        // damage entries logged after it. So Rough Skin's chip is announced before the damage that
+        // caused it, and a berry is eaten before the number that made it ripen is printed.
+        let (category, contact) = hit_shape(the_move);
+        let shape = Hit { attacker_side: side, move_type: &the_move.move_type, category, contact, dealt };
+        on_after_hit(state, &shape, db, tape, log)?;
+        if state.sides[other].active_pokemon().fainted() {
+            break;
+        }
     }
-    log.push(Event::DamageDealt {
-        side: other as i32,
-        pokemon: state.sides[other].active_pokemon().nickname.clone(),
-        amount: dealt,
-    });
+
+    if is_multi_hit {
+        log.push(Event::MultiHitSummary { hits: hits_landed });
+    } else if total_dealt > 0 {
+        if critical {
+            log.push(Event::CriticalHit);
+        }
+        log.push(Event::DamageDealt {
+            side: other as i32,
+            pokemon: state.sides[other].active_pokemon().nickname.clone(),
+            amount: total_dealt,
+        });
+    }
     // Between the damage and the faint, in that order, as `_thaw_on_hit` sits between them: a
     // frozen defender that takes a Fire move — or one of the three off-type thawers — is free
     // again, and then takes its turn normally instead of rolling the 20% check.
@@ -757,16 +875,50 @@ fn apply_damage(
             pokemon: state.sides[other].active_pokemon().nickname.clone(),
         });
     }
-    // Struggle's quarter, which the Python applies unconditionally — neither Magic Guard nor Rock
-    // Head stops it — and logs as the amount it asked for rather than the amount that landed.
-    if the_move.effects.iter().any(|e| matches!(e, Effect::DamageEffect { struggle_recoil: true, .. })) {
+    // Once for the whole move, against the total: a multi-hit drain heals on the sum, not per blow.
+    recoil_and_drain(state, side, the_move, total_dealt, log);
+    Ok(())
+}
+
+/// `_apply_recoil_and_drain`, which runs once for the whole move rather than once per hit — so on a
+/// multi-hit move the percentages are taken against the total, not against each blow.
+///
+/// Struggle's quarter comes first and returns: it is unconditional, where recoil proper is stopped
+/// by Rock Head and drain is turned into damage by Liquid Ooze. All three of those abilities are
+/// still refused, so none of them can be on the field; each belongs in its condition when it lands.
+fn recoil_and_drain(state: &mut State, side: usize, the_move: &Move, total_dealt: i32, log: &mut Log) {
+    let Some(Effect::DamageEffect { struggle_recoil, recoil_percent, drain_percent, .. }) =
+        the_move.effects.iter().find(|e| matches!(e, Effect::DamageEffect { .. }))
+    else {
+        return;
+    };
+    if *struggle_recoil {
+        // Logged as the amount it asked for rather than the amount that landed.
         let attacker = state.sides[side].active_mut();
         let recoil = std::cmp::max(1, attacker.totals.hp / 4);
         attacker.take_damage(recoil);
         let nickname = attacker.nickname.clone();
         log.push(Event::RecoilDamage { side: side as i32, pokemon: nickname, amount: recoil });
+        return;
     }
-    Ok(())
+    if let Some(percent) = recoil_percent {
+        if total_dealt > 0 {
+            let recoil = std::cmp::max(1, (total_dealt as f64 * percent) as i32);
+            let attacker = state.sides[side].active_mut();
+            attacker.take_damage(recoil);
+            let nickname = attacker.nickname.clone();
+            log.push(Event::RecoilDamage { side: side as i32, pokemon: nickname, amount: recoil });
+        }
+    }
+    if let Some(percent) = drain_percent {
+        if total_dealt > 0 {
+            let heal = std::cmp::max(1, (total_dealt as f64 * percent) as i32);
+            let attacker = state.sides[side].active_mut();
+            attacker.hp = std::cmp::min(attacker.totals.hp, attacker.hp + heal);
+            let nickname = attacker.nickname.clone();
+            log.push(Event::Drained { side: side as i32, pokemon: nickname, amount: heal });
+        }
+    }
 }
 
 /// `_apply_status`, which draws its probability *first and always* — even at 1.0, which is why a

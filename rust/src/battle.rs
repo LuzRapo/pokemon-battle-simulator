@@ -90,6 +90,9 @@ pub struct Pokemon {
     pub registered_at: u64,
     /// Dauntless Shield and Intrepid Sword fire once per battle, not once per switch-in.
     pub switch_in_boost_used: bool,
+    /// Consecutive stalling moves. Protect-likes fail with odds 1 - 1/3^n, and the counter is
+    /// broken by anything else the Pokemon does — including a turn it could not act on.
+    pub protect_streak: i32,
 }
 
 pub const STAGE_NAMES: [&str; 7] = [
@@ -206,6 +209,7 @@ impl Pokemon {
             just_switched_in: true,
             registered_at: 0,
             switch_in_boost_used: false,
+            protect_streak: 0,
         })
     }
 

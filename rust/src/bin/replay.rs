@@ -131,6 +131,32 @@ fn main() {
         );
         return;
     }
+    // `replay --coverage <data-dir>` asks the engine how much of the game it can currently play,
+    // decided by the same `unsupported_reason` a real scenario is refused by. A progress number
+    // counted from the rules themselves cannot flatter the port the way a hand-kept tally can.
+    if std::env::args().nth(1).as_deref() == Some("--coverage") {
+        let data = std::env::args().nth(2).unwrap_or_else(|| "rust/data".to_string());
+        let db = Database::load(Path::new(&data)).unwrap_or_else(|e| fail(&e));
+        let mut refused: std::collections::BTreeMap<&str, usize> = Default::default();
+        let mut playable = 0usize;
+        for the_move in db.moves.values() {
+            match pokemon_engine::turn::unsupported(the_move, &db) {
+                None => playable += 1,
+                Some(gap) => *refused.entry(gap.label()).or_default() += 1,
+            }
+        }
+        let ported_abilities = pokemon_engine::turn::ported_abilities().len();
+        let ported_items = pokemon_engine::turn::ported_items().len();
+        println!(
+            "{}",
+            json!({
+                "moves": {"playable": playable, "total": db.moves.len(), "refused_by_cause": refused},
+                "abilities": {"ported": ported_abilities, "live": db.live_abilities.len()},
+                "items": {"ported": ported_items, "live": db.live_items.len()},
+            })
+        );
+        return;
+    }
     let mut args = std::env::args().skip(1);
     let (scenario_path, data_dir) = match (args.next(), args.next()) {
         (Some(s), Some(d)) => (s, d),

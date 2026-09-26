@@ -75,6 +75,9 @@ pub struct Move {
     // The move flags the abilities read. Each names a class of move — Sharpness boosts every
     // `slicing` one, Iron Fist every `punching` one — so they are carried through rather than
     // re-derived from a list of names in a second place.
+    /// Protect and its relatives, which fail when used twice running.
+    #[serde(default)]
+    pub stalling: bool,
     #[serde(default)]
     pub slicing: bool,
     #[serde(default)]
@@ -116,7 +119,8 @@ pub enum Effect {
         contact: bool,
         drain_percent: Option<f64>,
         recoil_percent: Option<f64>,
-        multi_hit: Option<serde_json::Value>,
+        /// `[low, high]` — an inclusive span, equal ends meaning a fixed count.
+        multi_hit: Option<Vec<i32>>,
         #[serde(default)]
         struggle_recoil: bool,
     },

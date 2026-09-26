@@ -42,9 +42,9 @@ needs_rust = pytest.mark.skipif(
 PLAIN_SPECIES = ("Rhydon", "Machamp", "Kangaskhan", "Tauros", "Dewgong", "Golem")
 
 
-# The attachments that take a move out of the ported slice: a second use, a heal, a forced switch,
-# a charge or recharge turn, a user that blows itself up.
-_UNPORTED_ATTACHMENTS = ("self_switch", "healing", "force_switch", "recharges", "charge", "self_destructs")
+# The attachments that take a move out of the ported slice: a second use, a forced switch, a charge
+# or recharge turn, a user that blows itself up. Not `healing` — see `unsupported` in turn.rs.
+_UNPORTED_ATTACHMENTS = ("self_switch", "force_switch", "recharges", "charge", "self_destructs")
 
 
 def _attached(move: object) -> bool:
@@ -53,9 +53,7 @@ def _attached(move: object) -> bool:
 
 def _plain_damage(effect: object) -> bool:
     """A damage effect with a fixed power and none of the attachments that are still unported."""
-    if not getattr(effect, "power", None) or getattr(effect, "multi_hit", None):
-        return False
-    return not (getattr(effect, "drain_percent", None) or getattr(effect, "recoil_percent", None))
+    return bool(getattr(effect, "power", None))
 
 
 def _plain_move_names() -> list[str]:
@@ -102,8 +100,7 @@ def _status_and_stage_move_names() -> list[str]:
     return sorted(
         move.name
         for move in get_all_moves().values()
-        if move.effects
-        and move.name not in coded
+        if move.name not in coded
         and not _attached(move)
         and all(ported(effect) for effect in move.effects)
     )
@@ -324,6 +321,52 @@ def test_the_ported_volatiles_actually_land_in_the_swept_battles() -> None:
 
     for wanted in ("FLINCH", "CONFUSION", "flinch", "confused", "self_hit"):
         assert seen[wanted] > 0, f"{wanted} never happened across 40 battles: {dict(seen)}"
+
+
+def _moves_where(predicate) -> list[str]:  # type: ignore[no-untyped-def]
+    """The slice's moves whose first damage effect satisfies a predicate."""
+    wanted = []
+    for name in STATUS_MOVES:
+        move = next(m for m in get_all_moves().values() if m.name == name)
+        effect = next((e for e in move.effects if type(e).__name__ == "DamageEffect"), None)
+        if effect is not None and predicate(effect):
+            wanted.append(name)
+    return wanted
+
+
+@needs_rust
+@pytest.mark.parametrize(
+    ("event", "predicate"),
+    [
+        ("MultiHitSummary", lambda e: e.multi_hit is not None),
+        ("Drained", lambda e: e.drain_percent is not None),
+        ("RecoilDamage", lambda e: e.recoil_percent is not None),
+    ],
+)
+def test_the_rarer_move_classes_agree_when_the_teams_are_built_for_them(
+    event: str, predicate, tmp_path: Path
+) -> None:
+    """Multi-hit, drain and recoil, drawn deliberately rather than hoped for.
+
+    Eleven of the slice's 578 moves drain or recoil, so a random draw finds them rarely enough that
+    forty battles went by without one — a green run saying nothing. Restricting the pool makes the
+    class certain to appear, and the assertion is that it appeared *and* both engines agreed.
+    """
+    pool = _moves_where(predicate)
+    assert len(pool) >= 2, f"not enough moves to build a team from: {pool}"
+
+    seen = 0
+    for seed in range(12):
+        rng = random.Random(11000 + seed)
+        teams = (_team(rng, size=3, pool=pool), _team(rng, size=3, pool=pool))
+        scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=60)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        seen += sum(entry["type"] == event for turn in expected for entry in turn["events"])
+
+    assert seen > 0, f"{event} never happened even with a team built for it"
 
 
 @needs_rust
