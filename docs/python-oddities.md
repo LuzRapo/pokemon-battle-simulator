@@ -55,6 +55,27 @@ Pokémon acted, and the battle log says it could not — so a player reading the
 did not happen. The mechanic underneath is right (a third of the time you hit yourself); it is the
 announcement that is wrong.
 
+### A multi-hit move compounds its power modifiers when the user has an `-ate` ability
+
+`engine/damage_apply.py`. `hit_payload_base` is built once and copied per hit with `dict(...)`,
+which is a **shallow** copy. `payload_overrides` returns a list for one case — the `-ate` abilities'
+`{"power_mods_4096": [_ATE_POWER_MOD_4096]}` — and that list therefore lives in `hit_payload_base`
+and is shared by every hit's copy. Handlers append to it with
+`payload.setdefault("power_mods_4096", []).append(...)`, so each hit permanently adds its
+modifiers to the list the next hit will start from.
+
+A five-hit Fury Attack from a Pixilate holder carrying Meowfred's Monocle deals **6, 9, 13, 17,
+28** instead of a flat six a hit — the Monocle's 1.5x is applied once on the first blow, twice on
+the second, and five times on the fifth. Found by the differential; reproduced in Rust rather than
+fixed, with a comment pointing here.
+
+Nothing else aliases: `setdefault` on a key *absent* from the shallow copy creates a fresh list in
+that copy alone, so only keys that `payload_overrides` itself populated are affected — in practice
+only `power_mods_4096`, and only behind an `-ate` ability.
+
+The fix is `copy.deepcopy(hit_payload_base)`, or better, building the base payload inside the loop.
+Worth checking whether anything else in the codebase copies a payload shallowly.
+
 ### Wise Glasses and Muscle Band are 1.5x, not 1.1x
 
 `mechanics/items.py`:

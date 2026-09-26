@@ -72,6 +72,10 @@ fn parse_action(named: &str, side: &Side) -> Result<Action, String> {
             .position(|p| p.nickname == rest)
             .map(|to| Action::Switch { to })
             .ok_or_else(|| format!("nobody on this side is called {rest:?}")),
+        // "zmove:..." lands here. Z-moves are a different action rather than a different move,
+        // which is what makes the base moves in `zmoves._SIGNATURE_BASES` — Psychic, Stone Edge,
+        // Giga Impact — ordinary when used normally, and playable on that basis.
+        "zmove" => Err(format!("{named:?} is a Z-move, which is not ported")),
         other => Err(format!("unsupported action kind {other:?}")),
     }
 }

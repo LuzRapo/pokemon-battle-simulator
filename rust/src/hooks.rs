@@ -403,11 +403,14 @@ pub fn residual_before_status(state: &mut State, side: usize, tape: &mut Tape, l
 
     // ITEM_RECOVERY (8000). Both guard on the holder still standing — an earlier chip in the same
     // pass can have knocked it out, and a corpse does not eat sludge.
+    // The guard belongs to these two and nothing else. Returning here skipped Leech Seed further
+    // down, which the Python saps regardless — a Pokemon the sandstorm just felled still reports a
+    // sap of zero.
     let item = state.sides[side].active_pokemon().item.clone();
-    if state.sides[side].active_pokemon().fainted() {
-        return Ok(());
-    }
-    if item == "LEFTOVERS" {
+    let standing = !state.sides[side].active_pokemon().fainted();
+    if !standing {
+        // fall through to Leech Seed and Poison Heal below
+    } else if item == "LEFTOVERS" {
         heal_by(state, side, 16, Healer::Item(&item), log);
     } else if item == "BLACK_SLUDGE" {
         let poison = state.sides[side].active_pokemon().types.iter().flatten().any(|t| t == "POISON");

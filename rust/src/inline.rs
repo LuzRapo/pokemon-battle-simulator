@@ -94,11 +94,34 @@ pub fn ignores_indirect_damage(pokemon: &Pokemon) -> bool {
     pokemon.ability == "MAGIC_GUARD"
 }
 
+/// `_GUARANTEED`: large enough that any nonzero base accuracy clears the final `min(1.0, ..)`.
+const GUARANTEED: f64 = 1e6;
+
+/// `_weather_accuracy_multiplier`: what the weather alone does, by move name.
+///
+/// Folded into the ordinary chain rather than short-circuiting, so a move that both always-hits in
+/// this weather and would otherwise have missed still reads as one accuracy roll. Three moves are
+/// in these tables and all three are also named elsewhere — Thunder is a semi-invulnerability
+/// reacher too, and freeing it on that basis without this cost an afternoon.
+pub fn weather_accuracy_multiplier(move_name: &str, weather: &str) -> f64 {
+    match (move_name, weather) {
+        ("Thunder" | "Hurricane", "RAIN" | "HEAVY_RAIN") => GUARANTEED,
+        ("Blizzard", "SNOW") => GUARANTEED,
+        ("Thunder" | "Hurricane", "SUN" | "HARSH_SUN") => 0.5,
+        _ => 1.0,
+    }
+}
+
 /// The accuracy multiplier the two sides' abilities and items contribute, folded in the Python's
-/// order. Weather's own contribution is absent: `_weather_accuracy_multiplier` is keyed by move
-/// name — Thunder, Hurricane, Blizzard — and all three are refused as special-cased anyway.
-pub fn accuracy_multiplier(attacker: &Pokemon, defender: &Pokemon, category: &str, weather: &str) -> f64 {
-    let mut multiplier = 1.0;
+/// order — which starts with the weather's own contribution.
+pub fn accuracy_multiplier(
+    move_name: &str,
+    attacker: &Pokemon,
+    defender: &Pokemon,
+    category: &str,
+    weather: &str,
+) -> f64 {
+    let mut multiplier = weather_accuracy_multiplier(move_name, weather);
     if defender.ability == "SAND_VEIL" && weather == "SANDSTORM" {
         multiplier *= 0.8;
     }

@@ -373,6 +373,43 @@ pub fn ate_boost_applies(listed_type: &str, attacker: &Pokemon) -> bool {
     listed_type == "NORMAL" && ate_type(&attacker.ability).is_some()
 }
 
+/// Base moves that a signature Z-crystal upgrades, and moves that reach a semi-invulnerable
+/// target. Both groups are named by hand in the Python and both are *ordinary* here.
+///
+/// A Z-move is a different action, not a different move — `zmove:` is refused where actions are
+/// parsed — so using Psychic normally has nothing special about it. And reaching through a charge
+/// only matters against a target that is mid-charge, which cannot happen while every charging move
+/// is refused. Both of those are conditions on something else being unported; if charges or
+/// Z-moves land, these come back off this list until they are handled properly.
+pub const PORTED_ORDINARY_DESPITE_BEING_NAMED: [&str; 24] = [
+    // `zmoves._SIGNATURE_BASES`
+    "Thunderbolt",
+    "Spirit Shackle",
+    "Darkest Lariat",
+    "Clanging Scales",
+    "Moongeist Beam",
+    "Stone Edge",
+    "Spectral Thief",
+    "Psychic",
+    "Play Rough",
+    "Volt Tackle",
+    "Sparkling Aria",
+    "Giga Impact",
+    "Sunsteel Strike",
+    // `_UP_IN_THE_AIR` and `_REACHES_THROUGH`'s values — the reachers, not the charges
+    "Gust",
+    "Twister",
+    "Thunder",
+    "Hurricane",
+    "Sky Uppercut",
+    "Smack Down",
+    "Thousand Arrows",
+    "Earthquake",
+    "Fissure",
+    "Surf",
+    "Whirlpool",
+];
+
 /// `_SCREEN_BREAKERS`: these take the opponent's screens down before they hit.
 pub const SCREEN_BREAKERS: [&str; 3] = ["Psychic Fangs", "Raging Bull", "Brick Break"];
 

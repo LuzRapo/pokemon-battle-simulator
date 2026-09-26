@@ -169,6 +169,7 @@ pub fn ported_coded_moves() -> &'static std::collections::HashSet<&'static str> 
         all.extend(crate::power::PORTED_TYPE_OVERRIDES);
         all.extend(crate::power::PORTED_FAILURES);
         all.extend(crate::power::SCREEN_BREAKERS);
+        all.extend(crate::power::PORTED_ORDINARY_DESPITE_BEING_NAMED);
         all
     })
 }
@@ -806,8 +807,13 @@ fn resolve_move(
         // The *move's* category, not its damage effect's — Hustle reads `move.category`, and the
         // two are not always the same. Natural Gift's effect says one thing and the move says
         // another, which was enough to turn a miss into a hit.
-        multiplier *=
-            crate::inline::accuracy_multiplier(attacker, defender, &the_move.category, &state.field.weather);
+        multiplier *= crate::inline::accuracy_multiplier(
+            &the_move.name,
+            attacker,
+            defender,
+            &the_move.category,
+            &state.field.weather,
+        );
         if tape.probability()? >= (accuracy * multiplier).min(1.0) {
             log.push(Event::MoveMissed);
             state.sides[side].active_mut().rolling_hits = 0; // `_break_rolling`
@@ -1038,6 +1044,7 @@ fn collect_damage_payload(
     side: usize,
     the_move: &Move,
     db: &Database,
+    seed_power_mods: &[i64],
 ) -> (Payload, Option<crate::items::Consumed>) {
     let other = 1 - side;
     let weather = crate::hooks::effective_weather(state);
@@ -1057,6 +1064,7 @@ fn collect_damage_payload(
         db,
     };
     let mut payload = Payload::new();
+    payload.power_mods_4096 = seed_power_mods.to_vec();
     payload.weather_suppressed = weather != state.field.weather;
     let consumed = apply_damage_calc(state, side, &calc, &mut payload);
     (payload, consumed)
@@ -1264,18 +1272,27 @@ fn apply_damage(
     });
     let power_override = crate::power::effective_power(the_move, listed.flatten(), state, side, db, tape)?;
     let overrides = crate::power::payload_overrides(the_move, listed_type, state.sides[side].active_pokemon());
+    // The Python copies `hit_payload_base` per hit with `dict()`, which is shallow — so when
+    // `payload_overrides` returned a *list* (only the `-ate` branch does), every hit shares that
+    // one list and each hit's handlers append to it permanently. A five-hit Fury Attack off a
+    // Pixilate holder therefore escalates 6, 9, 13, 17, 28 rather than staying flat.
+    //
+    // Reproduced rather than fixed: see docs/python-oddities.md. Nothing else aliases, because
+    // `setdefault` on a key absent from the copy makes a fresh list in that copy alone.
+    let mut shared_power_mods: Vec<i64> = overrides.ate_power_mod.into_iter().collect();
+    let aliased = overrides.ate_power_mod.is_some();
 
     let (mut total_dealt, mut hits_landed, mut critical) = (0, 0, false);
     for _ in 0..planned {
         // Re-collected every hit, as the Python re-emits ON_DAMAGE_CALC every hit: a berry eaten
         // on the first blow has to be gone by the second.
-        let (mut payload, eaten) = collect_damage_payload(state, side, the_move, db);
+        let (mut payload, eaten) = collect_damage_payload(state, side, the_move, db, &shared_power_mods);
         payload.power_override = power_override;
         payload.defense_stat_override = overrides.defense_stat;
         payload.ignore_burn |= overrides.ignore_burn;
         payload.ignore_weather_drop = overrides.ignore_weather_drop;
-        if let Some(modifier) = overrides.ate_power_mod {
-            payload.power_mods_4096.push(modifier);
+        if aliased {
+            shared_power_mods = payload.power_mods_4096.clone();
         }
         // An Air Balloon eats a Ground move whole, and the Python returns before rolling anything
         // — so the draws are skipped too, which is why this is here and not inside the formula.
