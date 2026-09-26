@@ -172,6 +172,7 @@ pub fn ported_abilities() -> Vec<&'static str> {
     let mut all: Vec<&str> = crate::abilities::PORTED.to_vec();
     all.extend(crate::hooks::PORTED_ABILITIES);
     all.extend(crate::inline::PORTED_ABILITIES);
+    all.extend(crate::hooks::PORTED_RESIDUAL_ABILITIES);
     all.sort_unstable();
     all
 }
@@ -180,6 +181,7 @@ pub fn ported_items() -> Vec<&'static str> {
     let mut all: Vec<&str> = crate::items::PORTED.to_vec();
     all.extend(crate::hooks::PORTED_ITEMS);
     all.extend(crate::inline::PORTED_ITEMS);
+    all.extend(crate::hooks::PORTED_RESIDUAL_ITEMS);
     all.sort_unstable();
     all
 }
@@ -356,7 +358,7 @@ pub fn step(
         }
     }
     if state.outcome.is_none() {
-        residuals(state, &mut log);
+        residuals(state, tape, &mut log)?;
         state.update_outcome();
         if let Some(outcome) = state.outcome {
             log.push(Event::BattleEnded { outcome: outcome.name().to_string() });
@@ -463,7 +465,7 @@ fn switch_out(side: &mut Side, to: usize) -> String {
 /// toxic takes a sixteenth rather than nothing.
 ///
 /// Sides are ticked in order, which is the order the Python emits `ON_RESIDUAL` for them.
-fn residuals(state: &mut State, log: &mut Log) {
+fn residuals(state: &mut State, tape: &mut Tape, log: &mut Log) -> Result<(), Refusal> {
     // `_apply_residuals` in order: the field's own clocks first, then each side — its chips, then
     // its durations. A sandstorm that expires this turn still chips on the way out only if the
     // tick and the chip are in this order, which is why the field goes first.
@@ -471,8 +473,12 @@ fn residuals(state: &mut State, log: &mut Log) {
     for side in 0..2 {
         if !state.sides[side].active_pokemon().fainted() {
             // ResidualOrder: WEATHER (9000) and TERRAIN (8400) come before STATUS (6000).
+            // ResidualOrder, top to bottom: WEATHER (9000), then the weather abilities, the
+            // cures and the recovery items, then the status chip at 6000, then everything below.
             crate::field::weather_and_terrain_residuals(state, side, log);
+            crate::hooks::residual_before_status(state, side, tape, log)?;
             status_chip(state, side, log);
+            crate::hooks::residual_after_status(state, side, tape, log)?;
             // One faint line for the whole residual pass, whichever chip did it — the Python logs
             // it in `_apply_residuals` after the emit, not inside any handler. Announcing it from
             // the status chip alone was right until a sandstorm got a kill of its own.
@@ -486,10 +492,16 @@ fn residuals(state: &mut State, log: &mut Log) {
         }
         crate::field::tick_side(state, side, log);
     }
+    Ok(())
 }
 
 fn status_chip(state: &mut State, side: usize, log: &mut Log) {
-    if crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon()) {
+    let active = state.sides[side].active_pokemon();
+    if crate::inline::ignores_indirect_damage(active) {
+        return;
+    }
+    // Poison Heal already turned this into a heal, so there is nothing left to take.
+    if active.ability == "POISON_HEAL" && matches!(active.status, Status::Poison | Status::Toxic) {
         return;
     }
     let active = state.sides[side].active_mut();
@@ -832,6 +844,7 @@ fn collect_damage_payload(
     db: &Database,
 ) -> (Payload, Option<crate::items::Consumed>) {
     let other = 1 - side;
+    let weather = crate::hooks::effective_weather(state);
     let attacker = state.sides[side].active_pokemon();
     let defender = state.sides[other].active_pokemon();
     let (category, _) = hit_shape(the_move);
@@ -844,10 +857,11 @@ fn collect_damage_payload(
         defender,
         fallen_on_attacker_side: state.sides[side].team.iter().filter(|p| p.fainted()).count(),
         defender_side_acted: state.sides[other].acted_this_turn,
-        weather: &state.field.weather,
+        weather: &weather,
         db,
     };
     let mut payload = Payload::new();
+    payload.weather_suppressed = weather != state.field.weather;
     let consumed = apply_damage_calc(state, side, &calc, &mut payload);
     (payload, consumed)
 }

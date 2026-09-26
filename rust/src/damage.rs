@@ -106,6 +106,8 @@ pub struct Payload {
     pub bypass_screens: bool,
     /// `stab_4096`, which Adaptability raises from the usual 6144.
     pub stab_4096: i64,
+    /// Air Lock: the weather still blows, it just stops mattering.
+    pub weather_suppressed: bool,
 }
 
 impl Payload {
@@ -186,7 +188,8 @@ pub fn calculate_hit(
 
     let mut damage = ((2 * attacker.level) / 5 + 2) * power * attack / defense / 50 + 2;
 
-    damage = chain(damage, weather_modifier(&the_move.move_type, &field.weather));
+    let active_weather = if payload.weather_suppressed { "NONE" } else { field.weather.as_str() };
+    damage = chain(damage, weather_modifier(&the_move.move_type, active_weather));
     if is_crit {
         // Sniper's crits are half again as hard as anybody else's.
         damage = chain(damage, if attacker.ability == "SNIPER" { 9216 } else { 6144 });

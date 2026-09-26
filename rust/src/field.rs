@@ -88,7 +88,9 @@ pub fn tick_side(state: &mut State, side: usize, log: &mut Log) {
 /// The sandstorm chip and the grassy-terrain heal, at `ResidualOrder.WEATHER` and `TERRAIN` — both
 /// ahead of the status chip, which is why they are here rather than folded into it.
 pub fn weather_and_terrain_residuals(state: &mut State, side: usize, log: &mut Log) {
-    if state.field.weather == "SANDSTORM" {
+    // Through `effective_weather`, so an Air Lock on either side stops the sand biting without
+    // stopping the sandstorm.
+    if crate::hooks::effective_weather(state) == "SANDSTORM" {
         let active = state.sides[side].active_pokemon();
         let immune = active.types.iter().flatten().any(|t| SANDSTORM_IMMUNE.contains(&t.as_str()))
             || matches!(active.ability.as_str(), "SAND_VEIL" | "OVERCOAT")

@@ -89,6 +89,13 @@ pub enum Event {
         side: i32,
         pokemon: String,
     },
+    /// An ability healing its holder at the end of the turn.
+    AbilityHealed {
+        side: i32,
+        pokemon: String,
+        ability: String,
+        amount: i32,
+    },
     /// The weather or terrain a Pokemon brings onto the field.
     WeatherSetByAbility {
         side: i32,

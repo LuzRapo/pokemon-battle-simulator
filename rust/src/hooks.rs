@@ -339,3 +339,200 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
         _ => {}
     }
 }
+
+/// Abilities and items implemented at `ON_RESIDUAL`, on top of everything above.
+pub const PORTED_RESIDUAL_ABILITIES: [&str; 8] = [
+    "BAD_DREAMS",
+    "HYDRATION",
+    "ICE_BODY",
+    "POISON_HEAL",
+    "RAIN_DISH",
+    "SHED_SKIN",
+    "SPEED_BOOST",
+    "AIR_LOCK",
+];
+pub const PORTED_RESIDUAL_ITEMS: [&str; 4] = ["BLACK_SLUDGE", "FLAME_ORB", "LEFTOVERS", "TOXIC_ORB"];
+
+/// `effective_weather`: Air Lock suppresses what the weather *does* while its holder is out,
+/// without clearing the weather itself. Everything that asks about weather asks through this.
+pub fn effective_weather(state: &State) -> String {
+    for side in &state.sides {
+        let active = side.active_pokemon();
+        if !active.fainted() && active.ability == "AIR_LOCK" {
+            return "NONE".to_string();
+        }
+    }
+    state.field.weather.clone()
+}
+
+/// The end-of-turn handlers an ability or item registers, run in `ResidualOrder`.
+///
+/// The order is the whole content of this function. Poison Heal has to heal before the status chip
+/// would have hurt (and the chip checks for it and stands down); Leftovers recovers before the
+/// chip, so a Pokemon at one HP under Toxic still dies; Speed Boost is last of everything.
+pub fn residual_before_status(state: &mut State, side: usize, tape: &mut Tape, log: &mut Log) -> Result<(), Refusal> {
+    let weather = effective_weather(state);
+    let ability = state.sides[side].active_pokemon().ability.clone();
+
+    // WEATHER_ABILITY (8500).
+    let weather_heal = match ability.as_str() {
+        "ICE_BODY" if weather == "SNOW" => true,
+        "RAIN_DISH" if matches!(weather.as_str(), "RAIN" | "HEAVY_RAIN") => true,
+        _ => false,
+    };
+    if weather_heal {
+        heal_by(state, side, 16, Healer::Ability(&ability), log);
+    }
+
+    // CURE (8200). Harvest is absent: it regrows a berry, which needs the consumed-item memory.
+    if ability == "HYDRATION"
+        && state.sides[side].active_pokemon().status != Status::None
+        && matches!(weather.as_str(), "RAIN" | "HEAVY_RAIN")
+    {
+        clear_status(state, side, "hydration", log);
+    }
+    if ability == "SHED_SKIN" && state.sides[side].active_pokemon().status != Status::None {
+        // The draw happens whenever there is a status to shed, landed or not.
+        if tape.probability()? < 1.0 / 3.0 {
+            clear_status(state, side, "shed_skin", log);
+        }
+    }
+
+    // ITEM_RECOVERY (8000). Both guard on the holder still standing — an earlier chip in the same
+    // pass can have knocked it out, and a corpse does not eat sludge.
+    let item = state.sides[side].active_pokemon().item.clone();
+    if state.sides[side].active_pokemon().fainted() {
+        return Ok(());
+    }
+    if item == "LEFTOVERS" {
+        heal_by(state, side, 16, Healer::Item(&item), log);
+    } else if item == "BLACK_SLUDGE" {
+        let poison = state.sides[side].active_pokemon().types.iter().flatten().any(|t| t == "POISON");
+        if poison {
+            heal_by(state, side, 16, Healer::Item(&item), log);
+        } else {
+            let holder = state.sides[side].active_mut();
+            let dealt = holder.take_damage(std::cmp::max(1, holder.totals.hp / 16));
+            let nickname = holder.nickname.clone();
+            log.push(Event::ItemChipDamage {
+                side: side as i32,
+                pokemon: nickname,
+                item: item.clone(),
+                amount: dealt,
+            });
+        }
+    }
+
+    // POISON_HEAL (6500), which the status chip then declines to undo.
+    let poisoned = matches!(state.sides[side].active_pokemon().status, Status::Poison | Status::Toxic);
+    if ability == "POISON_HEAL" && poisoned {
+        heal_by(state, side, 8, Healer::Ability(&ability), log);
+    }
+    Ok(())
+}
+
+/// Everything below `ResidualOrder.STATUS`, run after the chip.
+pub fn residual_after_status(state: &mut State, side: usize, tape: &mut Tape, log: &mut Log) -> Result<(), Refusal> {
+    let other = 1 - side;
+    let ability = state.sides[side].active_pokemon().ability.clone();
+
+    // BAD_DREAMS (4500): the foe's sleep, not this Pokemon's.
+    if ability == "BAD_DREAMS" {
+        let foe = state.sides[other].active_pokemon();
+        if !foe.fainted() && foe.status == Status::Sleep && !crate::inline::ignores_indirect_damage(foe) {
+            let foe = state.sides[other].active_mut();
+            let dealt = foe.take_damage(std::cmp::max(1, foe.totals.hp / 8));
+            let nickname = foe.nickname.clone();
+            let fainted = foe.fainted();
+            log.push(Event::AbilityChipDamage {
+                side: other as i32,
+                pokemon: nickname.clone(),
+                ability: "BAD_DREAMS".into(),
+                amount: dealt,
+            });
+            if fainted {
+                log.push(Event::Fainted { side: other as i32, pokemon: nickname });
+            }
+        }
+    }
+
+    // ORB (1500): the orb poisons or burns whoever is carrying it, once there is room to.
+    let item = state.sides[side].active_pokemon().item.clone();
+    let status = match item.as_str() {
+        "TOXIC_ORB" => Some(Status::Toxic),
+        "FLAME_ORB" => Some(Status::Burn),
+        _ => None,
+    };
+    if let Some(status) = status {
+        if !state.sides[side].active_pokemon().fainted()
+            && state.sides[side].active_pokemon().status == Status::None
+        {
+            apply_main_status(state, side, status, tape, log)?;
+        }
+    }
+
+    // SPEED_BOOST (1000): every turn-end except the one it arrived on, and logged only if the
+    // stage actually moved.
+    if ability == "SPEED_BOOST" {
+        let pokemon = state.sides[side].active_pokemon();
+        if !pokemon.fainted() && !pokemon.just_switched_in {
+            let pokemon = state.sides[side].active_mut();
+            let before = pokemon.stage("SPEED");
+            let after = (before + 1).clamp(-6, 6);
+            pokemon.stages.insert("SPEED".to_string(), after);
+            if after > before {
+                let nickname = pokemon.nickname.clone();
+                log.push(Event::StatStageChanged {
+                    side: side as i32,
+                    pokemon: nickname,
+                    stat: "SPEED".into(),
+                    delta: after - before,
+                    requested: 1,
+                    source: "speed_boost".into(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether a heal is announced under an ability's name or an item's — the only difference between
+/// Leftovers and Rain Dish once the arithmetic is done.
+enum Healer<'a> {
+    Ability(&'a str),
+    Item(&'a str),
+}
+
+fn heal_by(state: &mut State, side: usize, divisor: i32, by: Healer, log: &mut Log) {
+    let pokemon = state.sides[side].active_mut();
+    if pokemon.fainted() {
+        return;
+    }
+    let amount = std::cmp::max(1, pokemon.totals.hp / divisor);
+    let before = pokemon.hp;
+    pokemon.hp = std::cmp::min(pokemon.totals.hp, pokemon.hp + amount);
+    let healed = pokemon.hp - before;
+    if healed == 0 {
+        return;
+    }
+    let nickname = pokemon.nickname.clone();
+    log.push(match by {
+        // The item entry carries no amount; the ability's does. That is the Python's choice, not
+        // an oversight here.
+        Healer::Item(item) => Event::ItemHealed { side: side as i32, pokemon: nickname, item: item.to_string() },
+        Healer::Ability(ability) => Event::AbilityHealed {
+            side: side as i32,
+            pokemon: nickname,
+            ability: ability.to_string(),
+            amount: healed,
+        },
+    });
+}
+
+fn clear_status(state: &mut State, side: usize, clearance: &str, log: &mut Log) {
+    let pokemon = state.sides[side].active_mut();
+    pokemon.status = Status::None;
+    pokemon.status_turns = 0;
+    let nickname = pokemon.nickname.clone();
+    log.push(Event::StatusCleared { side: side as i32, pokemon: nickname, clearance: clearance.to_string() });
+}
