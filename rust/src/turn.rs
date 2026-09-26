@@ -16,7 +16,8 @@
 //! scenario that wanders out of the ported subset fails loudly instead of diverging quietly.
 
 use crate::battle::{Pokemon, Side, State, Status};
-use crate::damage::{calculate_hit, Rolls};
+use crate::abilities::{apply_damage_calc, Calc};
+use crate::damage::{calculate_hit, Payload, Rolls};
 use crate::data::{Database, Effect, Move};
 use crate::log::{Event, Log};
 use crate::tape::Tape;
@@ -143,14 +144,14 @@ fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'
 /// Deliberately short and explicit. That net is why silent wrong answers have been rare; a move
 /// only comes off it once its Python behaviour has been read, ported, and agreed about across a
 /// sweep.
-const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
+pub const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
 
 /// Abilities and items this engine has implemented. Both empty for now, and that is the honest
 /// state of the port: every Pokemon carrying live behaviour is refused rather than played with
 /// three-quarters of its rules missing. Names come off these lists as they are ported and agreed
 /// across a sweep — 220 abilities and 110 items to go.
-const PORTED_ABILITIES: [&str; 0] = [];
-const PORTED_ITEMS: [&str; 0] = [];
+use crate::abilities::PORTED as PORTED_ABILITIES;
+pub const PORTED_ITEMS: [&str; 0] = [];
 
 /// Why this Pokemon cannot be played, if it cannot.
 ///
@@ -211,6 +212,9 @@ pub fn step(
     tape: &mut Tape,
 ) -> Result<Log, Refusal> {
     let mut log = Log::new();
+    for side in 0..2 {
+        state.sides[side].acted_this_turn = false;
+    }
     let order = order_actions(state, &actions, db, tape)?;
     for side in order {
         if state.outcome.is_some() {
@@ -226,6 +230,8 @@ pub fn step(
             Action::Switch { to } => {
                 let sent_out = state.sides[side].team[*to].nickname.clone();
                 let withdrew = switch_out(&mut state.sides[side], *to);
+                state.register_active(side);
+                state.sides[side].active_mut().just_switched_in = true;
                 log.push(Event::Switched { side: side as i32, withdrew, sent_out });
             }
             Action::Move { slot } => {
@@ -242,6 +248,9 @@ pub fn step(
                 }
             }
         }
+        // Set after the action, not before: Analytic asks whether the *other* side has already
+        // moved, and a side that has just finished moving is exactly what that means.
+        state.sides[side].acted_this_turn = true;
         let was_decided = state.outcome.is_some();
         state.update_outcome();
         // `_update_outcome` announces the result the moment it is decided, once.
@@ -256,6 +265,15 @@ pub fn step(
         state.update_outcome();
         if let Some(outcome) = state.outcome {
             log.push(Event::BattleEnded { outcome: outcome.name().to_string() });
+        }
+    }
+    // `_tick_turns_active`, which runs at turn end whether or not the battle is over: the flag's
+    // rule is "every turn-end except the one I entered on", so it clears here rather than when its
+    // owner acted. Clearing it after the action instead cost Stakeout its whole effect, since the
+    // Pokemon it punishes is the one that came in *this* turn and has not moved yet.
+    for side in 0..2 {
+        if !state.sides[side].active_pokemon().fainted() {
+            state.sides[side].active_mut().just_switched_in = false;
         }
     }
     state.turn += 1;
@@ -539,6 +557,42 @@ fn thaw_on_hit(state: &mut State, defender_side: usize, the_move: &Move, log: &m
     });
 }
 
+/// Everything the abilities and items want to say about this hit, gathered before the formula runs.
+///
+/// The Python emits `ON_DAMAGE_CALC` with a base payload and lets handlers fill it in; this builds
+/// the same base and walks the same handlers in the same order. `contact` is a property of the hit
+/// rather than of the move, which is why it is computed here and passed along.
+fn collect_damage_payload(state: &State, side: usize, the_move: &Move, db: &Database) -> Payload {
+    let other = 1 - side;
+    let attacker = state.sides[side].active_pokemon();
+    let defender = state.sides[other].active_pokemon();
+    let (category, contact) = the_move
+        .effects
+        .iter()
+        .find_map(|e| match e {
+            Effect::DamageEffect { category, contact, .. } => Some((category.as_str(), *contact)),
+            _ => None,
+        })
+        .unwrap_or(("STATUS", false));
+    let calc = Calc {
+        move_type: &the_move.move_type,
+        category,
+        // Protective Pads, Long Reach and a Punching Glove all clear the contact flag. All three
+        // are still refused, so none of them can be on the field; they belong here when they land.
+        contact,
+        the_move,
+        attacker,
+        defender,
+        fallen_on_attacker_side: state.sides[side].team.iter().filter(|p| p.fainted()).count(),
+        defender_side_acted: state.sides[other].acted_this_turn,
+        weather: &state.field.weather,
+        db,
+    };
+    let mut payload = Payload::new();
+    apply_damage_calc(state, side, &calc, &mut payload);
+    payload
+}
+
 fn apply_damage(
     state: &mut State,
     side: usize,
@@ -551,6 +605,7 @@ fn apply_damage(
     // Drawn here, in the Python's order: the crit first, then the damage roll. Both are certain
     // to be consumed by the time the formula is entered — see `Rolls`.
     let rolls = Rolls { crit: tape.probability()?, damage: tape.integer(85, 101)? };
+    let payload = collect_damage_payload(state, side, the_move, db);
     let hit = {
         let (mine, theirs) = state.sides.split_at(1);
         let (attacker, defender_side) = if side == 0 {
@@ -558,7 +613,16 @@ fn apply_damage(
         } else {
             (theirs[0].active_pokemon(), &mine[0])
         };
-        calculate_hit(attacker, defender_side.active_pokemon(), the_move, &state.field, defender_side, db, rolls)
+        calculate_hit(
+            attacker,
+            defender_side.active_pokemon(),
+            the_move,
+            &state.field,
+            defender_side,
+            db,
+            rolls,
+            &payload,
+        )
     };
     if hit.is_crit {
         log.push(Event::CriticalHit);

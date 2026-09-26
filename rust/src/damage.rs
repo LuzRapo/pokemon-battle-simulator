@@ -5,10 +5,11 @@
 //! is enough to turn a survival into a knockout. So this is written in the same order, with the
 //! same intermediate truncations, and deliberately not tidied.
 //!
-//! What is missing on purpose: the `payload` modifiers, which in the Python arrive pre-collected
-//! from the ability and item event bus. Until that is ported this engine can only agree with the
-//! Python about battles where nothing on either side modifies damage — which is exactly the class
-//! of scenario the first differential runs are restricted to.
+//! The `payload` is the Python's: a bag of modifiers the abilities and items fill in before the
+//! formula runs. Its fold *positions* are what matter — a modifier applied one step earlier or
+//! later changes the answer by a point, which is enough to turn a survival into a knockout — so
+//! each list is read exactly where `maths/damage.py` reads it, and in the order the handlers
+//! pushed into it.
 
 use crate::battle::{Field, Pokemon, Side};
 use crate::data::{Database, Effect, Move};
@@ -39,7 +40,10 @@ fn crit_chance(stage: i32) -> f64 {
 
 /// A stat for damage, with the crit rule: an attacker's negative boosts are ignored on a crit, and
 /// a defender's positive ones are.
-fn crit_aware(value: i32, stage: i32, is_crit: bool, attacking: bool) -> i32 {
+fn crit_aware(value: i32, stage: i32, is_crit: bool, attacking: bool, ignore_stages: bool) -> i32 {
+    // Unaware's flag is read before the crit rule, as `_crit_aware_*_stat` does: the stage is
+    // simply gone, so there is nothing left for the crit to clamp.
+    let stage = if ignore_stages { 0 } else { stage };
     let stage = if is_crit {
         if attacking {
             stage.max(0)
@@ -86,6 +90,34 @@ pub struct Rolls {
     pub damage: i32,
 }
 
+/// The Python's `Payload`, restricted to the keys the damage formula reads.
+///
+/// Defaulted to "nobody changed anything", which is the same thing as an empty dict on that side.
+#[derive(Debug, Default)]
+pub struct Payload {
+    pub attack_mods_4096: Vec<i64>,
+    pub defense_mods_4096: Vec<i64>,
+    pub power_mods_4096: Vec<i64>,
+    pub pre_screen_mods_4096: Vec<i64>,
+    pub final_mods_4096: Vec<i64>,
+    pub ignore_attack_stages: bool,
+    pub ignore_defense_stages: bool,
+    pub ignore_burn: bool,
+    pub bypass_screens: bool,
+    /// `stab_4096`, which Adaptability raises from the usual 6144.
+    pub stab_4096: i64,
+}
+
+impl Payload {
+    pub fn new() -> Payload {
+        Payload { stab_4096: 6144, ..Default::default() }
+    }
+}
+
+// Eight arguments, because the Python's `calculate_hit` takes the same eight things and this is
+// kept readable against it rather than against a style rule. Bundling them into a context struct
+// would make the two harder to diff, which is the only thing keeping them honest.
+#[allow(clippy::too_many_arguments)]
 pub fn calculate_hit(
     attacker: &Pokemon,
     defender: &Pokemon,
@@ -94,6 +126,7 @@ pub fn calculate_hit(
     defender_side: &Side,
     db: &Database,
     rolls: Rolls,
+    payload: &Payload,
 ) -> Hit {
     let Some((power, category, crit_stage)) = damage_effect(the_move) else {
         return Hit::nothing();
@@ -123,8 +156,29 @@ pub fn calculate_hit(
     } else {
         ("SP_ATTACK", "SP_DEFENCE")
     };
-    let attack = crit_aware(attacker.stat(attack_stat), attacker.stage(attack_stat), is_crit, true);
-    let defense = crit_aware(defender.stat(defense_stat), defender.stage(defense_stat), is_crit, false);
+    let mut attack = crit_aware(
+        attacker.stat(attack_stat),
+        attacker.stage(attack_stat),
+        is_crit,
+        true,
+        payload.ignore_attack_stages,
+    );
+    for modifier in &payload.attack_mods_4096 {
+        attack = chain(attack, *modifier);
+    }
+    let mut defense = crit_aware(
+        defender.stat(defense_stat),
+        defender.stage(defense_stat),
+        is_crit,
+        false,
+        payload.ignore_defense_stages,
+    );
+    for modifier in &payload.defense_mods_4096 {
+        defense = chain(defense, *modifier);
+    }
+    for modifier in &payload.power_mods_4096 {
+        power = chain(power, *modifier);
+    }
 
     let mut damage = ((2 * attacker.level) / 5 + 2) * power * attack / defense / 50 + 2;
 
@@ -136,23 +190,29 @@ pub fn calculate_hit(
     damage = damage * rolls.damage / 100;
 
     if attacker.types.iter().flatten().any(|t| t == &the_move.move_type) {
-        damage = chain(damage, 6144);
+        damage = chain(damage, payload.stab_4096);
     }
 
     damage = (damage as f64 * type_multiplier) as i32;
 
-    if attacker.status == crate::battle::Status::Burn && category == "PHYSICAL" {
+    if attacker.status == crate::battle::Status::Burn && category == "PHYSICAL" && !payload.ignore_burn {
         damage = chain(damage, 2048);
     }
 
-    if !is_crit {
+    for modifier in &payload.pre_screen_mods_4096 {
+        damage = chain(damage, *modifier);
+    }
+
+    if !is_crit && !payload.bypass_screens {
         damage = chain(damage, screen_modifier(category, defender_side));
     }
 
-    // `power` is only read once above; silence the unused-assignment lint honestly rather than
-    // dropping the binding, since the modifier folds land here once abilities are ported.
-    power = power.max(0);
-    let _ = power;
+    // The terrain fold sits here in the Python, unconditional. Nothing in the ported slice can set
+    // a terrain yet, and the state digest compares the field, so a terrain that appeared would be
+    // reported rather than silently ignored; this arrives with the terrain moves.
+    for modifier in &payload.final_mods_4096 {
+        damage = chain(damage, *modifier);
+    }
 
     Hit { amount: damage.max(1), is_crit }
 }
@@ -191,9 +251,12 @@ mod tests {
 
     #[test]
     fn a_crit_ignores_the_attackers_drops_and_the_defenders_boosts() {
-        assert_eq!(crit_aware(100, -2, true, true), 100);
-        assert_eq!(crit_aware(100, -2, false, true), 50);
-        assert_eq!(crit_aware(100, 2, true, false), 100);
-        assert_eq!(crit_aware(100, 2, false, false), 200);
+        assert_eq!(crit_aware(100, -2, true, true, false), 100);
+        assert_eq!(crit_aware(100, -2, false, true, false), 50);
+        assert_eq!(crit_aware(100, 2, true, false, false), 100);
+        assert_eq!(crit_aware(100, 2, false, false, false), 200);
+        // Unaware: the stage is gone before the crit rule ever looks at it.
+        assert_eq!(crit_aware(100, 2, false, false, true), 100);
+        assert_eq!(crit_aware(100, -2, false, true, true), 100);
     }
 }

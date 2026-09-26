@@ -69,6 +69,19 @@ pub struct Move {
     pub healing: bool,
     #[serde(default)]
     pub typeless: bool,
+    // The move flags the abilities read. Each names a class of move — Sharpness boosts every
+    // `slicing` one, Iron Fist every `punching` one — so they are carried through rather than
+    // re-derived from a list of names in a second place.
+    #[serde(default)]
+    pub slicing: bool,
+    #[serde(default)]
+    pub punching: bool,
+    #[serde(default)]
+    pub biting: bool,
+    #[serde(default)]
+    pub pulse: bool,
+    #[serde(default)]
+    pub sound: bool,
     #[serde(default)]
     pub self_switch: bool,
     #[serde(default)]

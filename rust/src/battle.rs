@@ -82,6 +82,12 @@ pub struct Pokemon {
     pub pp: BTreeMap<String, i32>,
     pub lives_used: i32,
     pub made_last_stand: bool,
+    /// True from when this Pokemon was sent out until the end of that turn. Stakeout reads it.
+    pub just_switched_in: bool,
+    /// When this Pokemon's effects were registered on the Python's bus. Handlers at equal priority
+    /// fire in registration order, and a fold of `chain` modifiers is not commutative, so the
+    /// order two abilities push into the same list is worth a point of damage.
+    pub registered_at: u64,
 }
 
 pub const STAGE_NAMES: [&str; 7] = [
@@ -192,6 +198,11 @@ impl Pokemon {
             pp,
             lives_used: 0,
             made_last_stand: false,
+            // True from the moment it is built, as the Python's field default is: a lead has
+            // just as much arrived as anything switched in later, and Stakeout punishes it on turn
+            // zero exactly the same way.
+            just_switched_in: true,
+            registered_at: 0,
         })
     }
 
@@ -236,11 +247,20 @@ pub struct Side {
     pub hazards: BTreeMap<String, i32>,
     pub screens: BTreeMap<String, i32>,
     pub tailwind_turns: i32,
+    /// Whether this side has already taken its action this turn. Analytic reads it.
+    pub acted_this_turn: bool,
 }
 
 impl Side {
     pub fn new(team: Vec<Pokemon>) -> Self {
-        Side { team, active: 0, hazards: BTreeMap::new(), screens: BTreeMap::new(), tailwind_turns: 0 }
+        Side {
+            team,
+            active: 0,
+            hazards: BTreeMap::new(),
+            screens: BTreeMap::new(),
+            tailwind_turns: 0,
+            acted_this_turn: false,
+        }
     }
 
     pub fn active_pokemon(&self) -> &Pokemon {
@@ -298,11 +318,26 @@ pub struct State {
     pub field: Field,
     pub turn: i32,
     pub outcome: Option<Outcome>,
+    /// Hands out `registered_at` stamps. Side 0's lead registers before side 1's, which is the
+    /// order `BattleState` wires them up in.
+    pub registrations: u64,
 }
 
 impl State {
     pub fn new(first: Side, second: Side) -> Self {
-        State { sides: [first, second], field: Field::default(), turn: 0, outcome: None }
+        let mut state =
+            State { sides: [first, second], field: Field::default(), turn: 0, outcome: None, registrations: 0 };
+        for side in 0..2 {
+            state.register_active(side);
+        }
+        state
+    }
+
+    /// Stamp whoever is active on this side as freshly registered.
+    pub fn register_active(&mut self, side: usize) {
+        self.registrations += 1;
+        let stamp = self.registrations;
+        self.sides[side].active_mut().registered_at = stamp;
     }
 
     /// The Python's `_update_outcome`: a side with nothing left standing has lost, and both at once

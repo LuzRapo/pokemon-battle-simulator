@@ -8,6 +8,7 @@
 //!
 //! Nothing here re-interprets Showdown's data files; see `data.rs`.
 
+pub mod abilities;
 pub mod battle;
 pub mod damage;
 pub mod data;

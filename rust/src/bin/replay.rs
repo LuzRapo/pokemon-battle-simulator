@@ -116,6 +116,20 @@ fn state_digest(state: &State) -> serde_json::Value {
 }
 
 fn main() {
+    // `replay --ported` prints what this engine has actually implemented, so the scenario
+    // generator can restrict itself to that without a second copy of the list drifting out of
+    // step with the first. A hand-kept duplicate is how the coded-move list fell behind.
+    if std::env::args().nth(1).as_deref() == Some("--ported") {
+        println!(
+            "{}",
+            json!({
+                "abilities": pokemon_engine::abilities::PORTED.as_slice(),
+                "items": pokemon_engine::turn::PORTED_ITEMS.as_slice(),
+                "coded_moves": pokemon_engine::turn::PORTED_CODED_MOVES.as_slice(),
+            })
+        );
+        return;
+    }
     let mut args = std::env::args().skip(1);
     let (scenario_path, data_dir) = match (args.next(), args.next()) {
         (Some(s), Some(d)) => (s, d),

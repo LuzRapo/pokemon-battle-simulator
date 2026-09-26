@@ -107,18 +107,37 @@ def _status_and_stage_move_names() -> list[str]:
     )
 
 
+def _ported() -> dict[str, list[str]]:
+    """What the Rust engine says it has implemented.
+
+    Asked of the binary rather than kept here, so the generator cannot drift out of step with the
+    engine — which is exactly how the coded-move list went stale and let Last Resort through.
+    """
+    if not BINARY.exists():
+        return {"abilities": [], "items": [], "coded_moves": []}
+    out = subprocess.run([str(BINARY), "--ported"], capture_output=True, text=True, check=True).stdout
+    listed: dict[str, list[str]] = json.loads(out)
+    return listed
+
+
+PORTED = _ported()
 PLAIN_MOVES = _plain_move_names()
 STATUS_MOVES = _status_and_stage_move_names()
 
 
-def _team(rng: random.Random, size: int = 2, pool: list[str] | None = None) -> list[PokemonSpec]:
+def _team(
+    rng: random.Random, size: int = 2, pool: list[str] | None = None, abilities: bool = False
+) -> list[PokemonSpec]:
     moves = pool if pool is not None else PLAIN_MOVES
+    # NONE stays in the draw so that "no ability" keeps being tested alongside the ported ones,
+    # and so a mixed board — one side with an ability, one without — happens often.
+    choices = [Ability.NONE, *(Ability[name] for name in PORTED["abilities"])] if abilities else [Ability.NONE]
     return [
         PokemonSpec(
             species=rng.choice(PLAIN_SPECIES),
             nickname=f"P{index}",
             level=50,
-            ability=Ability.NONE,
+            ability=rng.choice(choices),
             item=Item.NONE,
             nature=Nature.HARDY,
             effort_values=EVs(),
@@ -214,6 +233,45 @@ def test_a_move_it_has_not_learned_is_refused_rather_than_guessed(tmp_path: Path
     theirs = _rust_trace(scenario, tmp_path)
 
     assert isinstance(theirs, str) and "Leech Seed" in theirs, theirs
+
+
+@needs_rust
+@pytest.mark.parametrize("seed", range(25))
+def test_the_ported_abilities_agree_too(seed: int, tmp_path: Path) -> None:
+    """The same battles, with an ability on nearly every Pokemon.
+
+    Which abilities is not decided here — the binary is asked. A list kept on this side would be
+    free to fall behind the engine, and quietly testing forty-six of forty-seven is the kind of
+    green run this project is built to distrust.
+    """
+    rng = random.Random(2000 + seed)
+    teams = (
+        _team(rng, size=3, pool=STATUS_MOVES, abilities=True),
+        _team(rng, size=3, pool=STATUS_MOVES, abilities=True),
+    )
+    scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=60)
+
+    theirs = _rust_trace(scenario, tmp_path)
+
+    if isinstance(theirs, str):
+        pytest.skip(f"outside the ported slice: {theirs}")
+    divergence = compare(expected, theirs)
+    assert divergence is None, f"seed {seed}\n{divergence}"
+
+
+@needs_rust
+def test_every_ported_ability_reaches_a_battle() -> None:
+    """A guard against testing nothing.
+
+    The ability tests would pass just as happily if the generator never picked half these names, so
+    this asserts the draw actually reaches all of them. It is the cheap half of the check; the
+    expensive half is that turning the ability dispatch off makes 187 of 200 swept battles diverge.
+    """
+    rng = random.Random(0)
+    drawn = {spec.ability.name for _ in range(400) for spec in _team(rng, size=3, abilities=True)}
+
+    missing = set(PORTED["abilities"]) - drawn
+    assert not missing, f"never generated: {sorted(missing)}"
 
 
 @needs_rust

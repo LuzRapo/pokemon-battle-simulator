@@ -73,14 +73,19 @@ def _chooser(rng: random.Random, switches: bool):  # type: ignore[no-untyped-def
     return choose
 
 
-def sweep(battles: int, which: str, team_size: int, switches: bool, max_turns: int, quiet: bool) -> Result:
+def sweep(
+    battles: int, which: str, team_size: int, switches: bool, max_turns: int, quiet: bool, abilities: bool
+) -> Result:
     pool = SLICES[which]
     result = Result()
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "scenario.json"
         for seed in range(battles):
             rng = _teams_rng(which, seed)
-            teams = (_team(rng, size=team_size, pool=pool), _team(rng, size=team_size, pool=pool))
+            teams = (
+                _team(rng, size=team_size, pool=pool, abilities=abilities),
+                _team(rng, size=team_size, pool=pool, abilities=abilities),
+            )
             scenario, expected = record(teams, _chooser(rng, switches), seed=seed, max_turns=max_turns)
             path.write_text(scenario.to_json())
             run = subprocess.run([str(BINARY), str(path), str(DATA)], capture_output=True, text=True)
@@ -130,7 +135,9 @@ def _keep(scenario: Scenario, seed: int, which: str, quiet: bool) -> None:
     (out / f"{which}-{seed}.json").write_text(scenario.to_json())
 
 
-def explain(battles: int, which: str, team_size: int, switches: bool, max_turns: int, seed: int) -> int:
+def explain(
+    battles: int, which: str, team_size: int, switches: bool, max_turns: int, seed: int, abilities: bool
+) -> int:
     """Re-run one seed and show the first turn the two engines describe differently.
 
     The tape message says *where* the engines parted, which is almost never *why*: by the time one
@@ -139,7 +146,10 @@ def explain(battles: int, which: str, team_size: int, switches: bool, max_turns:
     accounts of it side by side. That turn is the bug; everything after it is consequence.
     """
     rng = _teams_rng(which, seed)
-    teams = (_team(rng, size=team_size, pool=SLICES[which]), _team(rng, size=team_size, pool=SLICES[which]))
+    teams = (
+        _team(rng, size=team_size, pool=SLICES[which], abilities=abilities),
+        _team(rng, size=team_size, pool=SLICES[which], abilities=abilities),
+    )
     scenario, expected = record(teams, _chooser(rng, switches), seed=seed, max_turns=max_turns)
 
     with tempfile.TemporaryDirectory() as directory:
@@ -188,6 +198,7 @@ def main() -> int:
     parser.add_argument("--team-size", type=int, default=3)
     parser.add_argument("--max-turns", type=int, default=60)
     parser.add_argument("--switches", action="store_true", help="let either side switch sometimes")
+    parser.add_argument("--abilities", action="store_true", help="give Pokemon abilities the engine has ported")
     parser.add_argument("--quiet", action="store_true", help="do not write failing scenarios to rust/failures/")
     parser.add_argument("--explain", type=int, metavar="SEED", help="show the first turn one seed disagrees on")
     args = parser.parse_args()
@@ -197,9 +208,13 @@ def main() -> int:
         return 1
 
     if args.explain is not None:
-        return explain(args.battles, args.which, args.team_size, args.switches, args.max_turns, args.explain)
+        return explain(
+            args.battles, args.which, args.team_size, args.switches, args.max_turns, args.explain, args.abilities
+        )
 
-    result = sweep(args.battles, args.which, args.team_size, args.switches, args.max_turns, args.quiet)
+    result = sweep(
+        args.battles, args.which, args.team_size, args.switches, args.max_turns, args.quiet, args.abilities
+    )
     total = args.battles
     refused = sum(result.unported.values())
     print(f"{result.agreed}/{total} agreed  |  {refused} unported  |  {len(result.diverged)} DIVERGED")
