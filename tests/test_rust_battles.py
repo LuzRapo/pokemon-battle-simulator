@@ -14,6 +14,7 @@ project goes wrong is the day "unsupported" starts being reported as "agrees".
 import json
 import random
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -80,20 +81,21 @@ def _plain_move_names() -> list[str]:
 
 
 def _status_and_stage_move_names() -> list[str]:
-    """The wider slice: moves that also inflict a real status or move stat stages.
+    """The wider slice: moves that also inflict a status, move stat stages, or land a volatile.
 
-    Volatiles (confusion, Leech Seed, Substitute) are excluded — they are the next milestone, not
-    this one. A move whose status is a volatile is refused by the binary anyway; keeping it out of
-    the generator is what makes these runs actually compare something rather than skip.
+    Which volatiles count is asked of the binary rather than listed here — flinch and confusion
+    today, more later — so widening the engine widens the generator without a second edit. A move
+    carrying a volatile the engine does not know is refused, and a refusal is a skipped battle
+    rather than a compared one, which is exactly the waste this keeps in step.
     """
-    real_statuses = {"BURN", "FREEZE", "PARALYSIS", "POISON", "TOXIC", "SLEEP"}
+    landable = {"BURN", "FREEZE", "PARALYSIS", "POISON", "TOXIC", "SLEEP", *PORTED["volatiles"]}
 
     def ported(effect: object) -> bool:
         kind = type(effect).__name__
         if kind == "StatStageChangeEffect":
             return True
         if kind == "InflictStatusEffect":
-            return getattr(getattr(effect, "status", None), "name", None) in real_statuses
+            return getattr(getattr(effect, "status", None), "name", None) in landable
         return kind == "DamageEffect" and _plain_damage(effect)
 
     coded = set(json.loads((DATA / "rules.json").read_text())["coded_moves"])
@@ -295,6 +297,33 @@ def test_the_ported_items_agree_too(tmp_path: Path) -> None:
         if divergence is not None:
             failures.append(f"seed {seed}: {divergence}")
     assert not failures, "\n".join(failures)
+
+
+@needs_rust
+def test_the_ported_volatiles_actually_land_in_the_swept_battles() -> None:
+    """Flinches and confusions have to happen, not merely be permitted.
+
+    Agreement is cheap if a feature never fires — a battle in which nobody ever flinched agrees
+    about flinching perfectly. So this counts the entries the Python's own trace carries, which is
+    the same trace the Rust engine is compared against.
+    """
+    seen: Counter[str] = Counter()
+    for seed in range(40):
+        rng = random.Random(9000 + seed)
+        teams = (
+            _team(rng, size=3, pool=STATUS_MOVES, abilities=True, items=True),
+            _team(rng, size=3, pool=STATUS_MOVES, abilities=True, items=True),
+        )
+        _, expected = record(teams, _chooser(rng), seed=seed, max_turns=60)
+        for turn in expected:
+            for event in turn["events"]:
+                if event["type"] == "VolatileInflicted":
+                    seen[event["volatile"]] += 1
+                elif event["type"] in ("ConfusionSelfHit", "CantAct"):
+                    seen[event.get("reason") or "self_hit"] += 1
+
+    for wanted in ("FLINCH", "CONFUSION", "flinch", "confused", "self_hit"):
+        assert seen[wanted] > 0, f"{wanted} never happened across 40 battles: {dict(seen)}"
 
 
 @needs_rust

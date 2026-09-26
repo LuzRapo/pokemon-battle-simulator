@@ -23,6 +23,18 @@ pub enum Event {
     /// this by checking whether the log grew, so it is a statement about the log rather than about
     /// the move, and it is ported the same way.
     MoveFailed,
+    /// A volatile taking hold — a flinch, a confusion.
+    VolatileInflicted {
+        side: i32,
+        pokemon: String,
+        volatile: String,
+    },
+    /// A confused Pokemon hitting itself instead of acting.
+    ConfusionSelfHit {
+        side: i32,
+        pokemon: String,
+        amount: i32,
+    },
     /// Rough Skin, Iron Barbs, Aftermath: an ability taking a bite out of whoever touched it.
     AbilityChipDamage {
         side: i32,

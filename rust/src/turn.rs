@@ -147,6 +147,12 @@ fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'
 /// sweep.
 pub const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
 
+/// The volatiles this engine knows. Everything else in `ExtraStatus` still makes a move unplayable.
+///
+/// These two are most of what volatiles actually are in practice: 32 moves can flinch and 18 can
+/// confuse, against one apiece for Leech Seed, Taunt, Encore and the rest.
+pub const PORTED_VOLATILES: [&str; 2] = ["FLINCH", "CONFUSION"];
+
 /// Everything this engine has implemented, gathered from the modules that implement it so a name
 /// cannot be claimed in one place and missing from the other.
 ///
@@ -210,7 +216,9 @@ pub fn unsupported_reason(the_move: &Move, db: &Database) -> Option<String> {
             | Effect::DamageEffect { recoil_percent: Some(_), .. } => {
                 return Some(format!("{} drains or recoils", the_move.name))
             }
-            Effect::InflictStatusEffect { status, .. } if Status::parse(status).is_none() => {
+            Effect::InflictStatusEffect { status, .. }
+                if Status::parse(status).is_none() && !PORTED_VOLATILES.contains(&status.as_str()) =>
+            {
                 return Some(format!("{} inflicts {status}, which is a volatile", the_move.name))
             }
             _ => {}
@@ -310,6 +318,39 @@ pub fn step(
     Ok(log)
 }
 
+/// `_confusion_allows_acting`: tick the counter, then a third of the time hurt yourself instead.
+///
+/// The odd branch is the last one, and it is the Python's: on the two-thirds where the Pokemon does
+/// *not* hit itself, a `CantAct` entry is logged with reason "confused" and then the move goes off
+/// anyway. Reproduced as written — this engine's job is to agree with that one.
+fn confusion_allows_acting(state: &mut State, side: usize, tape: &mut Tape, log: &mut Log) -> Result<bool, Refusal> {
+    let pokemon = state.sides[side].active_mut();
+    let left = pokemon.volatiles.get("CONFUSION").copied().unwrap_or(0) - 1;
+    pokemon.volatiles.insert("CONFUSION".to_string(), left);
+    let nickname = pokemon.nickname.clone();
+    if left <= 0 {
+        state.sides[side].active_mut().volatiles.remove("CONFUSION");
+        log.push(Event::StatusCleared {
+            side: side as i32,
+            pokemon: nickname,
+            clearance: "confusion_ended".into(),
+        });
+        return Ok(true);
+    }
+    if tape.probability()? < 1.0 / 3.0 {
+        let pokemon = state.sides[side].active_mut();
+        // Its own Attack against its own Defence, 40 base power, typeless and never a crit.
+        let attack = pokemon.effective("ATTACK");
+        let defence = pokemon.effective("DEFENCE");
+        let amount = std::cmp::max(1, ((2 * pokemon.level) / 5 + 2) * 40 * attack / defence / 50 + 2);
+        pokemon.take_damage(amount);
+        log.push(Event::ConfusionSelfHit { side: side as i32, pokemon: nickname, amount });
+        return Ok(false);
+    }
+    log.push(Event::CantAct { side: side as i32, pokemon: nickname, reason: "confused".into() });
+    Ok(true)
+}
+
 /// Withdraw whatever is active and send out `to`, returning the outgoing nickname.
 ///
 /// The resets are `switching._execute_switch`'s, and they are the point of the function: a Pokemon
@@ -340,31 +381,38 @@ fn switch_out(side: &mut Side, to: usize) -> String {
 /// Sides are ticked in order, which is the order the Python emits `ON_RESIDUAL` for them.
 fn residuals(state: &mut State, log: &mut Log) {
     for side in 0..2 {
-        let active = state.sides[side].active_mut();
-        if active.fainted() {
+        if state.sides[side].active_pokemon().fainted() {
             continue;
         }
-        let (source, amount) = match active.status {
-            Status::Burn => ("burn", (active.totals.hp / 16).max(1)),
-            Status::Poison => ("poison", (active.totals.hp / 8).max(1)),
-            Status::Toxic => {
-                active.status_turns += 1;
-                ("toxic", (active.totals.hp * active.status_turns / 16).max(1))
-            }
-            _ => continue,
-        };
-        let dealt = active.take_damage(amount);
-        let nickname = active.nickname.clone();
-        let fainted = active.fainted();
-        log.push(Event::ResidualDamage {
-            side: side as i32,
-            pokemon: nickname.clone(),
-            source: source.into(),
-            amount: dealt,
-        });
-        if fainted {
-            log.push(Event::Fainted { side: side as i32, pokemon: nickname });
+        status_chip(state, side, log);
+        // `_tick_volatiles`, which runs for the active whatever its status was — including one
+        // that just fainted to the chip above. A flinch lasts exactly the turn it was inflicted.
+        state.sides[side].active_mut().volatiles.remove("FLINCH");
+    }
+}
+
+fn status_chip(state: &mut State, side: usize, log: &mut Log) {
+    let active = state.sides[side].active_mut();
+    let (source, amount) = match active.status {
+        Status::Burn => ("burn", (active.totals.hp / 16).max(1)),
+        Status::Poison => ("poison", (active.totals.hp / 8).max(1)),
+        Status::Toxic => {
+            active.status_turns += 1;
+            ("toxic", (active.totals.hp * active.status_turns / 16).max(1))
         }
+        _ => return,
+    };
+    let dealt = active.take_damage(amount);
+    let nickname = active.nickname.clone();
+    let fainted = active.fainted();
+    log.push(Event::ResidualDamage {
+        side: side as i32,
+        pokemon: nickname.clone(),
+        source: source.into(),
+        amount: dealt,
+    });
+    if fainted {
+        log.push(Event::Fainted { side: side as i32, pokemon: nickname });
     }
 }
 
@@ -413,7 +461,20 @@ fn can_act(
             return Ok(false);
         }
     }
+    // Flinch, then confusion, then paralysis — the Python's order, and therefore the order the
+    // draws come off the tape. Confusion rolls before paralysis does, which matters on any turn
+    // where both could fire.
+    if state.sides[side].active_pokemon().volatiles.contains_key("FLINCH") {
+        log.push(Event::CantAct { side: side as i32, pokemon: nickname, reason: "flinch".into() });
+        return Ok(false);
+    }
+    if state.sides[side].active_pokemon().volatiles.contains_key("CONFUSION")
+        && !confusion_allows_acting(state, side, tape, log)?
+    {
+        return Ok(false);
+    }
     if state.sides[side].active_pokemon().status == Status::Paralysis && tape.probability()? < 0.25 {
+        let nickname = state.sides[side].active_pokemon().nickname.clone();
         log.push(Event::CantAct { side: side as i32, pokemon: nickname, reason: "paralysis".into() });
         return Ok(false);
     }
@@ -722,10 +783,46 @@ fn apply_status(
     if tape.probability()? >= probability {
         return Ok(());
     }
-    let status = Status::parse(status_name)
-        .ok_or_else(|| Refusal::Unported(format!("{status_name} is a volatile, which is not ported")))?;
     let target_side = if to_self { side } else { 1 - side };
-    apply_main_status(state, target_side, status, tape, log)
+    match Status::parse(status_name) {
+        Some(status) => apply_main_status(state, target_side, status, tape, log),
+        None if PORTED_VOLATILES.contains(&status_name) => {
+            apply_volatile(state, target_side, status_name, tape, log)
+        }
+        None => Err(Refusal::Unported(format!("{status_name} is a volatile, which is not ported"))),
+    }
+}
+
+/// `_apply_volatile`, for the two this engine knows.
+///
+/// A volatile already present is not re-applied and — this is the part that matters — takes no
+/// duration draw either, because the Python's `elif effect.status not in target.volatiles` skips
+/// the whole branch. Inner Focus and Own Tempo would block these outright; both are still refused.
+fn apply_volatile(
+    state: &mut State,
+    target_side: usize,
+    volatile: &str,
+    tape: &mut Tape,
+    log: &mut Log,
+) -> Result<(), Refusal> {
+    if state.sides[target_side].active_pokemon().volatiles.contains_key(volatile) {
+        return Ok(());
+    }
+    // `_initial_volatile_duration`: a span whose ends are adjacent is a constant and costs no draw,
+    // which is why a flinch never touches the tape and a confusion always does.
+    let turns = match volatile {
+        "CONFUSION" => tape.integer(2, 6)?,
+        _ => 1,
+    };
+    let pokemon = state.sides[target_side].active_mut();
+    pokemon.volatiles.insert(volatile.to_string(), turns);
+    let nickname = pokemon.nickname.clone();
+    log.push(Event::VolatileInflicted {
+        side: target_side as i32,
+        pokemon: nickname,
+        volatile: volatile.to_string(),
+    });
+    Ok(())
 }
 
 /// `_apply_main_status`: everything after whatever roll decided the status should be attempted.
