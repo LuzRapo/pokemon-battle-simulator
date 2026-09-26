@@ -110,9 +110,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -151,9 +154,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 2
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -203,9 +209,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_DEFENCE": -2
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -404,9 +413,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 2
-     },
+     "stages": [
+      [
+       "SPEED",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -612,9 +624,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_DEFENCE": 2
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -707,13 +722,28 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "ATTACK": 1,
-      "DEFENCE": 1,
-      "SPEED": 1,
-      "SP_ATTACK": 1,
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "DEFENCE",
+       1
+      ],
+      [
+       "SP_ATTACK",
+       1
+      ],
+      [
+       "SP_DEFENCE",
+       1
+      ],
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -763,9 +793,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -932,9 +965,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 1
-     },
+     "stages": [
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -1027,10 +1063,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1,
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ],
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -1445,9 +1487,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 1
-     },
+     "stages": [
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -1497,9 +1542,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -1574,9 +1622,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 2
-     },
+     "stages": [
+      [
+       "SPEED",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -1708,9 +1759,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -1884,9 +1938,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 2
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -2422,9 +2479,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -2617,9 +2677,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.3,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -3350,9 +3413,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -3531,9 +3597,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -3583,9 +3652,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -3678,9 +3750,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -3719,10 +3794,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1,
-      "DEFENCE": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -3772,9 +3853,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -4027,10 +4111,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": 1,
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       1
+      ],
+      [
+       "SP_DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -4100,9 +4190,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -2
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -4215,9 +4308,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -4267,9 +4363,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.7,
-     "stages": {
-      "SP_ATTACK": 1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -4308,9 +4407,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -2
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -4410,9 +4512,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -4709,13 +4814,28 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1,
-      "DEFENCE": 1,
-      "SPEED": 1,
-      "SP_ATTACK": 1,
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "DEFENCE",
+       1
+      ],
+      [
+       "SP_ATTACK",
+       1
+      ],
+      [
+       "SP_DEFENCE",
+       1
+      ],
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -4808,10 +4928,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1,
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ],
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -4850,11 +4976,20 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ACCURACY": 1,
-      "ATTACK": 1,
-      "DEFENCE": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "DEFENCE",
+       1
+      ],
+      [
+       "ACCURACY",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -5063,9 +5198,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -5204,9 +5342,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -5412,10 +5553,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 1,
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       1
+      ],
+      [
+       "SP_DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -5454,9 +5601,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 3
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       3
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -5495,9 +5645,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -2
-     },
+     "stages": [
+      [
+       "SPEED",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -5829,9 +5982,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.2,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -5881,9 +6037,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.5,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -6218,10 +6377,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 2,
-      "SP_ATTACK": 2
-     },
+     "stages": [
+      [
+       "ATTACK",
+       2
+      ],
+      [
+       "SP_ATTACK",
+       2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -6260,10 +6425,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 1,
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       1
+      ],
+      [
+       "SP_DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -6302,9 +6473,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -6343,9 +6517,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "EVASION": -1
-     },
+     "stages": [
+      [
+       "EVASION",
+       -1
+      ]
+     ],
      "target": "TARGET"
     },
     {
@@ -6477,9 +6654,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 2
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -7183,9 +7363,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "EVASION": 1
-     },
+     "stages": [
+      [
+       "EVASION",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -7235,9 +7418,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -2
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -7287,10 +7473,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1,
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ],
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -7422,10 +7614,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1,
-      "SPEED": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -7995,9 +8193,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -8232,9 +8433,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -8359,9 +8563,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -2
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -8693,9 +8900,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -8941,9 +9151,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -9071,9 +9284,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 1
-     },
+     "stages": [
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -9501,9 +9717,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_DEFENCE": -2
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -9628,9 +9847,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -2
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -9852,9 +10074,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.5,
-     "stages": {
-      "SP_ATTACK": 1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -9943,11 +10168,20 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 2,
-      "SPEED": 2,
-      "SP_ATTACK": 2
-     },
+     "stages": [
+      [
+       "ATTACK",
+       2
+      ],
+      [
+       "SP_ATTACK",
+       2
+      ],
+      [
+       "SPEED",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -10141,9 +10375,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -10545,9 +10782,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 1
-     },
+     "stages": [
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -10736,9 +10976,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -10788,9 +11031,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -10836,9 +11082,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": 1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -10888,9 +11137,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -2
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -11205,9 +11457,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -12176,11 +12431,20 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 2,
-      "SP_ATTACK": 2,
-      "SP_DEFENCE": 2
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       2
+      ],
+      [
+       "SP_DEFENCE",
+       2
+      ],
+      [
+       "SPEED",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -12402,9 +12666,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -12740,9 +13007,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -12817,9 +13087,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -12858,10 +13131,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1,
-      "SP_ATTACK": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "SP_ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -13213,9 +13492,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -13285,9 +13567,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -13496,10 +13781,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1,
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ],
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -14869,10 +15160,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ACCURACY": 1,
-      "ATTACK": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "ACCURACY",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -15410,9 +15707,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -15787,9 +16087,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -16071,9 +16374,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -16429,9 +16735,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 2
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -16531,9 +16840,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.3,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -16830,9 +17142,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -17349,9 +17664,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -2
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -17401,9 +17719,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.5,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -17524,9 +17845,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -17705,9 +18029,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.2,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -17870,9 +18197,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -17953,9 +18283,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_DEFENCE": -2
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -18040,9 +18373,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -18092,9 +18428,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.5,
-     "stages": {
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -18576,9 +18915,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -18779,9 +19121,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -19023,10 +19368,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -2,
-      "SP_ATTACK": -2
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -2
+      ],
+      [
+       "SP_ATTACK",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -19107,9 +19458,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "ATTACK": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -19148,9 +19502,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_DEFENCE": -2
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -19286,9 +19643,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.2,
-     "stages": {
-      "ATTACK": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -19542,9 +19902,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "EVASION": 2
-     },
+     "stages": [
+      [
+       "EVASION",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -19701,9 +20064,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.3,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -19784,9 +20150,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.5,
-     "stages": {
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -19915,9 +20284,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.3,
-     "stages": {
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -20184,9 +20556,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.3,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -20236,9 +20611,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.3,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -20288,9 +20666,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -20340,9 +20721,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -20466,9 +20850,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -20518,9 +20905,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": 1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -20559,9 +20949,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": 2
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -20760,9 +21153,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.4,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -20963,10 +21359,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1,
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ],
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -21005,13 +21407,28 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1,
-      "DEFENCE": 1,
-      "SPEED": 1,
-      "SP_ATTACK": 1,
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "DEFENCE",
+       1
+      ],
+      [
+       "SP_ATTACK",
+       1
+      ],
+      [
+       "SP_DEFENCE",
+       1
+      ],
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -21243,9 +21660,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.5,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -21365,13 +21785,28 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "ATTACK": 1,
-      "DEFENCE": 1,
-      "SPEED": 1,
-      "SP_ATTACK": 1,
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "DEFENCE",
+       1
+      ],
+      [
+       "SP_ATTACK",
+       1
+      ],
+      [
+       "SP_DEFENCE",
+       1
+      ],
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -21421,9 +21856,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -21609,9 +22047,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -2
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -21728,10 +22169,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1,
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ],
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -22202,9 +22649,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -22254,9 +22704,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -22759,9 +23212,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -23145,9 +23601,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -23489,9 +23948,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -23663,9 +24125,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -2
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -23820,9 +24285,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -24256,11 +24724,20 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 1,
-      "SP_ATTACK": 1,
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       1
+      ],
+      [
+       "SP_DEFENCE",
+       1
+      ],
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -24556,9 +25033,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 1
-     },
+     "stages": [
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     },
     {
@@ -24655,9 +25135,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.5,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -25452,9 +25935,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 2
-     },
+     "stages": [
+      [
+       "SPEED",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -25554,9 +26040,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.5,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -25649,9 +26138,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -26182,9 +26674,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -26455,9 +26950,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -2
-     },
+     "stages": [
+      [
+       "SPEED",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -26589,9 +27087,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -2
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -26827,9 +27328,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.4,
-     "stages": {
-      "SP_DEFENCE": -2
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -26959,9 +27463,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.2,
-     "stages": {
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -27011,9 +27518,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.2,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -27224,9 +27734,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -27387,13 +27900,28 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 2,
-      "DEFENCE": -1,
-      "SPEED": 2,
-      "SP_ATTACK": 2,
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ],
+      [
+       "SP_DEFENCE",
+       -1
+      ],
+      [
+       "ATTACK",
+       2
+      ],
+      [
+       "SP_ATTACK",
+       2
+      ],
+      [
+       "SPEED",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -27475,9 +28003,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 2
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -27516,10 +28047,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1,
-      "SPEED": 2
-     },
+     "stages": [
+      [
+       "SPEED",
+       2
+      ],
+      [
+       "ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -27736,13 +28273,28 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "ATTACK": 1,
-      "DEFENCE": 1,
-      "SPEED": 1,
-      "SP_ATTACK": 1,
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "DEFENCE",
+       1
+      ],
+      [
+       "SP_ATTACK",
+       1
+      ],
+      [
+       "SP_DEFENCE",
+       1
+      ],
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -27932,9 +28484,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -28673,9 +29228,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ACCURACY": -1
-     },
+     "stages": [
+      [
+       "ACCURACY",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -28775,9 +29333,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -29376,10 +29937,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 2,
-      "DEFENCE": -2
-     },
+     "stages": [
+      [
+       "ATTACK",
+       2
+      ],
+      [
+       "DEFENCE",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -29581,9 +30148,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -2
-     },
+     "stages": [
+      [
+       "SPEED",
+       -2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -29633,9 +30203,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -29891,9 +30464,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.3,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -30165,9 +30741,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.1,
-     "stages": {
-      "DEFENCE": 1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -30666,9 +31245,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -2
-     },
+     "stages": [
+      [
+       "SPEED",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -30761,9 +31343,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -31167,10 +31752,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1,
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ],
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -31344,9 +31935,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 2
-     },
+     "stages": [
+      [
+       "ATTACK",
+       2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -31455,9 +32049,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "EVASION": -2
-     },
+     "stages": [
+      [
+       "EVASION",
+       -2
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -31574,9 +32171,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 2
-     },
+     "stages": [
+      [
+       "ATTACK",
+       2
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -31825,9 +32425,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": 3
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       3
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -31912,9 +32515,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -32032,10 +32638,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": 1,
-      "SP_DEFENCE": 1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       1
+      ],
+      [
+       "SP_DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     },
     {
@@ -32077,9 +32689,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -32157,10 +32772,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1,
-      "SP_ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ],
+      [
+       "SP_ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -33029,9 +33650,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -33209,10 +33833,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1,
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ],
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -33251,10 +33881,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1,
-      "SPEED": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     },
     {
@@ -33338,9 +33974,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": 1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -33492,9 +34131,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -33544,9 +34186,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SPEED": 1
-     },
+     "stages": [
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -33776,9 +34421,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 0.5,
-     "stages": {
-      "DEFENCE": -1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       -1
+      ]
+     ],
      "target": "TARGET"
     },
     {
@@ -33973,9 +34621,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": -1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       -1
+      ]
+     ],
      "target": "TARGET"
     }
    ],
@@ -34384,11 +35035,20 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": -1,
-      "SPEED": -1,
-      "SP_DEFENCE": -1
-     },
+     "stages": [
+      [
+       "SPEED",
+       -1
+      ],
+      [
+       "DEFENCE",
+       -1
+      ],
+      [
+       "SP_DEFENCE",
+       -1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -34501,11 +35161,20 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1,
-      "DEFENCE": 1,
-      "SPEED": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "DEFENCE",
+       1
+      ],
+      [
+       "SPEED",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -34820,9 +35489,12 @@
      "is_secondary": true,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "SP_ATTACK": 1
-     },
+     "stages": [
+      [
+       "SP_ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -35668,9 +36340,12 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "DEFENCE": 1
-     },
+     "stages": [
+      [
+       "DEFENCE",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],
@@ -35788,10 +36463,16 @@
      "is_secondary": false,
      "kind": "StatStageChangeEffect",
      "probability": 1.0,
-     "stages": {
-      "ATTACK": 1,
-      "SP_ATTACK": 1
-     },
+     "stages": [
+      [
+       "ATTACK",
+       1
+      ],
+      [
+       "SP_ATTACK",
+       1
+      ]
+     ],
      "target": "SELF"
     }
    ],

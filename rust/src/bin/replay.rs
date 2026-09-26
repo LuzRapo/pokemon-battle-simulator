@@ -3,10 +3,13 @@
 //!
 //!     replay <scenario.json> <data-dir>
 //!
-//! Exit 0 with a trace on stdout, or exit 2 with a reason on stderr when the scenario needs
-//! something this engine has not learned yet. The second case is not a failure of the comparison —
-//! it is this engine declining to guess, which is the only honest thing it can do while most of the
-//! game is still unported.
+//! Exit 0 with a trace on stdout; exit 2 with a reason on stderr when the scenario needs something
+//! this engine has not learned yet; exit 3 when the recorded randomness shows the two engines have
+//! already taken different paths.
+//!
+//! 2 and 3 are different on purpose. A 2 is this engine declining to guess, which is the only
+//! honest thing it can do while most of the game is unported, and the harness may skip it. A 3 is a
+//! real disagreement and must fail the run.
 
 use pokemon_engine::battle::{Pokemon, Side, Spec, State, SLOT_NAMES, STAGE_NAMES};
 use pokemon_engine::data::Database;
@@ -149,20 +152,31 @@ fn main() {
         ];
         let log = match step(&mut state, chosen, &db, &mut tape) {
             Ok(log) => log,
-            Err(why) => fail(&why.0),
+            Err(why) => stop(why.exit_code(), why.reason()),
         };
         turns.push(json!({
             "actions": pair,
             "events": log.entries,
             "state": state_digest(&state),
+            // How far into the tape this engine has read. The Python writes the same number, so a
+            // turn where the two took a different count of draws is caught at that turn rather
+            // than whenever the mismatch happens to change the kind of number being asked for.
+            "drawn": tape.position(),
         }));
     }
     println!("{}", serde_json::Value::Array(turns));
 }
 
-/// Exit 2 and say why. Every refusal in this binary goes through here so "we cannot play this" is
-/// always distinguishable from "we played it and got a different answer".
+/// Exit 2 and say why: the scenario needs something this engine has not learned. Loading and
+/// parsing problems come through here too — they are all "we cannot play this", which the harness
+/// is allowed to skip.
 fn fail(why: &str) -> ! {
+    stop(2, why)
+}
+
+/// Exit with the code the refusal chose. 2 is unported, 3 is a divergence the harness must never
+/// skip; keeping them apart in the exit code is what stops a real disagreement reading as a gap.
+fn stop(code: i32, why: &str) -> ! {
     eprintln!("{why}");
-    std::process::exit(2);
+    std::process::exit(code);
 }

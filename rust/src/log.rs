@@ -19,6 +19,16 @@ pub enum Event {
         unleashed_as: Option<String>,
     },
     MoveMissed,
+    /// The move resolved but nothing came of it — every effect it had was skipped. The Python adds
+    /// this by checking whether the log grew, so it is a statement about the log rather than about
+    /// the move, and it is ported the same way.
+    MoveFailed,
+    /// Crash damage, which the Python logs under the same entry as recoil.
+    RecoilDamage {
+        side: i32,
+        pokemon: String,
+        amount: i32,
+    },
     NoEffect {
         side: i32,
         pokemon: String,
@@ -43,6 +53,40 @@ pub enum Event {
     },
     BattleEnded {
         outcome: String,
+    },
+    CantAct {
+        side: i32,
+        pokemon: String,
+        reason: String,
+    },
+    StatusInflicted {
+        side: i32,
+        pokemon: String,
+        status: String,
+    },
+    StatusAlready {
+        side: i32,
+        pokemon: String,
+        status: String,
+    },
+    StatusCleared {
+        side: i32,
+        pokemon: String,
+        clearance: String,
+    },
+    StatStageChanged {
+        side: i32,
+        pokemon: String,
+        stat: String,
+        delta: i32,
+        requested: i32,
+        source: String,
+    },
+    ResidualDamage {
+        side: i32,
+        pokemon: String,
+        source: String,
+        amount: i32,
     },
 }
 

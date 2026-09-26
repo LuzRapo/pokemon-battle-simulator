@@ -69,6 +69,17 @@ class TapeRNG(RNG):
     _replaying: bool = False
     _position: int = 0
 
+    @property
+    def drawn(self) -> int:
+        """How many draws have been taken so far, recording or replaying.
+
+        Written into every turn of the trace. It is the cheapest possible cross-check: two engines
+        that took a different number of draws in a turn have already parted, and saying so at that
+        turn beats discovering it three turns later when one of them asks the tape for the wrong
+        kind of number and the message points at a turn that was never the problem.
+        """
+        return self._position if self._replaying else len(self.tape)
+
     @classmethod
     def replaying(cls, tape: Sequence[float | int]) -> "TapeRNG":
         recorder = cls(seed=0)
@@ -271,7 +282,7 @@ def build_state(scenario: Scenario) -> tuple[BattleState, TapeRNG]:
 
 def trace(scenario: Scenario) -> list[dict[str, Any]]:
     """Replay a scenario and produce the canonical per-turn trace to diff against."""
-    state, _ = build_state(scenario)
+    state, rng = build_state(scenario)
     turns: list[dict[str, Any]] = []
     for first, second in scenario.actions:
         if state.outcome is not None:
@@ -283,6 +294,7 @@ def trace(scenario: Scenario) -> list[dict[str, Any]]:
                 "actions": [first, second],
                 "events": [entry_json(entry) for entry in log],
                 "state": state_digest(state),
+                "drawn": rng.drawn,
             }
         )
     return turns
@@ -312,6 +324,8 @@ def compare(left: Sequence[dict[str, Any]], right: Sequence[dict[str, Any]]) -> 
             return Divergence(index + 1, "actions", mine["actions"], theirs["actions"])
         if (found := _first_event_difference(index + 1, mine["events"], theirs["events"])) is not None:
             return found
+        if mine.get("drawn") != theirs.get("drawn"):
+            return Divergence(index + 1, "draws taken", mine.get("drawn"), theirs.get("drawn"))
         if (found := _first_state_difference(index + 1, "state", mine["state"], theirs["state"])) is not None:
             return found
     if len(left) != len(right):
@@ -376,7 +390,14 @@ def record(
         labels = (name_action(actions[0], state, 0), name_action(actions[1], state, 1))
         log = step(state, actions)
         named.append(labels)
-        turns.append({"actions": list(labels), "events": [entry_json(e) for e in log], "state": state_digest(state)})
+        turns.append(
+            {
+                "actions": list(labels),
+                "events": [entry_json(e) for e in log],
+                "state": state_digest(state),
+                "drawn": rng.drawn,
+            }
+        )
     scenario = Scenario(
         teams=(
             [encode_spec(spec) for spec in teams[0]],

@@ -19,9 +19,11 @@ pub struct Tape {
 #[derive(Debug)]
 pub struct Exhausted(pub String);
 
-impl From<Exhausted> for crate::turn::Unsupported {
+impl From<Exhausted> for crate::turn::Refusal {
     fn from(e: Exhausted) -> Self {
-        crate::turn::Unsupported(e.0)
+        // Always a divergence, never a missing feature: the tape only runs short or changes
+        // kind when this engine has asked for randomness the Python did not take here.
+        crate::turn::Refusal::Diverged(e.0)
     }
 }
 

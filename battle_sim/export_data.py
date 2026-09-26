@@ -16,6 +16,7 @@ refuse to play a move nobody has modelled instead of quietly treating it as a no
 """
 
 import argparse
+import ast
 import json
 from dataclasses import fields, is_dataclass
 from enum import Enum
@@ -23,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 from battle_sim.database.loader import get_all_moves, get_all_species
-from battle_sim.engine import power as power_rules
 from battle_sim.models.type_matchups import TYPE_CHART
 from battle_sim.utils import Nature, Type
 
@@ -44,11 +44,52 @@ def _plain(value: Any) -> Any:
 
 def move_json(move: Any) -> dict[str, Any]:
     """One move as the engine understands it: its effects already resolved, not Showdown's raw JSON."""
-    return {f.name: _plain(getattr(move, f.name)) for f in fields(move)}
+    written = {f.name: _plain(getattr(move, f.name)) for f in fields(move)}
+    for effect in written.get("effects", []):
+        # A stat change emits one log entry per stat *in the order the dict was built*, so the order
+        # is part of the mechanics rather than a detail of how it was written down. Sorted keys
+        # (which this file writes, for stable diffs) would silently reorder them, so the pairs go
+        # out as a list where the order survives being sorted around them.
+        if isinstance(effect, dict) and isinstance(effect.get("stages"), dict):
+            effect["stages"] = [[stat, change] for stat, change in effect["stages"].items()]
+    return written
 
 
 def species_json(species: Any) -> dict[str, Any]:
     return {f.name: _plain(getattr(species, f.name)) for f in fields(species)}
+
+
+# The modules that hold rules. Anything here that names a move by hand is doing something to it
+# that the move's own data does not say. Policy and UI modules are left out on purpose: they name
+# moves constantly (`human_policy` alone names 44) without changing what any of them do, and
+# refusing those would shrink the comparable slice for nothing.
+RULE_MODULES = ("engine", "mechanics", "maths", "formes.py", "zmoves.py", "replay_state.py")
+
+
+def coded_move_names() -> list[str]:
+    """Every move the Python special-cases by name, read out of the source rather than listed here.
+
+    These are the moves whose behaviour is not in their data: Revenge doubles when its user was
+    hit, Gyro Ball reads the speed difference, Weather Ball changes type, Last Resort simply fails
+    until its user has spent its other moves. A second engine reading only the effect list gets all
+    of them wrong, and quietly — Revenge came back at 96 against the Python's 150, and Last Resort
+    resolved a whole extra move, which put the two engines a draw apart on the tape for good.
+
+    Written as a source sweep, and this is the point: a hand-maintained list was already missing
+    `coded_move_fails` and `move_type_override` when those were nowhere near the tables it copied
+    from. A sweep cannot fall behind the code it reads. It over-approximates — a name mentioned in
+    a log string is refused too — and that is the correct direction to be wrong in.
+    """
+    roots = [Path(__file__).parent / part for part in RULE_MODULES]
+    files = [f for root in roots for f in ([root] if root.suffix else sorted(root.rglob("*.py")))]
+    known = {move.name for move in get_all_moves().values()}
+    found: set[str] = set()
+    for file in files:
+        tree = ast.parse(file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in known:
+                found.add(node.value)
+    return sorted(found)
 
 
 def rules_json() -> dict[str, Any]:
@@ -57,18 +98,8 @@ def rules_json() -> dict[str, Any]:
     Exported for the same reason as the rest — a hand-copied type chart in a second language is a
     transcription error waiting to change one matchup by a factor of two, silently, forever.
     """
-    # Moves whose power is not the number in the data: Revenge doubles when its user was hit, Gyro
-    # Ball reads the speed difference, Weather Ball changes type. None of that lives in the effect
-    # list, so a second engine reading only the effects would quietly compute the wrong damage —
-    # which is exactly how Revenge was found, at 96 against the Python's 150.
-    special_power = sorted(
-        set(power_rules._POWER_FORMULAS)
-        | set(power_rules._POWER_CONDITIONS)
-        | set(power_rules._SE_BONUS_MOVES)
-        | set(power_rules._HITS_PHYSICAL_DEFENCE)
-    )
     return {
-        "special_power_moves": special_power,
+        "coded_moves": coded_move_names(),
         "types": [t.name for t in Type],
         "type_chart": {
             attacker.name: {defender.name: TYPE_CHART[attacker].get(defender, 1.0) for defender in Type}

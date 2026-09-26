@@ -24,6 +24,31 @@ pub enum Status {
 }
 
 impl Status {
+    pub fn parse(name: &str) -> Option<Status> {
+        Some(match name {
+            "NONE" => Status::None,
+            "BURN" => Status::Burn,
+            "FREEZE" => Status::Freeze,
+            "PARALYSIS" => Status::Paralysis,
+            "POISON" => Status::Poison,
+            "TOXIC" => Status::Toxic,
+            "SLEEP" => Status::Sleep,
+            _ => return None,
+        })
+    }
+
+    /// The types that can never take this status, from `_STATUS_TYPE_IMMUNITY`. Corrosion is the
+    /// one exception and belongs with the abilities, which are not ported yet.
+    pub fn immune_types(&self) -> &'static [&'static str] {
+        match self {
+            Status::Burn => &["FIRE"],
+            Status::Paralysis => &["ELECTRIC"],
+            Status::Freeze => &["ICE"],
+            Status::Poison | Status::Toxic => &["POISON", "STEEL"],
+            _ => &[],
+        }
+    }
+
     pub fn name(&self) -> &'static str {
         match self {
             Status::None => "NONE",
@@ -210,11 +235,12 @@ pub struct Side {
     pub active: usize,
     pub hazards: BTreeMap<String, i32>,
     pub screens: BTreeMap<String, i32>,
+    pub tailwind_turns: i32,
 }
 
 impl Side {
     pub fn new(team: Vec<Pokemon>) -> Self {
-        Side { team, active: 0, hazards: BTreeMap::new(), screens: BTreeMap::new() }
+        Side { team, active: 0, hazards: BTreeMap::new(), screens: BTreeMap::new(), tailwind_turns: 0 }
     }
 
     pub fn active_pokemon(&self) -> &Pokemon {

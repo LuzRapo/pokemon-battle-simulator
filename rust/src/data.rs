@@ -41,9 +41,19 @@ pub struct BaseStats {
     pub speed: i32,
 }
 
+// `Default` only under test: it lets a unit test name the two or three fields it cares about
+// instead of every field on the struct, which is what let the priority test rot unnoticed. Outside
+// tests a Move must come from the exported data, so the derive stays out of production builds.
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(Default))]
 pub struct Move {
     pub name: String,
+    #[serde(default)]
+    pub defrosts_user: bool,
+    /// The short off-type list that thaws whoever it hits: Scald, Steam Eruption, Matcha Gotcha.
+    /// Every damaging Fire move does it too, without being on the list.
+    #[serde(default)]
+    pub thaws_target: bool,
     #[serde(rename = "type")]
     pub move_type: String,
     pub category: String,
@@ -61,6 +71,16 @@ pub struct Move {
     pub typeless: bool,
     #[serde(default)]
     pub self_switch: bool,
+    #[serde(default)]
+    pub force_switch: bool,
+    #[serde(default)]
+    pub recharges: bool,
+    #[serde(default)]
+    pub charge: bool,
+    #[serde(default)]
+    pub self_destructs: bool,
+    /// PS `hasCrashDamage`: (High) Jump Kick loses half its user's max HP when it fails.
+    pub has_crash_damage: bool,
 }
 
 /// Effects are a tagged union in the export (`kind` names the Python dataclass). Only the shapes
@@ -84,6 +104,23 @@ pub enum Effect {
         #[serde(default)]
         struggle_recoil: bool,
     },
+    InflictStatusEffect {
+        status: String,
+        probability: f64,
+        #[serde(default)]
+        to_self: bool,
+        #[serde(default)]
+        is_secondary: bool,
+    },
+    StatStageChangeEffect {
+        /// Ordered pairs, not a map: one log entry is emitted per stat in this order, so the
+        /// order is mechanics. See the note in `export_data.move_json`.
+        stages: Vec<(String, i32)>,
+        probability: f64,
+        target: String,
+        #[serde(default)]
+        is_secondary: bool,
+    },
     #[serde(other)]
     Unmodelled,
 }
@@ -106,7 +143,7 @@ struct SpeciesFile {
 
 #[derive(Debug, Deserialize)]
 struct RulesFile {
-    special_power_moves: Vec<String>,
+    coded_moves: Vec<String>,
     types: Vec<String>,
     type_chart: HashMap<String, HashMap<String, f64>>,
     natures: HashMap<String, NatureEffect>,
@@ -120,7 +157,7 @@ pub struct Database {
     /// Moves whose power is computed from the board rather than read from the data — Revenge,
     /// Gyro Ball, Weather Ball and the rest. Exported by Python rather than listed here, because a
     /// second copy of this list is a second thing to keep in step.
-    pub special_power_moves: std::collections::HashSet<String>,
+    pub coded_moves: std::collections::HashSet<String>,
     pub types: Vec<String>,
     pub type_chart: HashMap<String, HashMap<String, f64>>,
     pub natures: HashMap<String, NatureEffect>,
@@ -140,7 +177,7 @@ impl Database {
         Ok(Database {
             moves: moves.moves,
             species: species.species,
-            special_power_moves: rules.special_power_moves.into_iter().collect(),
+            coded_moves: rules.coded_moves.into_iter().collect(),
             types: rules.types,
             type_chart: rules.type_chart,
             natures: rules.natures,

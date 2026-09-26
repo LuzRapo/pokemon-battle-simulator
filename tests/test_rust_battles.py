@@ -41,36 +41,78 @@ needs_rust = pytest.mark.skipif(
 PLAIN_SPECIES = ("Rhydon", "Machamp", "Kangaskhan", "Tauros", "Dewgong", "Golem")
 
 
+# The attachments that take a move out of the ported slice: a second use, a heal, a forced switch,
+# a charge or recharge turn, a user that blows itself up.
+_UNPORTED_ATTACHMENTS = ("self_switch", "healing", "force_switch", "recharges", "charge", "self_destructs")
+
+
+def _attached(move: object) -> bool:
+    return any(getattr(move, name, False) for name in _UNPORTED_ATTACHMENTS)
+
+
+def _plain_damage(effect: object) -> bool:
+    """A damage effect with a fixed power and none of the attachments that are still unported."""
+    if not getattr(effect, "power", None) or getattr(effect, "multi_hit", None):
+        return False
+    return not (getattr(effect, "drain_percent", None) or getattr(effect, "recoil_percent", None))
+
+
 def _plain_move_names() -> list[str]:
     """Damaging moves with a fixed power, no secondary, and nothing clever attached.
 
-    "Nothing clever" includes the moves whose power is computed from the board — Revenge doubles
-    when its user was hit, Gyro Ball reads the speed difference — because that logic lives in
-    `engine/power.py` rather than in the effect list. Reading only the effects was how Revenge got
-    into a scenario and came back at 96 against the Python's 150.
+    "Nothing clever" means, among other things, not appearing in `coded_moves` — the sweep of every
+    move the Python names by hand somewhere in its rules. That list is where Revenge lives (power
+    doubles when its user was hit), and Last Resort (fails outright until its user has spent its
+    other moves), and neither fact is anywhere in the move's own data.
     """
-    special = set(json.loads((DATA / "rules.json").read_text())["special_power_moves"])
+    coded = set(json.loads((DATA / "rules.json").read_text())["coded_moves"])
     wanted = []
     for move in get_all_moves().values():
         effects = move.effects
-        if len(effects) != 1 or type(effects[0]).__name__ != "DamageEffect":
+        if len(effects) != 1 or type(effects[0]).__name__ != "DamageEffect" or not _plain_damage(effects[0]):
             continue
-        if not getattr(effects[0], "power", None) or getattr(effects[0], "multi_hit", None):
+        if _attached(move):
             continue
-        if any((move.self_switch, move.healing, move.force_switch, move.recharges, move.charge)):
-            continue
-        if getattr(effects[0], "drain_percent", None) or getattr(effects[0], "recoil_percent", None):
-            continue
-        if move.name in special:
+        if move.name in coded:
             continue
         wanted.append(move.name)
     return sorted(wanted)
 
 
+def _status_and_stage_move_names() -> list[str]:
+    """The wider slice: moves that also inflict a real status or move stat stages.
+
+    Volatiles (confusion, Leech Seed, Substitute) are excluded — they are the next milestone, not
+    this one. A move whose status is a volatile is refused by the binary anyway; keeping it out of
+    the generator is what makes these runs actually compare something rather than skip.
+    """
+    real_statuses = {"BURN", "FREEZE", "PARALYSIS", "POISON", "TOXIC", "SLEEP"}
+
+    def ported(effect: object) -> bool:
+        kind = type(effect).__name__
+        if kind == "StatStageChangeEffect":
+            return True
+        if kind == "InflictStatusEffect":
+            return getattr(getattr(effect, "status", None), "name", None) in real_statuses
+        return kind == "DamageEffect" and _plain_damage(effect)
+
+    coded = set(json.loads((DATA / "rules.json").read_text())["coded_moves"])
+    return sorted(
+        move.name
+        for move in get_all_moves().values()
+        if move.effects
+        and move.name not in coded
+        and not _attached(move)
+        and all(ported(effect) for effect in move.effects)
+    )
+
+
 PLAIN_MOVES = _plain_move_names()
+STATUS_MOVES = _status_and_stage_move_names()
 
 
-def _team(rng: random.Random, size: int = 2) -> list[PokemonSpec]:
+def _team(rng: random.Random, size: int = 2, pool: list[str] | None = None) -> list[PokemonSpec]:
+    moves = pool if pool is not None else PLAIN_MOVES
     return [
         PokemonSpec(
             species=rng.choice(PLAIN_SPECIES),
@@ -81,7 +123,7 @@ def _team(rng: random.Random, size: int = 2) -> list[PokemonSpec]:
             nature=Nature.HARDY,
             effort_values=EVs(),
             individual_values=IVs(),
-            moves=rng.sample(PLAIN_MOVES, 2),
+            moves=rng.sample(moves, 2),
         )
         for index in range(size)
     ]
@@ -98,13 +140,23 @@ def _chooser(rng: random.Random):  # type: ignore[no-untyped-def]
     return choose
 
 
+UNPORTED, DIVERGED = 2, 3
+
+
 def _rust_trace(scenario: Scenario, tmp_path: Path) -> list[dict] | str:
-    """The Rust engine's answer, or the reason it declined to give one."""
+    """The Rust engine's answer, or the reason it declined to give one.
+
+    A string back means exit 2: the scenario needs something unported, and a caller may skip. Exit
+    3 never comes back — it means the tape showed the two engines had already parted, and it is
+    raised here rather than returned, because the moment a real divergence can be skipped the
+    whole harness stops being worth running. Five of them were sitting in a green run as skips.
+    """
     path = tmp_path / "scenario.json"
     path.write_text(scenario.to_json())
     result = subprocess.run([str(BINARY), str(path), str(DATA)], capture_output=True, text=True)
-    if result.returncode == 2:
+    if result.returncode == UNPORTED:
         return result.stderr.strip()
+    assert result.returncode != DIVERGED, f"the engines took different paths: {result.stderr.strip()}"
     assert result.returncode == 0, f"replay failed ({result.returncode}): {result.stderr}"
     parsed: list[dict] = json.loads(result.stdout)
     return parsed
@@ -115,6 +167,23 @@ def _rust_trace(scenario: Scenario, tmp_path: Path) -> list[dict] | str:
 def test_both_engines_play_the_same_battle(seed: int, tmp_path: Path) -> None:
     rng = random.Random(seed)
     scenario, expected = record((_team(rng), _team(rng)), _chooser(rng), seed=seed, max_turns=30)
+
+    theirs = _rust_trace(scenario, tmp_path)
+
+    if isinstance(theirs, str):
+        pytest.skip(f"outside the ported slice: {theirs}")
+    divergence = compare(expected, theirs)
+    assert divergence is None, f"seed {seed}\n{divergence}"
+
+
+@needs_rust
+@pytest.mark.parametrize("seed", range(25))
+def test_status_and_stat_stages_agree_too(seed: int, tmp_path: Path) -> None:
+    """The wider slice: burns, poisons, sleeps and stat drops, which between them are most of what
+    the move database actually does."""
+    rng = random.Random(1000 + seed)
+    teams = (_team(rng, pool=STATUS_MOVES), _team(rng, pool=STATUS_MOVES))
+    scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=40)
 
     theirs = _rust_trace(scenario, tmp_path)
 
@@ -137,14 +206,14 @@ def test_a_move_it_has_not_learned_is_refused_rather_than_guessed(tmp_path: Path
             ability=Ability.NONE,
             item=Item.NONE,
             nature=Nature.HARDY,
-            moves=["Toxic", "Earthquake"],  # Toxic is a status move: not in the slice
+            moves=["Leech Seed", "Earthquake"],  # a volatile: the next milestone, not this one
         )
     ]
     scenario, _ = record((team, team), _chooser(rng), seed=1, max_turns=4)
 
     theirs = _rust_trace(scenario, tmp_path)
 
-    assert isinstance(theirs, str) and "Toxic" in theirs, theirs
+    assert isinstance(theirs, str) and "Leech Seed" in theirs, theirs
 
 
 @needs_rust
@@ -155,6 +224,9 @@ def test_the_tape_running_out_is_reported_as_a_divergence(tmp_path: Path) -> Non
     scenario, _ = record((_team(rng), _team(rng)), _chooser(rng), seed=7, max_turns=30)
     starved = Scenario(teams=scenario.teams, actions=scenario.actions, tape=scenario.tape[:1], seed=scenario.seed)
 
-    theirs = _rust_trace(starved, tmp_path)
+    path = tmp_path / "starved.json"
+    path.write_text(starved.to_json())
+    result = subprocess.run([str(BINARY), str(path), str(DATA)], capture_output=True, text=True)
 
-    assert isinstance(theirs, str) and "asked for" in theirs, theirs
+    assert result.returncode == DIVERGED, f"exit {result.returncode}: {result.stderr}"
+    assert "asked for" in result.stderr, result.stderr

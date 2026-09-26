@@ -15,9 +15,9 @@
 //! volatiles, no residuals. Anything outside that raises `Unsupported` rather than guessing, so a
 //! scenario that wanders out of the ported subset fails loudly instead of diverging quietly.
 
-use crate::battle::{Pokemon, State, Status};
+use crate::battle::{Pokemon, Side, State, Status};
 use crate::damage::{calculate_hit, Rolls};
-use crate::data::{Database, Move};
+use crate::data::{Database, Effect, Move};
 use crate::log::{Event, Log};
 use crate::tape::Tape;
 
@@ -27,8 +27,34 @@ pub enum Action {
     Switch { to: usize },
 }
 
+/// Why this engine stopped, and the distinction the whole project rests on.
+///
+/// `Unported` means the scenario asked for something not written yet — a fair, expected answer
+/// while most of the game is still missing, and one the harness may skip over. `Diverged` means
+/// the two engines have already parted: the tape it is reading was recorded by a Python that made
+/// different draws in a different order. That is never skippable. Collapsing the two was how five
+/// real disagreements sat in a green test run labelled "outside the ported slice".
 #[derive(Debug)]
-pub struct Unsupported(pub String);
+pub enum Refusal {
+    Unported(String),
+    Diverged(String),
+}
+
+impl Refusal {
+    pub fn reason(&self) -> &str {
+        match self {
+            Refusal::Unported(why) | Refusal::Diverged(why) => why,
+        }
+    }
+
+    /// The process exit code, which is the only channel the Python harness reads this on.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Refusal::Unported(_) => 2,
+            Refusal::Diverged(_) => 3,
+        }
+    }
+}
 
 /// What a side's action counts as for ordering: switches resolve before moves, as in
 /// `_CATEGORY_ORDER`.
@@ -42,7 +68,7 @@ fn category_of(action: &Action) -> i32 {
 /// The export writes the bracket by name; these are the values of the Python's `PriorityLevel`,
 /// taken from the enum rather than guessed — the first version of this invented plausible names
 /// like "QUICK" and panicked on contact with the real data.
-fn priority_of(the_move: &Move) -> Result<i32, Unsupported> {
+fn priority_of(the_move: &Move) -> Result<i32, Refusal> {
     Ok(match the_move.priority.as_str() {
         "HELPING_HAND" => 5,
         "PROTECT" => 4,
@@ -56,26 +82,24 @@ fn priority_of(the_move: &Move) -> Result<i32, Unsupported> {
         "COUNTER" => -5,
         "ROAR" => -6,
         "TRICK_ROOM" => -7,
-        other => return Err(Unsupported(format!("unmapped priority bracket {other:?}"))),
+        other => return Err(Refusal::Unported(format!("unmapped priority bracket {other:?}"))),
     })
 }
 
 /// Sorts exactly as `_sort_key` does: category, then priority (descending), then speed
 /// (descending), then the tie-break draw. Rust sorts ascending, so speed and priority are negated
 /// the same way the Python negates speed.
-fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut Tape) -> Result<Vec<usize>, Unsupported> {
+fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut Tape) -> Result<Vec<usize>, Refusal> {
     // Drawn for both sides before anything resolves, in side order — the Python builds this dict
     // by comprehension over `actions`, which is insertion-ordered 0 then 1.
     let tie_breakers = [tape.probability()?, tape.probability()?];
     let mut keys: Vec<(i32, i32, i32, f64, usize)> = Vec::new();
     for side in 0..2 {
         let actor = state.sides[side].active_pokemon();
-        let (priority, speed) = match &actions[side] {
-            Action::Switch { .. } => (0, actor.effective("SPEED")),
-            Action::Move { slot } => {
-                let the_move = move_in_slot(actor, *slot, db)?;
-                (priority_of(the_move)?, actor.effective("SPEED"))
-            }
+        let speed = effective_speed(actor, &state.sides[side]);
+        let priority = match &actions[side] {
+            Action::Switch { .. } => 0,
+            Action::Move { slot } => priority_of(move_in_slot(actor, *slot, db)?)?,
         };
         keys.push((category_of(&actions[side]), -priority, -speed, tie_breakers[side], side));
     }
@@ -83,30 +107,77 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
     Ok(keys.into_iter().map(|k| k.4).collect())
 }
 
-fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'a Move, Unsupported> {
+/// `priority.effective_speed`, as much of it as is ported.
+///
+/// Paralysis halves it, and that halving decides who moves first — which is not a detail. A
+/// paralysed Kangaskhan that this engine let move first took a paralysis check off the tape at the
+/// moment the Python was rolling accuracy for somebody else, and the two engines never recovered.
+/// Everything else in the Python's version is an ability, an item or a field effect, none of them
+/// ported, and each will have to be added here as it lands.
+fn effective_speed(pokemon: &Pokemon, side: &Side) -> i32 {
+    let mut speed = pokemon.effective("SPEED");
+    if pokemon.status == Status::Paralysis {
+        speed /= 2;
+    }
+    if side.tailwind_turns > 0 {
+        speed *= 2;
+    }
+    std::cmp::max(1, speed)
+}
+
+fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'a Move, Refusal> {
     let name = actor
         .moves
         .get(slot)
-        .ok_or_else(|| Unsupported(format!("{} has no move in slot {slot}", actor.nickname)))?;
+        .ok_or_else(|| Refusal::Unported(format!("{} has no move in slot {slot}", actor.nickname)))?;
     db.move_named(name)
-        .ok_or_else(|| Unsupported(format!("unknown move {name:?}")))
+        .ok_or_else(|| Refusal::Unported(format!("unknown move {name:?}")))
 }
 
 /// Everything this engine has not learned yet. A scenario containing one of these is refused up
 /// front rather than played wrongly — the whole point of the differential work is that silence is
 /// the one unacceptable failure mode.
+/// Moves the Python special-cases by name that this engine has nonetheless implemented, and which
+/// the `coded_moves` net must therefore stop refusing.
+///
+/// Deliberately short and explicit. That net is why silent wrong answers have been rare; a move
+/// only comes off it once its Python behaviour has been read, ported, and agreed about across a
+/// sweep.
+const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
+
 pub fn unsupported_reason(the_move: &Move, db: &Database) -> Option<String> {
-    if db.special_power_moves.contains(&the_move.name) {
-        return Some(format!("{}'s power is computed from the board, not read from the data", the_move.name));
+    if db.coded_moves.contains(&the_move.name) && !PORTED_CODED_MOVES.contains(&the_move.name.as_str()) {
+        return Some(format!("{} is special-cased by name in the Python engine", the_move.name));
     }
-    if !crate::damage::is_damaging(the_move) {
-        return Some(format!("{} is not a plain damaging move", the_move.name));
+    if the_move.self_switch
+        || the_move.healing
+        || the_move.force_switch
+        || the_move.recharges
+        || the_move.charge
+        || the_move.self_destructs
+    {
+        return Some(format!("{} does something to its user or the field that is not ported", the_move.name));
     }
-    if the_move.effects.len() > 1 {
-        return Some(format!("{} carries a secondary effect", the_move.name));
+    if the_move.effects.is_empty() {
+        return Some(format!("{} has no modelled effect", the_move.name));
     }
-    if the_move.self_switch || the_move.healing {
-        return Some(format!("{} switches or heals", the_move.name));
+    for effect in &the_move.effects {
+        match effect {
+            Effect::DamageEffect { power: None, .. } => {
+                return Some(format!("{}'s power is computed at use time", the_move.name))
+            }
+            Effect::DamageEffect { multi_hit: Some(_), .. } => {
+                return Some(format!("{} hits more than once", the_move.name))
+            }
+            Effect::DamageEffect { drain_percent: Some(_), .. }
+            | Effect::DamageEffect { recoil_percent: Some(_), .. } => {
+                return Some(format!("{} drains or recoils", the_move.name))
+            }
+            Effect::InflictStatusEffect { status, .. } if Status::parse(status).is_none() => {
+                return Some(format!("{} inflicts {status}, which is a volatile", the_move.name))
+            }
+            _ => {}
+        }
     }
     None
 }
@@ -116,7 +187,7 @@ pub fn step(
     actions: [Action; 2],
     db: &Database,
     tape: &mut Tape,
-) -> Result<Log, Unsupported> {
+) -> Result<Log, Refusal> {
     let mut log = Log::new();
     let order = order_actions(state, &actions, db, tape)?;
     for side in order {
@@ -131,12 +202,23 @@ pub fn step(
         }
         match &actions[side] {
             Action::Switch { to } => {
-                let withdrew = state.sides[side].active_pokemon().nickname.clone();
                 let sent_out = state.sides[side].team[*to].nickname.clone();
-                state.sides[side].active = *to;
+                let withdrew = switch_out(&mut state.sides[side], *to);
                 log.push(Event::Switched { side: side as i32, withdrew, sent_out });
             }
-            Action::Move { slot } => resolve_move(state, side, *slot, db, tape, &mut log)?,
+            Action::Move { slot } => {
+                // Whether the *chosen* move melts its own user free, decided before anything is
+                // rolled: Flame Wheel, Sacred Fire and Scald thaw and go off anyway, with no 20%
+                // check taken. The Python reads the chosen move here too, so a Struggle
+                // substitution later does not change it.
+                let defrosting = {
+                    let actor = state.sides[side].active_pokemon();
+                    actor.status == Status::Freeze && move_in_slot(actor, *slot, db)?.defrosts_user
+                };
+                if can_act(state, side, defrosting, tape, &mut log)? {
+                    resolve_move(state, side, *slot, db, tape, &mut log)?
+                }
+            }
         }
         let was_decided = state.outcome.is_some();
         state.update_outcome();
@@ -147,8 +229,139 @@ pub fn step(
             }
         }
     }
+    if state.outcome.is_none() {
+        residuals(state, &mut log);
+        state.update_outcome();
+        if let Some(outcome) = state.outcome {
+            log.push(Event::BattleEnded { outcome: outcome.name().to_string() });
+        }
+    }
     state.turn += 1;
     Ok(log)
+}
+
+/// Withdraw whatever is active and send out `to`, returning the outgoing nickname.
+///
+/// The resets are `switching._execute_switch`'s, and they are the point of the function: a Pokemon
+/// that leaves the field drops its stat stages, its volatiles and — the easy one to miss — its
+/// toxic counter, so it comes back poisoned but counting from zero again. Leaving the stages on was
+/// how a Rust battle reached -6 Special Attack against a Python that had long since reset to 0.
+///
+/// The rest of `_execute_switch` clears fields this engine does not have yet (choice lock, encore,
+/// charging slot). They arrive with the volatiles milestone; until then there is nothing to clear.
+fn switch_out(side: &mut Side, to: usize) -> String {
+    let outgoing = side.active_mut();
+    for value in outgoing.stages.values_mut() {
+        *value = 0;
+    }
+    outgoing.volatiles.clear();
+    if outgoing.status == Status::Toxic {
+        outgoing.status_turns = 0;
+    }
+    let withdrew = outgoing.nickname.clone();
+    side.active = to;
+    withdrew
+}
+
+/// End-of-turn status chip, from `residuals._status_chip`. Burn is a sixteenth, poison an eighth,
+/// and toxic climbs by a sixteenth a turn — counting up *before* it bites, which is why a fresh
+/// toxic takes a sixteenth rather than nothing.
+///
+/// Sides are ticked in order, which is the order the Python emits `ON_RESIDUAL` for them.
+fn residuals(state: &mut State, log: &mut Log) {
+    for side in 0..2 {
+        let active = state.sides[side].active_mut();
+        if active.fainted() {
+            continue;
+        }
+        let (source, amount) = match active.status {
+            Status::Burn => ("burn", (active.totals.hp / 16).max(1)),
+            Status::Poison => ("poison", (active.totals.hp / 8).max(1)),
+            Status::Toxic => {
+                active.status_turns += 1;
+                ("toxic", (active.totals.hp * active.status_turns / 16).max(1))
+            }
+            _ => continue,
+        };
+        let dealt = active.take_damage(amount);
+        let nickname = active.nickname.clone();
+        let fainted = active.fainted();
+        log.push(Event::ResidualDamage {
+            side: side as i32,
+            pokemon: nickname.clone(),
+            source: source.into(),
+            amount: dealt,
+        });
+        if fainted {
+            log.push(Event::Fainted { side: side as i32, pokemon: nickname });
+        }
+    }
+}
+
+/// `_can_act`, minus the volatiles and abilities that are not ported. The order is the Python's
+/// and so is where each draw falls: freeze rolls to thaw, sleep counts down without drawing, and
+/// paralysis rolls last.
+fn can_act(
+    state: &mut State,
+    side: usize,
+    defrosting: bool,
+    tape: &mut Tape,
+    log: &mut Log,
+) -> Result<bool, Refusal> {
+    let (status, nickname) = {
+        let active = state.sides[side].active_pokemon();
+        (active.status, active.nickname.clone())
+    };
+    if status == Status::Freeze {
+        // No draw at all when the move defrosts its user — which is the point. Rolling the check
+        // anyway thawed the right Pokemon for the wrong reason and left the tape one draw short
+        // for the rest of the battle.
+        if !defrosting && tape.probability()? >= 0.2 {
+            log.push(Event::CantAct { side: side as i32, pokemon: nickname, reason: "frozen".into() });
+            return Ok(false);
+        }
+        state.sides[side].active_mut().status = Status::None;
+        log.push(Event::StatusCleared {
+            side: side as i32,
+            pokemon: nickname.clone(),
+            clearance: "thawed".into(),
+        });
+    }
+    if state.sides[side].active_pokemon().status == Status::Sleep {
+        let active = state.sides[side].active_mut();
+        active.status_turns -= 1;
+        if active.status_turns <= 0 {
+            active.status = Status::None;
+            active.status_turns = 0;
+            log.push(Event::StatusCleared {
+                side: side as i32,
+                pokemon: nickname.clone(),
+                clearance: "woke".into(),
+            });
+        } else {
+            log.push(Event::CantAct { side: side as i32, pokemon: nickname, reason: "asleep".into() });
+            return Ok(false);
+        }
+    }
+    if state.sides[side].active_pokemon().status == Status::Paralysis && tape.probability()? < 0.25 {
+        log.push(Event::CantAct { side: side as i32, pokemon: nickname, reason: "paralysis".into() });
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// `_targets_defender`: which effects a knocked-out target stops taking.
+///
+/// A status effect is aimed at the defender unless the *move* targets its user — the effect's own
+/// `to_self` flag is not what decides this in the Python, and using it here would let Hypnosis-like
+/// self-targeting cases drift. A stat change is aimed at whoever the effect names.
+fn targets_defender(effect: &Effect, the_move: &Move) -> bool {
+    match effect {
+        Effect::DamageEffect { .. } => true,
+        Effect::InflictStatusEffect { .. } => the_move.target != "SELF",
+        Effect::StatStageChangeEffect { target, .. } => target == "TARGET",
+        Effect::Unmodelled => false,
+    }
 }
 
 fn resolve_move(
@@ -158,19 +371,32 @@ fn resolve_move(
     db: &Database,
     tape: &mut Tape,
     log: &mut Log,
-) -> Result<(), Unsupported> {
+) -> Result<(), Refusal> {
     let other = 1 - side;
-    let the_move = {
+    let chosen = {
         let actor = state.sides[side].active_pokemon();
         move_in_slot(actor, slot, db)?.clone()
     };
+    // An empty slot is Struggle, and Struggle costs nothing — there is nothing left to spend. The
+    // Python substitutes here rather than at choice time, so the recorded action still names the
+    // move that was picked. Missing this only showed up past turn 60, once the PP had run out.
+    let empty = state.sides[side].active_pokemon().pp.get(crate::battle::SLOT_NAMES[slot]) == Some(&0);
+    let the_move = if empty {
+        db.move_named("Struggle")
+            .ok_or_else(|| Refusal::Unported("the database has no Struggle".into()))?
+            .clone()
+    } else {
+        chosen
+    };
     if let Some(why) = unsupported_reason(&the_move, db) {
-        return Err(Unsupported(why));
+        return Err(Refusal::Unported(why));
     }
     // Spent before anything resolves, as `_spend_pp` does it: a move that misses still costs its
     // point, which is why this is here rather than after the hit lands.
-    if let Some(left) = state.sides[side].active_mut().pp.get_mut(crate::battle::SLOT_NAMES[slot]) {
-        *left = (*left - 1).max(0);
+    if !empty {
+        if let Some(left) = state.sides[side].active_mut().pp.get_mut(crate::battle::SLOT_NAMES[slot]) {
+            *left = (*left - 1).max(0);
+        }
     }
     log.push(Event::MoveUsed {
         side: side as i32,
@@ -189,6 +415,7 @@ fn resolve_move(
         let multiplier = if net >= 0 { (3 + net) as f64 / 3.0 } else { 3.0 / (3 - net) as f64 };
         if tape.probability()? >= (accuracy * multiplier).min(1.0) {
             log.push(Event::MoveMissed);
+            crash_damage(state, side, &the_move, log);
             return Ok(());
         }
     }
@@ -198,15 +425,107 @@ fn resolve_move(
     } else {
         db.effectiveness(&the_move.move_type, &state.sides[other].active_pokemon().types)
     };
-    if effectiveness == 0.0 {
+    // The immunity gate is for *damaging* moves only, exactly as the Python writes it. Charge is
+    // Electric and targets its user, so a Ground-type across the field does not stop it boosting —
+    // and gating it here anyway skipped the boost's probability draw, which put every later draw
+    // in the battle one place out.
+    let damaging = the_move.effects.iter().any(|e| matches!(e, Effect::DamageEffect { .. }));
+    if damaging && effectiveness == 0.0 {
         log.push(Event::NoEffect {
             side: other as i32,
             pokemon: state.sides[other].active_pokemon().nickname.clone(),
         });
+        crash_damage(state, side, &the_move, log);
         return Ok(());
     }
-    log.effectiveness(effectiveness);
 
+    let log_before = log.entries.len();
+
+    // Effects resolve in the order the move lists them, which is the order `_apply_effect` is
+    // called in and therefore the order their draws come off the tape.
+    for effect in &the_move.effects {
+        // A knocked-out target takes no more of the move — not the burn from Steam Eruption, not
+        // the speed drop from Icy Wind. What still lands is anything aimed elsewhere: the user's
+        // own boost, a hazard, a side effect. Skipping the effect has to skip its probability draw
+        // too, which is how this was found: the Python stopped after the faint and this engine
+        // rolled on, so every draw from there wasread out of another turn.
+        if state.sides[other].active_pokemon().fainted() && targets_defender(effect, &the_move) {
+            continue;
+        }
+        match effect {
+            Effect::DamageEffect { .. } => {
+                log.effectiveness(effectiveness);
+                apply_damage(state, side, &the_move, db, tape, log)?;
+            }
+            Effect::InflictStatusEffect { status, probability, to_self, .. } => {
+                apply_status(state, side, status, *probability, *to_self, tape, log)?;
+            }
+            Effect::StatStageChangeEffect { stages, probability, target, .. } => {
+                apply_stages(state, side, stages, *probability, target, tape, log)?;
+            }
+            Effect::Unmodelled => return Err(Refusal::Unported(format!("{} has an unmodelled effect", the_move.name))),
+        }
+    }
+
+    // Nothing at all happened: every effect was skipped, most often because the target had already
+    // been knocked out by the other side this turn. The Python decides this by whether the log grew
+    // rather than by inspecting the move, so this does too.
+    if log.entries.len() == log_before {
+        log.push(Event::MoveFailed);
+        crash_damage(state, side, &the_move, log);
+    }
+    Ok(())
+}
+
+/// (High) Jump Kick and friends: half the user's own max HP whenever the attack does not land.
+///
+/// It applies to a miss, to an immunity, and to a move that simply did nothing — every way of
+/// failing, which is why the Python calls it from six places and why it is a separate function
+/// here rather than inlined into the miss path.
+fn crash_damage(state: &mut State, side: usize, the_move: &Move, log: &mut Log) {
+    if !the_move.has_crash_damage {
+        return;
+    }
+    let attacker = state.sides[side].active_mut();
+    let amount = std::cmp::max(1, attacker.totals.hp / 2);
+    let dealt = attacker.take_damage(amount);
+    let nickname = attacker.nickname.clone();
+    let fainted = attacker.fainted();
+    log.push(Event::RecoilDamage { side: side as i32, pokemon: nickname.clone(), amount: dealt });
+    if fainted {
+        log.push(Event::Fainted { side: side as i32, pokemon: nickname });
+    }
+}
+
+/// `_thaw_on_hit`: the hit itself melting a frozen defender.
+fn thaw_on_hit(state: &mut State, defender_side: usize, the_move: &Move, log: &mut Log) {
+    let defender = state.sides[defender_side].active_pokemon();
+    if defender.status != Status::Freeze || defender.fainted() {
+        return;
+    }
+    if !(the_move.thaws_target || (the_move.move_type == "FIRE" && the_move.category != "STATUS")) {
+        return;
+    }
+    let defender = state.sides[defender_side].active_mut();
+    defender.status = Status::None;
+    defender.status_turns = 0;
+    let nickname = defender.nickname.clone();
+    log.push(Event::StatusCleared {
+        side: defender_side as i32,
+        pokemon: nickname,
+        clearance: "thawed".into(),
+    });
+}
+
+fn apply_damage(
+    state: &mut State,
+    side: usize,
+    the_move: &Move,
+    db: &Database,
+    tape: &mut Tape,
+    log: &mut Log,
+) -> Result<(), Refusal> {
+    let other = 1 - side;
     // Drawn here, in the Python's order: the crit first, then the damage roll. Both are certain
     // to be consumed by the time the formula is entered — see `Rolls`.
     let rolls = Rolls { crit: tape.probability()?, damage: tape.integer(85, 101)? };
@@ -217,8 +536,7 @@ fn resolve_move(
         } else {
             (theirs[0].active_pokemon(), &mine[0])
         };
-        let defender = defender_side.active_pokemon();
-        calculate_hit(attacker, defender, &the_move, &state.field, defender_side, db, rolls)
+        calculate_hit(attacker, defender_side.active_pokemon(), the_move, &state.field, defender_side, db, rolls)
     };
     if hit.is_crit {
         log.push(Event::CriticalHit);
@@ -229,10 +547,110 @@ fn resolve_move(
         pokemon: state.sides[other].active_pokemon().nickname.clone(),
         amount: dealt,
     });
+    // Between the damage and the faint, in that order, as `_thaw_on_hit` sits between them: a
+    // frozen defender that takes a Fire move — or one of the three off-type thawers — is free
+    // again, and then takes its turn normally instead of rolling the 20% check.
+    thaw_on_hit(state, other, the_move, log);
     if state.sides[other].active_pokemon().fainted() {
         log.push(Event::Fainted {
             side: other as i32,
             pokemon: state.sides[other].active_pokemon().nickname.clone(),
+        });
+    }
+    // Struggle's quarter, which the Python applies unconditionally — neither Magic Guard nor Rock
+    // Head stops it — and logs as the amount it asked for rather than the amount that landed.
+    if the_move.effects.iter().any(|e| matches!(e, Effect::DamageEffect { struggle_recoil: true, .. })) {
+        let attacker = state.sides[side].active_mut();
+        let recoil = std::cmp::max(1, attacker.totals.hp / 4);
+        attacker.take_damage(recoil);
+        let nickname = attacker.nickname.clone();
+        log.push(Event::RecoilDamage { side: side as i32, pokemon: nickname, amount: recoil });
+    }
+    Ok(())
+}
+
+/// `_apply_status`, which draws its probability *first and always* — even at 1.0, which is why a
+/// guaranteed status still costs a place on the tape.
+fn apply_status(
+    state: &mut State,
+    side: usize,
+    status_name: &str,
+    probability: f64,
+    to_self: bool,
+    tape: &mut Tape,
+    log: &mut Log,
+) -> Result<(), Refusal> {
+    if tape.probability()? >= probability {
+        return Ok(());
+    }
+    let status = Status::parse(status_name)
+        .ok_or_else(|| Refusal::Unported(format!("{status_name} is a volatile, which is not ported")))?;
+    let target_side = if to_self { side } else { 1 - side };
+    {
+        let target = state.sides[target_side].active_pokemon();
+        // Type immunity is silent in the Python; an ability immunity announces itself, and
+        // abilities are not ported, so only the silent half exists here.
+        if target
+            .types
+            .iter()
+            .flatten()
+            .any(|t| status.immune_types().contains(&t.as_str()))
+        {
+            return Ok(());
+        }
+        if target.status != Status::None {
+            let already = target.status.name().to_string();
+            log.push(Event::StatusAlready {
+                side: target_side as i32,
+                pokemon: target.nickname.clone(),
+                status: already,
+            });
+            return Ok(());
+        }
+    }
+    // Sleep rolls its duration as it lands; toxic starts its counter at zero.
+    let turns = match status {
+        Status::Sleep => tape.integer(2, 5)?,
+        _ => 0,
+    };
+    let target = state.sides[target_side].active_mut();
+    target.status = status;
+    target.status_turns = turns;
+    let nickname = target.nickname.clone();
+    log.push(Event::StatusInflicted {
+        side: target_side as i32,
+        pokemon: nickname,
+        status: status.name().to_string(),
+    });
+    Ok(())
+}
+
+fn apply_stages(
+    state: &mut State,
+    side: usize,
+    stages: &[(String, i32)],
+    probability: f64,
+    target: &str,
+    tape: &mut Tape,
+    log: &mut Log,
+) -> Result<(), Refusal> {
+    if tape.probability()? >= probability {
+        return Ok(());
+    }
+    let target_side = if target == "SELF" { side } else { 1 - side };
+    let pokemon = state.sides[target_side].active_mut();
+    let nickname = pokemon.nickname.clone();
+    for (stat, requested) in stages {
+        let before = pokemon.stage(stat);
+        let after = (before + requested).clamp(-6, 6);
+        pokemon.stages.insert(stat.clone(), after);
+        log.push(Event::StatStageChanged {
+            side: target_side as i32,
+            pokemon: nickname.clone(),
+            stat: stat.clone(),
+            delta: after - before,
+            requested: *requested,
+            source: "move".into(),
         });
     }
     Ok(())
@@ -255,22 +673,19 @@ mod tests {
 
     #[test]
     fn priority_brackets_map_to_the_pythons_numbers() {
-        let mut quick = Move {
-            name: "Quick Attack".into(),
-            move_type: "NORMAL".into(),
-            category: "PHYSICAL".into(),
-            accuracy_probability: Some(1.0),
-            priority: "QUICK".into(),
-            pp: 30,
-            target: "SINGLE_OPPONENT".into(),
-            effects: vec![],
-            protectable: true,
-            healing: false,
-            typeless: false,
-            self_switch: false,
-        };
-        assert_eq!(priority_of(&quick), 1);
-        quick.priority = "NORMAL".into();
-        assert_eq!(priority_of(&quick), 0);
+        let mut the_move = Move { priority: "QUICK_ATTACK".into(), ..Move::default() };
+        assert_eq!(priority_of(&the_move).unwrap(), 1);
+        the_move.priority = "NORMAL".into();
+        assert_eq!(priority_of(&the_move).unwrap(), 0);
+        the_move.priority = "TRICK_ROOM".into();
+        assert_eq!(priority_of(&the_move).unwrap(), -7);
+    }
+
+    #[test]
+    fn an_unknown_priority_bracket_is_refused_rather_than_guessed() {
+        // The first version of this table invented plausible names and mapped everything else to
+        // zero. A bracket nobody has mapped has to stop the run, not quietly become normal speed.
+        let the_move = Move { priority: "NOT_A_BRACKET".into(), ..Move::default() };
+        assert!(matches!(priority_of(&the_move), Err(Refusal::Unported(_))));
     }
 }
