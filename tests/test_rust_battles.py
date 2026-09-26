@@ -217,6 +217,58 @@ def test_a_move_it_has_not_learned_is_refused_rather_than_guessed(tmp_path: Path
 
 
 @needs_rust
+@pytest.mark.parametrize(
+    ("ability", "item", "expected"),
+    [(Ability.INTIMIDATE, Item.NONE, "INTIMIDATE"), (Ability.NONE, Item.LEFTOVERS, "LEFTOVERS")],
+)
+def test_live_abilities_and_items_are_refused_rather_than_ignored(
+    ability: Ability, item: Item, expected: str, tmp_path: Path
+) -> None:
+    """Reading an ability off a Pokemon and doing nothing with it is a wrong answer in silence.
+
+    Both of these are wired to the Python's event bus, so a battle containing one is not comparable
+    until the Rust engine implements it. The engine has to say so.
+    """
+    rng = random.Random(3)
+    team = [
+        PokemonSpec(
+            species="Rhydon",
+            nickname="P0",
+            level=50,
+            ability=ability,
+            item=item,
+            nature=Nature.HARDY,
+            moves=["Earthquake", "Rock Slide"],
+        )
+    ]
+    scenario, _ = record((team, team), _chooser(rng), seed=3, max_turns=4)
+
+    theirs = _rust_trace(scenario, tmp_path)
+
+    assert isinstance(theirs, str) and expected in theirs, theirs
+
+
+@needs_rust
+def test_a_pokemon_on_the_bench_is_checked_too(tmp_path: Path) -> None:
+    """The lead is comparable; the one behind it is not. Finding that out on turn nine would mean
+    eight turns had already been reported as agreement."""
+    rng = random.Random(4)
+    plain = PokemonSpec(
+        species="Rhydon", nickname="P0", level=50, ability=Ability.NONE, item=Item.NONE,
+        nature=Nature.HARDY, moves=["Earthquake", "Rock Slide"],
+    )
+    benched = PokemonSpec(
+        species="Rhydon", nickname="P1", level=50, ability=Ability.INTIMIDATE, item=Item.NONE,
+        nature=Nature.HARDY, moves=["Earthquake", "Rock Slide"],
+    )
+    scenario, _ = record(([plain, benched], [plain, benched]), _chooser(rng), seed=4, max_turns=4)
+
+    theirs = _rust_trace(scenario, tmp_path)
+
+    assert isinstance(theirs, str) and "INTIMIDATE" in theirs, theirs
+
+
+@needs_rust
 def test_the_tape_running_out_is_reported_as_a_divergence(tmp_path: Path) -> None:
     """If the Rust engine asks for more randomness than the Python used, the two have taken
     different paths — and that must never be papered over with a fresh number."""

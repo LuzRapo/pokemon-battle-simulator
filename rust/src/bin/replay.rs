@@ -14,7 +14,7 @@
 use pokemon_engine::battle::{Pokemon, Side, Spec, State, SLOT_NAMES, STAGE_NAMES};
 use pokemon_engine::data::Database;
 use pokemon_engine::tape::{Draw, Tape};
-use pokemon_engine::turn::{step, Action};
+use pokemon_engine::turn::{step, unsupported_pokemon, Action};
 use serde::Deserialize;
 use serde_json::json;
 use std::path::Path;
@@ -139,6 +139,16 @@ fn main() {
         )
     };
     let mut state = State::new(build(&scenario.teams[0]), build(&scenario.teams[1]));
+    // Checked over the whole roster, not just whoever leads: a Pokemon on the bench with an
+    // unported ability will be sent out later, and finding that out mid-battle would mean half a
+    // comparison had already been reported as agreement.
+    for side in &state.sides {
+        for pokemon in &side.team {
+            if let Some(why) = unsupported_pokemon(pokemon, &db) {
+                fail(&why);
+            }
+        }
+    }
     let mut tape = Tape::new(draws(&scenario.tape));
 
     let mut turns = Vec::new();

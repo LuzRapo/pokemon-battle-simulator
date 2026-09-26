@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from battle_sim.database.loader import get_all_moves, get_all_species
+from battle_sim.mechanics.abilities import ABILITY_BINDERS
+from battle_sim.mechanics.items import ITEM_BINDERS
 from battle_sim.models.type_matchups import TYPE_CHART
 from battle_sim.utils import Nature, Type
 
@@ -80,16 +82,49 @@ def coded_move_names() -> list[str]:
     from. A sweep cannot fall behind the code it reads. It over-approximates — a name mentioned in
     a log string is refused too — and that is the correct direction to be wrong in.
     """
-    roots = [Path(__file__).parent / part for part in RULE_MODULES]
-    files = [f for root in roots for f in ([root] if root.suffix else sorted(root.rglob("*.py")))]
     known = {move.name for move in get_all_moves().values()}
     found: set[str] = set()
-    for file in files:
+    for file in _rule_files():
         tree = ast.parse(file.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in known:
                 found.add(node.value)
     return sorted(found)
+
+
+def _rule_files() -> list[Path]:
+    roots = [Path(__file__).parent / part for part in RULE_MODULES]
+    return [f for root in roots for f in ([root] if root.suffix else sorted(root.rglob("*.py")))]
+
+
+def _named_in_rules(enum_name: str) -> set[str]:
+    """Every `Ability.X` / `Item.X` the rules mention, by attribute name."""
+    found: set[str] = set()
+    for file in _rule_files():
+        for node in ast.walk(ast.parse(file.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == enum_name:
+                found.add(node.attr)
+    return found - {"NONE"}
+
+
+def live_behaviour() -> tuple[list[str], list[str]]:
+    """The abilities and items that actually do something in the Python engine.
+
+    A second engine that reads `ability: "INTIMIDATE"` off a Pokemon and does nothing with it is
+    not playing the same game — and will not say so. That is the failure this project exists to
+    prevent, so this list is exported and the Rust engine refuses any Pokemon carrying something it
+    has not itself implemented.
+
+    The binder tables are not enough on their own. Sniper is read straight out of the damage
+    formula, Clear Body out of the stat-drop code, Chlorophyll out of the speed calculation — 85
+    abilities and 59 items have live behaviour without ever touching the event bus, and a check
+    built on the tables alone would have waved every one of them through. So the tables are unioned
+    with a sweep of the same rule modules `coded_move_names` reads, for the same reason: a
+    hand-maintained list falls behind the code, and a sweep cannot.
+    """
+    abilities = {ability.name for ability in ABILITY_BINDERS} | _named_in_rules("Ability")
+    items = {item.name for item in ITEM_BINDERS} | _named_in_rules("Item")
+    return sorted(abilities), sorted(items)
 
 
 def rules_json() -> dict[str, Any]:
@@ -98,8 +133,11 @@ def rules_json() -> dict[str, Any]:
     Exported for the same reason as the rest — a hand-copied type chart in a second language is a
     transcription error waiting to change one matchup by a factor of two, silently, forever.
     """
+    abilities, items = live_behaviour()
     return {
         "coded_moves": coded_move_names(),
+        "live_abilities": abilities,
+        "live_items": items,
         "types": [t.name for t in Type],
         "type_chart": {
             attacker.name: {defender.name: TYPE_CHART[attacker].get(defender, 1.0) for defender in Type}

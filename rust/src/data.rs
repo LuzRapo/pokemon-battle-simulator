@@ -144,6 +144,8 @@ struct SpeciesFile {
 #[derive(Debug, Deserialize)]
 struct RulesFile {
     coded_moves: Vec<String>,
+    live_abilities: Vec<String>,
+    live_items: Vec<String>,
     types: Vec<String>,
     type_chart: HashMap<String, HashMap<String, f64>>,
     natures: HashMap<String, NatureEffect>,
@@ -158,6 +160,10 @@ pub struct Database {
     /// Gyro Ball, Weather Ball and the rest. Exported by Python rather than listed here, because a
     /// second copy of this list is a second thing to keep in step.
     pub coded_moves: std::collections::HashSet<String>,
+    /// What the Python wires to its event bus. Anything in here that this engine has not
+    /// implemented makes a scenario unplayable rather than quietly inert.
+    pub live_abilities: std::collections::HashSet<String>,
+    pub live_items: std::collections::HashSet<String>,
     pub types: Vec<String>,
     pub type_chart: HashMap<String, HashMap<String, f64>>,
     pub natures: HashMap<String, NatureEffect>,
@@ -178,6 +184,8 @@ impl Database {
             moves: moves.moves,
             species: species.species,
             coded_moves: rules.coded_moves.into_iter().collect(),
+            live_abilities: rules.live_abilities.into_iter().collect(),
+            live_items: rules.live_items.into_iter().collect(),
             types: rules.types,
             type_chart: rules.type_chart,
             natures: rules.natures,

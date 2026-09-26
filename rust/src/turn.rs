@@ -145,6 +145,28 @@ fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'
 /// sweep.
 const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
 
+/// Abilities and items this engine has implemented. Both empty for now, and that is the honest
+/// state of the port: every Pokemon carrying live behaviour is refused rather than played with
+/// three-quarters of its rules missing. Names come off these lists as they are ported and agreed
+/// across a sweep — 220 abilities and 110 items to go.
+const PORTED_ABILITIES: [&str; 0] = [];
+const PORTED_ITEMS: [&str; 0] = [];
+
+/// Why this Pokemon cannot be played, if it cannot.
+///
+/// Reading an ability off a Pokemon and doing nothing with it is the exact failure this project is
+/// built to catch — a wrong answer delivered in silence. Until Intimidate is written here, a
+/// scenario containing one stops the run.
+pub fn unsupported_pokemon(pokemon: &Pokemon, db: &Database) -> Option<String> {
+    if db.live_abilities.contains(&pokemon.ability) && !PORTED_ABILITIES.contains(&pokemon.ability.as_str()) {
+        return Some(format!("{} has {}, which is not ported", pokemon.nickname, pokemon.ability));
+    }
+    if db.live_items.contains(&pokemon.item) && !PORTED_ITEMS.contains(&pokemon.item.as_str()) {
+        return Some(format!("{} is holding {}, which is not ported", pokemon.nickname, pokemon.item));
+    }
+    None
+}
+
 pub fn unsupported_reason(the_move: &Move, db: &Database) -> Option<String> {
     if db.coded_moves.contains(&the_move.name) && !PORTED_CODED_MOVES.contains(&the_move.name.as_str()) {
         return Some(format!("{} is special-cased by name in the Python engine", the_move.name));
