@@ -137,7 +137,7 @@ pub fn entry_hazards(state: &mut State, side: usize, db: &Database, log: &mut Lo
         toxic_spikes(state, side, log);
     }
     if grounded && state.sides[side].hazards.contains_key("STICKY_WEB") {
-        crate::turn::apply_stage_changes(state, side, &[("SPEED".to_string(), -1)], "sticky_web", log);
+        sticky_web(state, side, log);
     }
 }
 
@@ -189,6 +189,27 @@ fn spikes(state: &mut State, side: usize, log: &mut Log) -> bool {
         log.push(Event::Fainted { side: side as i32, pokemon: nickname });
     }
     fainted
+}
+
+/// The web goes straight to `change_stat_stage`, not through `apply_stage_changes`. So Simple does
+/// not double it, Clear Body does not refuse it, and — the visible half — it is logged only if the
+/// stage actually moved, where an ordinary drop reports a delta of zero and says so.
+fn sticky_web(state: &mut State, side: usize, log: &mut Log) {
+    let incoming = state.sides[side].active_mut();
+    let before = incoming.stage("SPEED");
+    let after = (before - 1).clamp(-6, 6);
+    incoming.stages.insert("SPEED".to_string(), after);
+    if after - before < 0 {
+        let nickname = incoming.nickname.clone();
+        log.push(Event::StatStageChanged {
+            side: side as i32,
+            pokemon: nickname,
+            stat: "SPEED".into(),
+            delta: after - before,
+            requested: -1,
+            source: "sticky_web".into(),
+        });
+    }
 }
 
 fn toxic_spikes(state: &mut State, side: usize, log: &mut Log) {

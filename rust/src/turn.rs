@@ -1231,7 +1231,10 @@ fn apply_volatile(
     tape: &mut Tape,
     log: &mut Log,
 ) -> Result<(), Refusal> {
-    if state.sides[target_side].active_pokemon().volatiles.contains_key(volatile) {
+    let target = state.sides[target_side].active_pokemon();
+    if target.volatiles.contains_key(volatile) || crate::inline::ability_blocks_volatile(target, volatile) {
+        // An ability that refuses a volatile does so silently, and — the part that matters — it
+        // does so *before* the duration draw, so Inner Focus costs the tape nothing.
         return Ok(());
     }
     // `_initial_volatile_duration`: a span whose ends are adjacent is a constant and costs no draw,
@@ -1266,14 +1269,21 @@ pub fn apply_main_status(
 ) -> Result<(), Refusal> {
     {
         let target = state.sides[target_side].active_pokemon();
-        // Type immunity is silent in the Python; an ability immunity announces itself, and those
-        // abilities are not ported, so only the silent half exists here.
+        // Type immunity is silent in the Python. Corrosion would let a Poison type poison a Steel
+        // one and is not ported, so the table is read straight.
         if target
             .types
             .iter()
             .flatten()
             .any(|t| status.immune_types().contains(&t.as_str()))
         {
+            return Ok(());
+        }
+        // An ability immunity announces itself — as a plain `DoesNotAffect`, which says nothing
+        // about *which* ability refused it. That is the Python's line, so it is this one's.
+        if crate::inline::ability_blocks_status(target, status, &state.field.weather) {
+            let nickname = target.nickname.clone();
+            log.push(Event::DoesNotAffect { side: target_side as i32, pokemon: nickname });
             return Ok(());
         }
         if target.status != Status::None {
@@ -1317,7 +1327,7 @@ fn apply_stages(
         return Ok(());
     }
     let target_side = if target == "SELF" { side } else { 1 - side };
-    apply_stage_changes(state, target_side, stages, "move", log);
+    apply_stage_changes_from(state, target_side, stages, "move", target_side != side, log);
     Ok(())
 }
 
@@ -1329,18 +1339,118 @@ fn apply_stages(
 /// rewriting the request, Clear Body and friends intercepting an opponent's drop, Defiant
 /// retaliating, a White Herb undoing it.
 pub fn apply_stage_changes(state: &mut State, target_side: usize, stages: &[(String, i32)], source: &str, log: &mut Log) {
+    apply_stage_changes_from(state, target_side, stages, source, false, log)
+}
+
+/// `apply_stage_changes`, with the Python's `inflicted_by_opponent` — the flag that decides whether
+/// a drop can be intercepted at all.
+///
+/// One entry is logged per stat *whether or not the stage moved*: something already at +6 still
+/// reports a requested +1 with a delta of 0, and the comparator would notice its absence.
+pub fn apply_stage_changes_from(
+    state: &mut State,
+    target_side: usize,
+    stages: &[(String, i32)],
+    source: &str,
+    inflicted_by_opponent: bool,
+    log: &mut Log,
+) {
+    let mut wanted: Vec<(String, i32)> = stages.to_vec();
+    let ability = state.sides[target_side].active_pokemon().ability.clone();
+    // Contrary reverses the request and Simple doubles it — both ways, drops included — before
+    // anything else looks at it.
+    match ability.as_str() {
+        "CONTRARY" => wanted.iter_mut().for_each(|(_, change)| *change = -*change),
+        "SIMPLE" => wanted.iter_mut().for_each(|(_, change)| *change *= 2),
+        _ => {}
+    }
+    if inflicted_by_opponent && wanted.iter().any(|(_, change)| *change < 0) {
+        match intercept_drops(state, target_side, &wanted, source, log) {
+            None => return,
+            Some(surviving) => wanted = surviving,
+        }
+    }
+    let mut dropped = 0;
     let pokemon = state.sides[target_side].active_mut();
     let nickname = pokemon.nickname.clone();
-    for (stat, requested) in stages {
+    for (stat, requested) in &wanted {
         let before = pokemon.stage(stat);
         let after = (before + requested).clamp(-6, 6);
         pokemon.stages.insert(stat.clone(), after);
+        let delta = after - before;
         log.push(Event::StatStageChanged {
             side: target_side as i32,
             pokemon: nickname.clone(),
             stat: stat.clone(),
-            delta: after - before,
+            delta,
             requested: *requested,
+            source: source.into(),
+        });
+        if delta < 0 && inflicted_by_opponent {
+            dropped += 1;
+        }
+    }
+    if dropped > 0 {
+        retaliate_drops(state, target_side, dropped, log);
+    }
+}
+
+/// `_intercept_drops`. `None` means a blocker ate the whole change; `Some` is what still applies,
+/// which for the single-stat guards is the request with their one stat's drop removed.
+///
+/// Mirror Armor and Guard Dog are absent: both answer back at the Pokemon that caused the drop,
+/// which needs the inflictor threaded through every call site, and both are still refused.
+fn intercept_drops(
+    state: &mut State,
+    target_side: usize,
+    stages: &[(String, i32)],
+    source: &str,
+    log: &mut Log,
+) -> Option<Vec<(String, i32)>> {
+    let ability = state.sides[target_side].active_pokemon().ability.clone();
+    let nickname = state.sides[target_side].active_pokemon().nickname.clone();
+    if matches!(ability.as_str(), "CLEAR_BODY" | "FULL_METAL_BODY" | "WHITE_SMOKE") {
+        log.push(Event::StatDropBlocked { side: target_side as i32, pokemon: nickname, ability });
+        return None;
+    }
+    let protected = match ability.as_str() {
+        "KEEN_EYE" => "ACCURACY",
+        "HYPER_CUTTER" => "ATTACK",
+        "BIG_PECKS" => "DEFENCE",
+        _ => return Some(stages.to_vec()),
+    };
+    // Only a *drop* to the guarded stat triggers it, and only that stat is stripped: Tickle lowers
+    // Attack and Defence, and Hyper Cutter saves one of them.
+    if !stages.iter().any(|(stat, change)| stat == protected && *change < 0) {
+        return Some(stages.to_vec());
+    }
+    let _ = source;
+    log.push(Event::StatDropBlocked { side: target_side as i32, pokemon: nickname, ability });
+    Some(stages.iter().filter(|(stat, _)| stat != protected).cloned().collect())
+}
+
+/// `_retaliate_drops`: Defiant and Competitive answer an opponent's drop with +2 per stat lowered.
+fn retaliate_drops(state: &mut State, target_side: usize, dropped: i32, log: &mut Log) {
+    let ability = state.sides[target_side].active_pokemon().ability.clone();
+    let (stat, source) = match ability.as_str() {
+        "DEFIANT" => ("ATTACK", "defiant"),
+        "COMPETITIVE" => ("SP_ATTACK", "competitive"),
+        _ => return,
+    };
+    let requested = 2 * dropped;
+    let pokemon = state.sides[target_side].active_mut();
+    let before = pokemon.stage(stat);
+    let after = (before + requested).clamp(-6, 6);
+    pokemon.stages.insert(stat.to_string(), after);
+    let delta = after - before;
+    if delta > 0 {
+        let nickname = pokemon.nickname.clone();
+        log.push(Event::StatStageChanged {
+            side: target_side as i32,
+            pokemon: nickname,
+            stat: stat.to_string(),
+            delta,
+            requested,
             source: source.into(),
         });
     }

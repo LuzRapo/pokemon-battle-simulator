@@ -21,29 +21,58 @@ use crate::battle::{Pokemon, Status};
 /// move with its own log line — so porting the clause alone would be a Levitate that takes no
 /// damage and never says why. Air Balloon, Punching Glove and Choice Scarf are out for the same
 /// reason: each does more somewhere else.
-pub const PORTED_ABILITIES: [&str; 22] = [
+pub const PORTED_ABILITIES: [&str; 51] = [
     "BATTLE_ARMOR",
+    "BIG_PECKS",
     "CHLOROPHYLL",
+    "CLEAR_BODY",
+    "COMATOSE",
+    "COMPETITIVE",
+    "CONTRARY",
     "COMPOUND_EYES",
+    "DEFIANT",
+    "DRIZZLE",
+    "DROUGHT",
+    "ELECTRIC_SURGE",
+    "FULL_METAL_BODY",
+    "GRASSY_SURGE",
     "HUSTLE",
+    "HYPER_CUTTER",
+    "IMMUNITY",
+    "INNER_FOCUS",
+    "INSOMNIA",
+    "KEEN_EYE",
+    "LEAF_GUARD",
+    "LIMBER",
     "LIQUID_OOZE",
     "LONG_REACH",
     "MAGIC_GUARD",
+    "MAGMA_ARMOR",
     "MERCILESS",
+    "MISTY_SURGE",
     "NO_GUARD",
     "OVERCOAT",
+    "OWN_TEMPO",
+    "PSYCHIC_SURGE",
+    "PURIFYING_SALT",
     "QUICK_FEET",
     "ROCK_HEAD",
     "SAND_RUSH",
+    "SAND_STREAM",
     "SAND_VEIL",
     "SHELL_ARMOR",
+    "SIMPLE",
     "SLUSH_RUSH",
     "SNIPER",
+    "SNOW_WARNING",
     "SNOW_CLOAK",
     "SUPER_LUCK",
     "SWIFT_SWIM",
     "TANGLED_FEET",
     "VICTORY_STAR",
+    "VITAL_SPIRIT",
+    "WATER_VEIL",
+    "WHITE_SMOKE",
 ];
 
 /// Items implemented at their inline sites.
@@ -92,6 +121,53 @@ pub fn accuracy_multiplier(attacker: &Pokemon, defender: &Pokemon, category: &st
         multiplier *= 1.1;
     }
     multiplier
+}
+
+/// `_ability_immune_to_status`: the half of status immunity that announces itself.
+pub fn ability_blocks_status(target: &Pokemon, status: Status, weather: &str) -> bool {
+    let blocked: &[Status] = match target.ability.as_str() {
+        // Komala is permanently asleep and acts anyway, so nothing further can be inflicted. What
+        // is not modelled — here or in the Python — is counting as asleep for Rest and Sleep Talk.
+        "PURIFYING_SALT" | "COMATOSE" => {
+            return status != Status::None;
+        }
+        "LEAF_GUARD" => {
+            return matches!(weather, "SUN" | "HARSH_SUN") && status != Status::None;
+        }
+        "WATER_BUBBLE" | "THERMAL_EXCHANGE" | "WATER_VEIL" => &[Status::Burn],
+        "LIMBER" => &[Status::Paralysis],
+        "INSOMNIA" | "VITAL_SPIRIT" => &[Status::Sleep],
+        "MAGMA_ARMOR" => &[Status::Freeze],
+        "IMMUNITY" => &[Status::Poison, Status::Toxic],
+        _ => &[],
+    };
+    blocked.contains(&status)
+}
+
+/// `_VOLATILE_ABILITY_IMMUNITY`: Inner Focus never flinches, Own Tempo never gets confused.
+pub fn ability_blocks_volatile(target: &Pokemon, volatile: &str) -> bool {
+    matches!((target.ability.as_str(), volatile), ("INNER_FOCUS", "FLINCH") | ("OWN_TEMPO", "CONFUSION"))
+}
+
+/// `ABILITY_WEATHER` and `ABILITY_TERRAIN`: what a Pokemon brings with it onto the field.
+pub fn weather_from_ability(ability: &str) -> Option<&'static str> {
+    Some(match ability {
+        "DROUGHT" => "SUN",
+        "DRIZZLE" => "RAIN",
+        "SAND_STREAM" => "SANDSTORM",
+        "SNOW_WARNING" => "SNOW",
+        _ => return None,
+    })
+}
+
+pub fn terrain_from_ability(ability: &str) -> Option<&'static str> {
+    Some(match ability {
+        "GRASSY_SURGE" => "GRASSY",
+        "ELECTRIC_SURGE" => "ELECTRIC",
+        "PSYCHIC_SURGE" => "PSYCHIC",
+        "MISTY_SURGE" => "MISTY",
+        _ => return None,
+    })
 }
 
 /// Whether the accuracy roll is skipped entirely. No Guard on *either* side is enough.

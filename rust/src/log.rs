@@ -83,6 +83,29 @@ pub enum Event {
     MultiHitSummary {
         hits: i32,
     },
+    /// A total immunity announced before the hit: an ability refusing a status, a volatile that
+    /// cannot take hold. It deliberately does not say what refused it.
+    DoesNotAffect {
+        side: i32,
+        pokemon: String,
+    },
+    /// The weather or terrain a Pokemon brings onto the field.
+    WeatherSetByAbility {
+        side: i32,
+        pokemon: String,
+        ability: String,
+    },
+    TerrainSetByAbility {
+        side: i32,
+        pokemon: String,
+        ability: String,
+    },
+    /// Clear Body and its relatives refusing an opponent's stat drop.
+    StatDropBlocked {
+        side: i32,
+        pokemon: String,
+        ability: String,
+    },
     /// Liquid Ooze turning a drink into a wound.
     DrainBackfired {
         side: i32,

@@ -276,7 +276,14 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
     match ability.as_str() {
         "INTIMIDATE" => {
             if !state.sides[other].active_pokemon().fainted() {
-                apply_stage_changes(state, other, &[("ATTACK".to_string(), -1)], "intimidate", log);
+                crate::turn::apply_stage_changes_from(
+                    state,
+                    other,
+                    &[("ATTACK".to_string(), -1)],
+                    "intimidate",
+                    true,
+                    log,
+                );
             }
         }
         "DOWNLOAD" => {
@@ -290,6 +297,34 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
                     "ATTACK"
                 };
                 apply_stage_changes(state, side, &[(stat.to_string(), 1)], "download", log);
+            }
+        }
+        _ if crate::inline::weather_from_ability(&ability).is_some() => {
+            // Nothing happens if this weather is already blowing — and nothing is logged either.
+            let weather = crate::inline::weather_from_ability(&ability).expect("just checked");
+            if state.field.weather != weather {
+                state.field.weather = weather.to_string();
+                // A Weather Rock would make it eight; those items are still refused.
+                state.field.weather_turns_left = 5;
+                let nickname = state.sides[side].active_pokemon().nickname.clone();
+                log.push(Event::WeatherSetByAbility {
+                    side: side as i32,
+                    pokemon: nickname,
+                    ability: ability.clone(),
+                });
+            }
+        }
+        _ if crate::inline::terrain_from_ability(&ability).is_some() => {
+            let terrain = crate::inline::terrain_from_ability(&ability).expect("just checked");
+            if state.field.terrain != terrain {
+                state.field.terrain = terrain.to_string();
+                state.field.terrain_turns_left = 5;
+                let nickname = state.sides[side].active_pokemon().nickname.clone();
+                log.push(Event::TerrainSetByAbility {
+                    side: side as i32,
+                    pokemon: nickname,
+                    ability: ability.clone(),
+                });
             }
         }
         "DAUNTLESS_SHIELD" | "INTREPID_SWORD" => {
