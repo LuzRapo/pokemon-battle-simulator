@@ -94,7 +94,9 @@ def _status_and_stage_move_names() -> list[str]:
             return True
         if kind == "InflictStatusEffect":
             return getattr(getattr(effect, "status", None), "name", None) in landable
-        if kind in ("FixedDamageEffect", "HealEffect"):
+        if kind in ("FixedDamageEffect", "HealEffect", "WeatherEffect", "TerrainEffect"):
+            return True
+        if kind in ("SideConditionEffect", "RemoveHazardsEffect"):
             return True
         return kind == "DamageEffect" and _plain_damage(effect)
 
@@ -179,6 +181,19 @@ def _chooser(rng: random.Random):  # type: ignore[no-untyped-def]
 
 
 UNPORTED, DIVERGED = 2, 3
+
+
+def _switching_chooser(rng: random.Random):  # type: ignore[no-untyped-def]
+    """Like `_chooser`, but switches sometimes — which some mechanics need in order to happen."""
+
+    def choose(state, side_index):  # type: ignore[no-untyped-def]
+        options = legal_actions(state, side_index)
+        moves = [a for a in options if a.action is ActionType.USE_MOVE]
+        if moves and rng.random() < 0.3 and len(options) > len(moves):
+            return rng.choice([a for a in options if a.action is not ActionType.USE_MOVE])
+        return rng.choice(moves or options)
+
+    return choose
 
 
 def _rust_trace(scenario: Scenario, tmp_path: Path) -> list[dict] | str:
@@ -340,6 +355,11 @@ def _moves_where(predicate) -> list[str]:  # type: ignore[no-untyped-def]
         ("RecoilDamage", lambda e: type(e).__name__ == "DamageEffect" and e.recoil_percent is not None),
         ("DamageDealt", lambda e: type(e).__name__ == "FixedDamageEffect"),
         ("Healed", lambda e: type(e).__name__ == "HealEffect"),
+        ("WeatherChanged", lambda e: type(e).__name__ == "WeatherEffect"),
+        ("TerrainChanged", lambda e: type(e).__name__ == "TerrainEffect"),
+        ("HazardSet", lambda e: type(e).__name__ == "SideConditionEffect"),
+        ("HazardDamage", lambda e: type(e).__name__ == "SideConditionEffect"),
+        ("ResidualDamage", lambda e: type(e).__name__ == "WeatherEffect"),
     ],
 )
 def test_the_rarer_move_classes_agree_when_the_teams_are_built_for_them(
@@ -352,13 +372,32 @@ def test_the_rarer_move_classes_agree_when_the_teams_are_built_for_them(
     class certain to appear, and the assertion is that it appeared *and* both engines agreed.
     """
     pool = _moves_where(predicate)
-    assert len(pool) >= 2, f"not enough moves to build a team from: {pool}"
+    assert pool, "no move in the slice carries this effect"
+
+    def team(rng: random.Random) -> list[PokemonSpec]:
+        # One move from the class and one ordinary attack each. A team of nothing but healing moves
+        # never takes damage, so it never heals either, and the class goes untested while the run
+        # stays green.
+        return [
+            PokemonSpec(
+                species=rng.choice(PLAIN_SPECIES),
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool), rng.choice(PLAIN_MOVES)],
+            )
+            for index in range(3)
+        ]
 
     seen = 0
     for seed in range(12):
         rng = random.Random(11000 + seed)
-        teams = (_team(rng, size=3, pool=pool), _team(rng, size=3, pool=pool))
-        scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=60)
+        teams = (team(rng), team(rng))
+        # Switching on purpose: an entry hazard is set by one move and paid for by a different
+        # Pokemon arriving, so a chooser that never switches can never see the second half of it.
+        scenario, expected = record(teams, _switching_chooser(rng), seed=seed, max_turns=60)
         theirs = _rust_trace(scenario, tmp_path)
         assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
         divergence = compare(expected, theirs)

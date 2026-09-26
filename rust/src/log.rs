@@ -23,6 +23,56 @@ pub enum Event {
     /// this by checking whether the log grew, so it is a statement about the log rather than about
     /// the move, and it is ported the same way.
     MoveFailed,
+    /// The weather or terrain changing, fading, or a side raising a screen.
+    WeatherChanged {
+        weather: String,
+    },
+    WeatherFaded {
+        weather: String,
+    },
+    TerrainChanged {
+        terrain: String,
+    },
+    TerrainFaded {
+        terrain: String,
+    },
+    ScreenSet {
+        side: i32,
+        screen: String,
+    },
+    ScreenFaded {
+        side: i32,
+        screen: String,
+    },
+    TailwindSet {
+        side: i32,
+    },
+    TailwindFaded {
+        side: i32,
+    },
+    HazardSet {
+        side: i32,
+        hazard: String,
+    },
+    HazardsCleared {
+        side: i32,
+        hazard: String,
+    },
+    HazardDamage {
+        side: i32,
+        pokemon: String,
+        hazard: String,
+        amount: i32,
+    },
+    HazardStatus {
+        side: i32,
+        pokemon: String,
+        status: String,
+    },
+    HazardAbsorbed {
+        side: i32,
+        pokemon: String,
+    },
     /// A move healing its user.
     Healed {
         side: i32,

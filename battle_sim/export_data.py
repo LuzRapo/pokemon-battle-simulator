@@ -44,16 +44,32 @@ def _plain(value: Any) -> Any:
     return value
 
 
+def effect_json(effect: Any) -> dict[str, Any]:
+    """One effect, with its dataclass name as `kind` and nothing else.
+
+    Several of these dataclasses have a field *also* called `kind` — WeatherEffect's is SUN,
+    SideConditionEffect's is SPIKES — and merging the class name with the fields let the field
+    quietly win. A reader then could not tell a weather from a terrain from a hazard, and two
+    unrelated dataclasses shared one discriminator space. The inner value goes out as `variant`.
+    """
+    written = {f.name: _plain(getattr(effect, f.name)) for f in fields(effect)}
+    inner = written.pop("kind", None)
+    written["kind"] = type(effect).__name__
+    if inner is not None:
+        written["variant"] = inner
+    # A stat change emits one log entry per stat *in the order the dict was built*, so the order is
+    # part of the mechanics rather than a detail of how it was written down. Sorted keys (which this
+    # file writes, for stable diffs) would silently reorder them, so the pairs go out as a list
+    # where the order survives being sorted around them.
+    if isinstance(written.get("stages"), dict):
+        written["stages"] = [[stat, change] for stat, change in written["stages"].items()]
+    return written
+
+
 def move_json(move: Any) -> dict[str, Any]:
     """One move as the engine understands it: its effects already resolved, not Showdown's raw JSON."""
     written = {f.name: _plain(getattr(move, f.name)) for f in fields(move)}
-    for effect in written.get("effects", []):
-        # A stat change emits one log entry per stat *in the order the dict was built*, so the order
-        # is part of the mechanics rather than a detail of how it was written down. Sorted keys
-        # (which this file writes, for stable diffs) would silently reorder them, so the pairs go
-        # out as a list where the order survives being sorted around them.
-        if isinstance(effect, dict) and isinstance(effect.get("stages"), dict):
-            effect["stages"] = [[stat, change] for stat, change in effect["stages"].items()]
+    written["effects"] = [effect_json(effect) for effect in move.effects]
     return written
 
 
@@ -62,10 +78,14 @@ def species_json(species: Any) -> dict[str, Any]:
 
 
 # The modules that hold rules. Anything here that names a move by hand is doing something to it
-# that the move's own data does not say. Policy and UI modules are left out on purpose: they name
-# moves constantly (`human_policy` alone names 44) without changing what any of them do, and
-# refusing those would shrink the comparable slice for nothing.
-RULE_MODULES = ("engine", "mechanics", "maths", "formes.py", "zmoves.py", "replay_state.py")
+# that the move's own data does not say.
+#
+# Policy and analysis modules are left out on purpose. They name moves constantly — `human_policy`
+# alone names 44 — without changing what any of them do, and refusing those would shrink the
+# comparable slice for nothing. `replay_state` was in this list by mistake and cost the engine all
+# four entry hazards: it is a position-evaluator feature extractor that reconstructs a board from a
+# replay log, and the only reason it says "Stealth Rock" is to count one.
+RULE_MODULES = ("engine", "mechanics", "maths", "formes.py", "zmoves.py")
 
 
 def coded_move_names() -> list[str]:

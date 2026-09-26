@@ -207,14 +207,23 @@ pub fn calculate_hit(
         damage = chain(damage, screen_modifier(category, defender_side));
     }
 
-    // The terrain fold sits here in the Python, unconditional. Nothing in the ported slice can set
-    // a terrain yet, and the state digest compares the field, so a terrain that appeared would be
-    // reported rather than silently ignored; this arrives with the terrain moves.
+    damage = chain(damage, terrain_modifier(&the_move.move_type, attacker, defender, &field.terrain));
     for modifier in &payload.final_mods_4096 {
         damage = chain(damage, *modifier);
     }
 
     Hit { amount: damage.max(1), is_crit }
+}
+
+/// `_terrain_modifier`. Three terrains strengthen their own type by a third for a grounded user;
+/// Misty weakens Dragon against a grounded target instead — which is the point of it.
+fn terrain_modifier(move_type: &str, attacker: &Pokemon, defender: &Pokemon, terrain: &str) -> i64 {
+    let grounded = crate::field::is_grounded(attacker);
+    match (terrain, move_type) {
+        ("ELECTRIC", "ELECTRIC") | ("GRASSY", "GRASS") | ("PSYCHIC", "PSYCHIC") if grounded => 5324,
+        ("MISTY", "DRAGON") if crate::field::is_grounded(defender) => 2048,
+        _ => 4096,
+    }
 }
 
 fn screen_modifier(category: &str, side: &Side) -> i64 {

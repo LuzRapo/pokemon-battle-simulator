@@ -150,8 +150,35 @@ pub enum Effect {
     HealEffect {
         fraction: f64,
     },
-    /// Every effect kind this engine cannot read. The catch-all is what makes a new kind appearing
-    /// in the export a refusal rather than a silent no-op.
+    /// Weather, terrain and the rooms — `variant` says which, `kind` says which family.
+    WeatherEffect {
+        variant: String,
+        duration_turns: Option<i32>,
+    },
+    TerrainEffect {
+        variant: String,
+        duration_turns: Option<i32>,
+    },
+    PseudoWeatherEffect {
+        variant: String,
+        duration_turns: Option<i32>,
+    },
+    /// Screens, hazards and Tailwind — everything that belongs to one side of the field.
+    SideConditionEffect {
+        variant: String,
+        duration_turns: Option<i32>,
+    },
+    RemoveHazardsEffect {
+        style: String,
+    },
+    /// The long tail the Python implements by hand: Haze, Rest, Trick, Pain Split and thirty more.
+    /// Named rather than anonymous so a refusal says which one, and so the coverage report can
+    /// count them.
+    CodedEffect {
+        variant: String,
+    },
+    /// Every effect kind this engine cannot read at all. The catch-all is what makes a new kind
+    /// appearing in the export a refusal rather than a silent no-op.
     #[serde(other)]
     Unmodelled,
 }

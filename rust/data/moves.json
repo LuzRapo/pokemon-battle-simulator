@@ -1154,7 +1154,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "CURE_PARTY"
+     "kind": "CodedEffect",
+     "variant": "CURE_PARTY"
     }
    ],
    "force_switch": false,
@@ -1584,7 +1585,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "AURORA_VEIL"
+     "kind": "SideConditionEffect",
+     "variant": "AURORA_VEIL"
     }
    ],
    "force_switch": false,
@@ -2225,7 +2227,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "BELLY_DRUM"
+     "kind": "CodedEffect",
+     "variant": "BELLY_DRUM"
     }
    ],
    "force_switch": false,
@@ -4554,7 +4557,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "SNOW"
+     "kind": "WeatherEffect",
+     "variant": "SNOW"
     }
    ],
    "force_switch": false,
@@ -5723,7 +5727,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "COURT_CHANGE"
+     "kind": "CodedEffect",
+     "variant": "COURT_CHANGE"
     }
    ],
    "force_switch": false,
@@ -6121,7 +6126,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "CURSE"
+     "kind": "CodedEffect",
+     "variant": "CURSE"
     }
    ],
    "force_switch": false,
@@ -7048,7 +7054,8 @@
      "struggle_recoil": false
     },
     {
-     "kind": "FUTURE_SIGHT"
+     "kind": "CodedEffect",
+     "variant": "FUTURE_SIGHT"
     }
    ],
    "force_switch": false,
@@ -8691,7 +8698,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "ELECTRIC"
+     "kind": "TerrainEffect",
+     "variant": "ELECTRIC"
     }
    ],
    "force_switch": false,
@@ -9192,7 +9200,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "ENTRAINMENT"
+     "kind": "CodedEffect",
+     "variant": "ENTRAINMENT"
     }
    ],
    "force_switch": false,
@@ -12285,7 +12294,8 @@
      "struggle_recoil": false
     },
     {
-     "kind": "FUTURE_SIGHT"
+     "kind": "CodedEffect",
+     "variant": "FUTURE_SIGHT"
     }
    ],
    "force_switch": false,
@@ -12958,7 +12968,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "GRASSY"
+     "kind": "TerrainEffect",
+     "variant": "GRASSY"
     }
    ],
    "force_switch": false,
@@ -13049,7 +13060,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "GRAVITY"
+     "kind": "PseudoWeatherEffect",
+     "variant": "GRAVITY"
     }
    ],
    "force_switch": false,
@@ -13443,7 +13455,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "SNOW"
+     "kind": "WeatherEffect",
+     "variant": "SNOW"
     }
    ],
    "force_switch": false,
@@ -13639,7 +13652,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "HAZE"
+     "kind": "CodedEffect",
+     "variant": "HAZE"
     }
    ],
    "force_switch": false,
@@ -13869,7 +13883,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "CURE_PARTY"
+     "kind": "CodedEffect",
+     "variant": "CURE_PARTY"
     }
    ],
    "force_switch": false,
@@ -13935,7 +13950,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "HEALING_WISH"
+     "kind": "CodedEffect",
+     "variant": "HEALING_WISH"
     }
    ],
    "force_switch": false,
@@ -17233,7 +17249,8 @@
      "struggle_recoil": false
     },
     {
-     "kind": "KNOCK_OFF_ITEM"
+     "kind": "CodedEffect",
+     "variant": "KNOCK_OFF_ITEM"
     }
    ],
    "force_switch": false,
@@ -17980,7 +17997,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "LIGHT_SCREEN"
+     "kind": "SideConditionEffect",
+     "variant": "LIGHT_SCREEN"
     }
    ],
    "force_switch": false,
@@ -18324,7 +18342,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "HEALING_WISH"
+     "kind": "CodedEffect",
+     "variant": "HEALING_WISH"
     }
    ],
    "force_switch": false,
@@ -18668,7 +18687,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "MAGIC_ROOM"
+     "kind": "PseudoWeatherEffect",
+     "variant": "MAGIC_ROOM"
     }
    ],
    "force_switch": false,
@@ -20235,7 +20255,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "MISTY"
+     "kind": "TerrainEffect",
+     "variant": "MISTY"
     }
    ],
    "force_switch": false,
@@ -20368,7 +20389,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "WEATHER_HEAL"
+     "kind": "CodedEffect",
+     "variant": "WEATHER_HEAL"
     }
    ],
    "force_switch": false,
@@ -20403,7 +20425,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "WEATHER_HEAL"
+     "kind": "CodedEffect",
+     "variant": "WEATHER_HEAL"
     }
    ],
    "force_switch": false,
@@ -22088,7 +22111,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "PAIN_SPLIT"
+     "kind": "CodedEffect",
+     "variant": "PAIN_SPLIT"
     }
    ],
    "force_switch": false,
@@ -22343,7 +22367,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "PERISH_SONG"
+     "kind": "CodedEffect",
+     "variant": "PERISH_SONG"
     }
    ],
    "force_switch": false,
@@ -24076,7 +24101,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "PSYCHIC"
+     "kind": "TerrainEffect",
+     "variant": "PSYCHIC"
     }
    ],
    "force_switch": false,
@@ -24984,7 +25010,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "RAIN"
+     "kind": "WeatherEffect",
+     "variant": "RAIN"
     }
    ],
    "force_switch": false,
@@ -25287,7 +25314,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "REFLECT"
+     "kind": "SideConditionEffect",
+     "variant": "REFLECT"
     }
    ],
    "force_switch": false,
@@ -25434,7 +25462,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "REST"
+     "kind": "CodedEffect",
+     "variant": "REST"
     }
    ],
    "force_switch": false,
@@ -25684,7 +25713,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "REVIVAL_BLESSING"
+     "kind": "CodedEffect",
+     "variant": "REVIVAL_BLESSING"
     }
    ],
    "force_switch": false,
@@ -26222,7 +26252,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "ROLE_PLAY"
+     "kind": "CodedEffect",
+     "variant": "ROLE_PLAY"
     }
    ],
    "force_switch": false,
@@ -26766,7 +26797,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "SANDSTORM"
+     "kind": "WeatherEffect",
+     "variant": "SANDSTORM"
     }
    ],
    "force_switch": false,
@@ -27775,7 +27807,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "SHED_TAIL"
+     "kind": "CodedEffect",
+     "variant": "SHED_TAIL"
     }
    ],
    "force_switch": false,
@@ -28135,7 +28168,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "WEATHER_HEAL"
+     "kind": "CodedEffect",
+     "variant": "WEATHER_HEAL"
     }
    ],
    "force_switch": false,
@@ -28330,7 +28364,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "SIMPLE_BEAM"
+     "kind": "CodedEffect",
+     "variant": "SIMPLE_BEAM"
     }
    ],
    "force_switch": false,
@@ -28435,7 +28470,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "SKILL_SWAP"
+     "kind": "CodedEffect",
+     "variant": "SKILL_SWAP"
     }
    ],
    "force_switch": false,
@@ -29499,7 +29535,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "SNOW"
+     "kind": "WeatherEffect",
+     "variant": "SNOW"
     }
    ],
    "force_switch": false,
@@ -30060,7 +30097,8 @@
    "effects": [
     {
      "duration_turns": null,
-     "kind": "SPIKES"
+     "kind": "SideConditionEffect",
+     "variant": "SPIKES"
     }
    ],
    "force_switch": false,
@@ -30506,7 +30544,8 @@
    "effects": [
     {
      "duration_turns": null,
-     "kind": "STEALTH_ROCK"
+     "kind": "SideConditionEffect",
+     "variant": "STEALTH_ROCK"
     }
    ],
    "force_switch": false,
@@ -30783,7 +30822,8 @@
    "effects": [
     {
      "duration_turns": null,
-     "kind": "STICKY_WEB"
+     "kind": "SideConditionEffect",
+     "variant": "STICKY_WEB"
     }
    ],
    "force_switch": false,
@@ -31207,7 +31247,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "STRENGTH_SAP"
+     "kind": "CodedEffect",
+     "variant": "STRENGTH_SAP"
     }
    ],
    "force_switch": false,
@@ -31580,7 +31621,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "SUN"
+     "kind": "WeatherEffect",
+     "variant": "SUN"
     }
    ],
    "force_switch": false,
@@ -32133,7 +32175,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "TRICK"
+     "kind": "CodedEffect",
+     "variant": "TRICK"
     }
    ],
    "force_switch": false,
@@ -32255,7 +32298,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "WEATHER_HEAL"
+     "kind": "CodedEffect",
+     "variant": "WEATHER_HEAL"
     }
    ],
    "force_switch": false,
@@ -32557,7 +32601,8 @@
    "effects": [
     {
      "duration_turns": 4,
-     "kind": "TAILWIND"
+     "kind": "SideConditionEffect",
+     "variant": "TAILWIND"
     }
    ],
    "force_switch": false,
@@ -32651,7 +32696,8 @@
      "target": "SELF"
     },
     {
-     "kind": "CURE_SELF"
+     "kind": "CodedEffect",
+     "variant": "CURE_SELF"
     }
    ],
    "force_switch": false,
@@ -33894,7 +33940,8 @@
      "target": "SELF"
     },
     {
-     "kind": "TIDY_UP"
+     "kind": "CodedEffect",
+     "variant": "TIDY_UP"
     }
    ],
    "force_switch": false,
@@ -34086,7 +34133,8 @@
    "effects": [
     {
      "duration_turns": null,
-     "kind": "TOXIC_SPIKES"
+     "kind": "SideConditionEffect",
+     "variant": "TOXIC_SPIKES"
     }
    ],
    "force_switch": false,
@@ -34227,7 +34275,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "TRANSFORM"
+     "kind": "CodedEffect",
+     "variant": "TRANSFORM"
     }
    ],
    "force_switch": false,
@@ -34305,7 +34354,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "TRICK"
+     "kind": "CodedEffect",
+     "variant": "TRICK"
     }
    ],
    "force_switch": false,
@@ -34372,7 +34422,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "TRICK_ROOM"
+     "kind": "PseudoWeatherEffect",
+     "variant": "TRICK_ROOM"
     }
    ],
    "force_switch": false,
@@ -36302,7 +36353,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "WISH"
+     "kind": "CodedEffect",
+     "variant": "WISH"
     }
    ],
    "force_switch": false,
@@ -36382,7 +36434,8 @@
    "effects": [
     {
      "duration_turns": 5,
-     "kind": "WONDER_ROOM"
+     "kind": "PseudoWeatherEffect",
+     "variant": "WONDER_ROOM"
     }
    ],
    "force_switch": false,
@@ -36508,7 +36561,8 @@
    "defrosts_user": false,
    "effects": [
     {
-     "kind": "WORRY_SEED"
+     "kind": "CodedEffect",
+     "variant": "WORRY_SEED"
     }
    ],
    "force_switch": false,

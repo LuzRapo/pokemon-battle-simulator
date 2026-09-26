@@ -299,10 +299,17 @@ pub fn step(
                 state.register_active(side);
                 state.sides[side].active_mut().just_switched_in = true;
                 log.push(Event::Switched { side: side as i32, withdrew, sent_out });
-                // `_execute_switch` logs the swap and then emits, so an Intimidate lands after the
-                // line announcing who arrived. A Pokemon sent out already fainted is unregistered
-                // instead of announced, which cannot happen here — a switch target is never one.
-                on_switch_in(state, side, &mut log);
+                // `_execute_switch` lays the hazards on before it emits ON_SWITCH_IN, so Stealth
+                // Rock bites before Intimidate looks across the field.
+                crate::field::entry_hazards(state, side, db, &mut log);
+                // An arrival the hazards knock out is unregistered and returns: its switch-in
+                // ability never fires. So a Pokemon that dies to Stealth Rock on the way in does
+                // not get to Intimidate on the way past.
+                if !state.sides[side].active_pokemon().fainted() {
+                    // `_execute_switch` logs the swap and then emits, so an Intimidate lands after
+                    // the line announcing who arrived.
+                    on_switch_in(state, side, &mut log);
+                }
             }
             Action::Move { slot } => {
                 // Whether the *chosen* move melts its own user free, decided before anything is
@@ -442,14 +449,27 @@ fn switch_out(side: &mut Side, to: usize) -> String {
 ///
 /// Sides are ticked in order, which is the order the Python emits `ON_RESIDUAL` for them.
 fn residuals(state: &mut State, log: &mut Log) {
+    // `_apply_residuals` in order: the field's own clocks first, then each side — its chips, then
+    // its durations. A sandstorm that expires this turn still chips on the way out only if the
+    // tick and the chip are in this order, which is why the field goes first.
+    crate::field::tick_field(state, log);
     for side in 0..2 {
-        if state.sides[side].active_pokemon().fainted() {
-            continue;
+        if !state.sides[side].active_pokemon().fainted() {
+            // ResidualOrder: WEATHER (9000) and TERRAIN (8400) come before STATUS (6000).
+            crate::field::weather_and_terrain_residuals(state, side, log);
+            status_chip(state, side, log);
+            // One faint line for the whole residual pass, whichever chip did it — the Python logs
+            // it in `_apply_residuals` after the emit, not inside any handler. Announcing it from
+            // the status chip alone was right until a sandstorm got a kill of its own.
+            if state.sides[side].active_pokemon().fainted() {
+                let nickname = state.sides[side].active_pokemon().nickname.clone();
+                log.push(Event::Fainted { side: side as i32, pokemon: nickname });
+            }
+            // `_tick_volatiles`, which runs for the active whatever its status was — including one
+            // that just fainted to a chip above. A flinch lasts exactly the turn it was inflicted.
+            state.sides[side].active_mut().volatiles.remove("FLINCH");
         }
-        status_chip(state, side, log);
-        // `_tick_volatiles`, which runs for the active whatever its status was — including one
-        // that just fainted to the chip above. A flinch lasts exactly the turn it was inflicted.
-        state.sides[side].active_mut().volatiles.remove("FLINCH");
+        crate::field::tick_side(state, side, log);
     }
 }
 
@@ -466,16 +486,13 @@ fn status_chip(state: &mut State, side: usize, log: &mut Log) {
     };
     let dealt = active.take_damage(amount);
     let nickname = active.nickname.clone();
-    let fainted = active.fainted();
+    // No faint line here: `residuals` announces it once for the whole pass.
     log.push(Event::ResidualDamage {
         side: side as i32,
-        pokemon: nickname.clone(),
+        pokemon: nickname,
         source: source.into(),
         amount: dealt,
     });
-    if fainted {
-        log.push(Event::Fainted { side: side as i32, pokemon: nickname });
-    }
 }
 
 /// `_can_act`, minus the volatiles and abilities that are not ported. The order is the Python's
@@ -554,7 +571,9 @@ fn targets_defender(effect: &Effect, the_move: &Move) -> bool {
         Effect::InflictStatusEffect { .. } => the_move.target != "SELF",
         Effect::StatStageChangeEffect { target, .. } => target == "TARGET",
         Effect::FixedDamageEffect { .. } => true,
-        Effect::HealEffect { .. } | Effect::Unmodelled => false,
+        // Everything else lands on the user, on a side, or on the field, so a knocked-out target
+        // does not stop it. That is the Python's `_targets_defender` returning False by default.
+        _ => false,
     }
 }
 
@@ -632,7 +651,13 @@ fn resolve_move(
     // Electric and targets its user, so a Ground-type across the field does not stop it boosting —
     // and gating it here anyway skipped the boost's probability draw, which put every later draw
     // in the battle one place out.
-    let damaging = the_move.effects.iter().any(|e| matches!(e, Effect::DamageEffect { .. }));
+    // Fixed damage counts as damaging, exactly as the Python's `any(isinstance(e, (DamageEffect,
+    // FixedDamageEffect)))` does — so Night Shade into a Normal type announces NoEffect here rather
+    // than falling through to the "nothing happened" MoveFailed at the end.
+    let damaging = the_move
+        .effects
+        .iter()
+        .any(|e| matches!(e, Effect::DamageEffect { .. } | Effect::FixedDamageEffect { .. }));
     if damaging && effectiveness == 0.0 {
         log.push(Event::NoEffect {
             side: other as i32,
@@ -670,6 +695,29 @@ fn resolve_move(
                 apply_fixed_damage(state, side, &the_move, amount_formula, *set_amount, db, log);
             }
             Effect::HealEffect { fraction } => apply_heal(state, side, *fraction, log),
+            Effect::WeatherEffect { variant, duration_turns } => {
+                // A Weather Rock would make it eight; those items are still refused.
+                state.field.weather = variant.clone();
+                state.field.weather_turns_left = duration_turns.unwrap_or(5);
+                log.push(Event::WeatherChanged { weather: variant.clone() });
+            }
+            Effect::TerrainEffect { variant, duration_turns } => {
+                // A Terrain Extender would make it eight; still refused. So are the terrain seeds
+                // the Python feeds here, which is why nothing is consumed.
+                state.field.terrain = variant.clone();
+                state.field.terrain_turns_left = duration_turns.unwrap_or(5);
+                log.push(Event::TerrainChanged { terrain: variant.clone() });
+            }
+            Effect::SideConditionEffect { variant, duration_turns } => {
+                apply_side_condition(state, side, &the_move, variant, *duration_turns, log);
+            }
+            Effect::RemoveHazardsEffect { style } => remove_hazards(state, side, style, log),
+            Effect::PseudoWeatherEffect { variant, .. } => {
+                return Err(Refusal::Unported(format!("{variant} changes how the whole field works")))
+            }
+            Effect::CodedEffect { variant } => {
+                return Err(Refusal::Unported(format!("{variant} is hand-written in the Python engine")))
+            }
             Effect::Unmodelled => return Err(Refusal::Unported(format!("{} has an unmodelled effect", the_move.name))),
         }
     }
@@ -816,6 +864,77 @@ fn fixed_amount(state: &State, side: usize, formula: &str, set_amount: Option<i3
 
 /// `_apply_fixed_damage`. No effectiveness line, no crit, no damage roll — it consumes no
 /// randomness at all, which is the whole reason it is a separate path from the formula.
+/// `_apply_side_condition`: screens, hazards and Tailwind.
+///
+/// Every one of them fails rather than refreshing. That is not a detail — without it a search
+/// correctly sees a small gain in topping a screen up and will spend dying turns doing it.
+fn apply_side_condition(
+    state: &mut State,
+    side: usize,
+    the_move: &Move,
+    variant: &str,
+    duration_turns: Option<i32>,
+    log: &mut Log,
+) {
+    let target = if the_move.target == "OPPONENT_SIDE" { 1 - side } else { side };
+    if variant == "TAILWIND" {
+        if state.sides[target].tailwind_turns > 0 {
+            log.push(Event::MoveFailed);
+            return;
+        }
+        state.sides[target].tailwind_turns = duration_turns.unwrap_or(4);
+        log.push(Event::TailwindSet { side: target as i32 });
+        return;
+    }
+    if crate::field::SCREENS.contains(&variant) {
+        if state.sides[target].screens.contains_key(variant) {
+            log.push(Event::MoveFailed);
+            return;
+        }
+        // Light Clay would make it eight; still refused.
+        state.sides[target].screens.insert(variant.to_string(), duration_turns.unwrap_or(5));
+        log.push(Event::ScreenSet { side: target as i32, screen: variant.to_string() });
+        return;
+    }
+    let standing = state.sides[target].hazards.get(variant).copied().unwrap_or(0);
+    if standing >= crate::field::max_layers(variant) {
+        log.push(Event::MoveFailed);
+        return;
+    }
+    state.sides[target].hazards.insert(variant.to_string(), standing + 1);
+    log.push(Event::HazardSet { side: target as i32, hazard: variant.to_string() });
+}
+
+/// `_apply_remove_hazards`. Rapid Spin clears its own side and frees its user from Leech Seed;
+/// Defog clears both sides, takes down the opponent's screens, and wipes the terrain.
+fn remove_hazards(state: &mut State, side: usize, style: &str, log: &mut Log) {
+    clear_hazards(state, side, log);
+    if style == "RAPID_SPIN" {
+        // Leech Seed is still an unported volatile, so there is nothing here to free anybody from.
+        return;
+    }
+    let other = 1 - side;
+    clear_hazards(state, other, log);
+    let screens: Vec<String> = state.sides[other].screens.keys().cloned().collect();
+    for screen in screens {
+        state.sides[other].screens.remove(&screen);
+        log.push(Event::ScreenFaded { side: other as i32, screen });
+    }
+    if state.field.terrain != "NONE" {
+        let prior = std::mem::replace(&mut state.field.terrain, "NONE".to_string());
+        state.field.terrain_turns_left = 0;
+        log.push(Event::TerrainFaded { terrain: prior });
+    }
+}
+
+fn clear_hazards(state: &mut State, side: usize, log: &mut Log) {
+    let standing: Vec<String> = state.sides[side].hazards.keys().cloned().collect();
+    for hazard in standing {
+        state.sides[side].hazards.remove(&hazard);
+        log.push(Event::HazardsCleared { side: side as i32, hazard });
+    }
+}
+
 fn apply_fixed_damage(
     state: &mut State,
     side: usize,
