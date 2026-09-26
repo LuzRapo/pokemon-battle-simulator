@@ -156,12 +156,21 @@ fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'
 /// sweep.
 pub const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
 
-/// Every coded move this engine has learned: Struggle, plus the power rules in `power.rs`.
-pub fn ported_coded_moves() -> Vec<&'static str> {
-    let mut all: Vec<&str> = PORTED_CODED_MOVES.to_vec();
-    all.extend(crate::power::PORTED);
-    all.sort_unstable();
-    all
+/// Every coded move this engine has learned: Struggle, plus the rules in `power.rs`.
+///
+/// Built once. These are asked on every move resolution, and rebuilding a sorted Vec each time
+/// cost half the engine's throughput — 284k turns a second down to 143k — for a list that cannot
+/// change while the process is running.
+pub fn ported_coded_moves() -> &'static std::collections::HashSet<&'static str> {
+    static ONCE: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
+    ONCE.get_or_init(|| {
+        let mut all: std::collections::HashSet<&str> = PORTED_CODED_MOVES.into_iter().collect();
+        all.extend(crate::power::PORTED);
+        all.extend(crate::power::PORTED_TYPE_OVERRIDES);
+        all.extend(crate::power::PORTED_FAILURES);
+        all.extend(crate::power::SCREEN_BREAKERS);
+        all
+    })
 }
 
 /// `_DEFENDER_FACING_TARGETS`: the targets a Protect can stand in the way of.
@@ -190,22 +199,27 @@ pub const PORTED_VOLATILES: [&str; 10] = [
 /// A Pokemon carrying live behaviour absent from these is refused, not played with part of its
 /// rules missing. 220 abilities and 110 items are live in the Python; these say how far along the
 /// port is, and a name joins one only once it has been agreed across a sweep.
-pub fn ported_abilities() -> Vec<&'static str> {
-    let mut all: Vec<&str> = crate::abilities::PORTED.to_vec();
-    all.extend(crate::hooks::PORTED_ABILITIES);
-    all.extend(crate::inline::PORTED_ABILITIES);
-    all.extend(crate::hooks::PORTED_RESIDUAL_ABILITIES);
-    all.sort_unstable();
-    all
+pub fn ported_abilities() -> &'static std::collections::HashSet<&'static str> {
+    static ONCE: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
+    ONCE.get_or_init(|| {
+        let mut all: std::collections::HashSet<&str> = crate::abilities::PORTED.into_iter().collect();
+        all.extend(crate::hooks::PORTED_ABILITIES);
+        all.extend(crate::inline::PORTED_ABILITIES);
+        all.extend(crate::hooks::PORTED_RESIDUAL_ABILITIES);
+        all.extend(crate::power::PORTED_ATE_ABILITIES);
+        all
+    })
 }
 
-pub fn ported_items() -> Vec<&'static str> {
-    let mut all: Vec<&str> = crate::items::PORTED.to_vec();
-    all.extend(crate::hooks::PORTED_ITEMS);
-    all.extend(crate::inline::PORTED_ITEMS);
-    all.extend(crate::hooks::PORTED_RESIDUAL_ITEMS);
-    all.sort_unstable();
-    all
+pub fn ported_items() -> &'static std::collections::HashSet<&'static str> {
+    static ONCE: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
+    ONCE.get_or_init(|| {
+        let mut all: std::collections::HashSet<&str> = crate::items::PORTED.into_iter().collect();
+        all.extend(crate::hooks::PORTED_ITEMS);
+        all.extend(crate::inline::PORTED_ITEMS);
+        all.extend(crate::hooks::PORTED_RESIDUAL_ITEMS);
+        all
+    })
 }
 
 /// Why this Pokemon cannot be played, if it cannot.
@@ -214,10 +228,10 @@ pub fn ported_items() -> Vec<&'static str> {
 /// built to catch — a wrong answer delivered in silence. Until Intimidate is written here, a
 /// scenario containing one stops the run.
 pub fn unsupported_pokemon(pokemon: &Pokemon, db: &Database) -> Option<String> {
-    if db.live_abilities.contains(&pokemon.ability) && !ported_abilities().contains(&pokemon.ability.as_str()) {
+    if db.live_abilities.contains(&pokemon.ability) && !ported_abilities().contains(pokemon.ability.as_str()) {
         return Some(format!("{} has {}, which is not ported", pokemon.nickname, pokemon.ability));
     }
-    if db.live_items.contains(&pokemon.item) && !ported_items().contains(&pokemon.item.as_str()) {
+    if db.live_items.contains(&pokemon.item) && !ported_items().contains(pokemon.item.as_str()) {
         return Some(format!("{} is holding {}, which is not ported", pokemon.nickname, pokemon.item));
     }
     None
@@ -250,7 +264,7 @@ impl Gap {
 /// front rather than played wrongly — the whole point of the differential work is that silence is
 /// the one unacceptable failure mode.
 pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
-    if db.coded_moves.contains(&the_move.name) && !ported_coded_moves().contains(&the_move.name.as_str()) {
+    if db.coded_moves.contains(&the_move.name) && !ported_coded_moves().contains(the_move.name.as_str()) {
         return Some(Gap::CodedByName);
     }
     // `healing` is deliberately absent. It is Showdown's `heal` flag, and the Python branches on it
@@ -302,8 +316,18 @@ pub fn step(
     tape: &mut Tape,
 ) -> Result<Log, Refusal> {
     let mut log = Log::new();
+    // Indexed rather than zipped: the loop touches `state.sides`, `actions` and `choosers` by the
+    // same index, and a zip over one of them would only hide that.
+    #[allow(clippy::needless_range_loop)]
     for side in 0..2 {
         state.sides[side].acted_this_turn = false;
+        // What this side picked, so Sucker Punch can ask whether an attack is still coming.
+        state.sides[side].chosen_move = match &actions[side] {
+            Action::Move { slot } => {
+                state.sides[side].active_pokemon().moves.get(*slot).cloned()
+            }
+            Action::Switch { .. } => None,
+        };
         // "This turn" is what Counter and Mirror Coat mean, so the record starts empty.
         let active = state.sides[side].active_mut();
         active.last_hit_taken = 0;
@@ -348,7 +372,9 @@ pub fn step(
                 let sent_out = state.sides[side].team[*to].nickname.clone();
                 let withdrew = switch_out(state, side, *to);
                 state.register_active(side);
-                state.sides[side].active_mut().just_switched_in = true;
+                let arriving = state.sides[side].active_mut();
+                arriving.just_switched_in = true;
+                arriving.turns_active = 0; // a fresh stint, so Fake Out is live again
                 log.push(Event::Switched { side: side as i32, withdrew, sent_out });
                 // `_execute_switch` lays the hazards on before it emits ON_SWITCH_IN, so Stealth
                 // Rock bites before Intimidate looks across the field.
@@ -402,9 +428,18 @@ pub fn step(
     // rule is "every turn-end except the one I entered on", so it clears here rather than when its
     // owner acted. Clearing it after the action instead cost Stakeout its whole effect, since the
     // Pokemon it punishes is the one that came in *this* turn and has not moved yet.
+    // Indexed rather than zipped: the body reaches into `state.sides` and `choosers` by the same
+    // index, and zipping one of them would only disguise that.
+    #[allow(clippy::needless_range_loop)]
     for side in 0..2 {
         if !state.sides[side].active_pokemon().fainted() {
             state.sides[side].active_mut().just_switched_in = false;
+            // `turns_active` counts only for whoever actually chose this turn's action: a Pokemon
+            // that arrived mid-turn has not had a turn of its own yet, and Fake Out is still live
+            // for it next turn.
+            if state.sides[side].active == choosers[side] {
+                state.sides[side].active_mut().turns_active += 1;
+            }
         }
     }
     state.turn += 1;
@@ -518,9 +553,10 @@ fn residuals(state: &mut State, tape: &mut Tape, log: &mut Log) -> Result<(), Re
     for side in 0..2 {
         if !state.sides[side].active_pokemon().fainted() {
             // ResidualOrder: WEATHER (9000) and TERRAIN (8400) come before STATUS (6000).
-            // ResidualOrder, top to bottom: WEATHER (9000), then the weather abilities, the
-            // cures and the recovery items, then the status chip at 6000, then everything below.
-            crate::field::weather_and_terrain_residuals(state, side, log);
+            // ResidualOrder, top to bottom: WEATHER (9000), then the weather abilities (8500),
+            // the terrain (8400), the cures and the recovery items, then the status chip at 6000,
+            // then everything below it.
+            crate::field::weather_residual(state, side, log);
             crate::hooks::residual_before_status(state, side, tape, log)?;
             status_chip(state, side, log);
             crate::hooks::residual_after_status(state, side, tape, log)?;
@@ -688,6 +724,16 @@ fn resolve_move(
     if let Some(why) = unsupported_reason(&the_move, db) {
         return Err(Refusal::Unported(why));
     }
+    // The type it actually resolves as, decided before anything else looks at it — the Python
+    // rebuilds the move with the new type, so every later reader sees only the new one. The listed
+    // type is kept because the `-ate` boost is the one question that still needs it.
+    let listed_type = the_move.move_type.clone();
+    let mut the_move = the_move;
+    if let Some(became) = crate::power::type_override(&the_move, state.sides[side].active_pokemon(), state) {
+        the_move.move_type = became;
+    }
+    let the_move = the_move;
+
     // Spent before anything resolves, as `_spend_pp` does it: a move that misses still costs its
     // point, which is why this is here rather than after the hit lands.
     if !empty {
@@ -717,6 +763,13 @@ fn resolve_move(
         return Ok(());
     }
 
+    // `coded_move_fails`: the conditions a hand-written move checks before it will go off. After
+    // the move is announced and after the stall check, which is where the Python asks.
+    if crate::power::coded_move_fails(&the_move, state, side, db) {
+        log.push(Event::MoveFailed);
+        return Ok(());
+    }
+
     // Protect and its relatives. *After* the stall check, which is where the Python puts it — a
     // move turned aside by a Protect has still spent its own stalling roll if it had one.
     if the_move.protectable
@@ -728,6 +781,15 @@ fn resolve_move(
         state.sides[side].active_mut().rolling_hits = 0; // `_break_rolling`
         crash_damage(state, side, &the_move, log);
         return Ok(());
+    }
+
+    // The screen breakers, which take the wall down whether or not the hit that follows lands.
+    if crate::power::SCREEN_BREAKERS.contains(&the_move.name.as_str()) {
+        let standing: Vec<String> = state.sides[other].screens.keys().cloned().collect();
+        for screen in standing {
+            state.sides[other].screens.remove(&screen);
+            log.push(Event::ScreenFaded { side: other as i32, screen });
+        }
     }
 
     // Accuracy first, and only when the move has one — `_accuracy_check` returns True without
@@ -795,7 +857,7 @@ fn resolve_move(
         match effect {
             Effect::DamageEffect { .. } => {
                 // Effectiveness is logged inside, because the hit-count roll comes before it.
-                apply_damage(state, side, &the_move, effectiveness, db, tape, log)?;
+                apply_damage(state, side, &the_move, &listed_type, effectiveness, db, tape, log)?;
             }
             Effect::InflictStatusEffect { status, probability, to_self, .. } => {
                 // `_apply_status_routed`: the *move* targeting its user is enough, whatever the
@@ -893,7 +955,9 @@ fn force_random_switch(
     let sent_out = state.sides[side].team[chosen].nickname.clone();
     let withdrew = switch_out(state, side, chosen);
     state.register_active(side);
-    state.sides[side].active_mut().just_switched_in = true;
+    let arriving = state.sides[side].active_mut();
+    arriving.just_switched_in = true;
+    arriving.turns_active = 0;
     log.push(Event::Switched { side: side as i32, withdrew, sent_out });
     crate::field::entry_hazards(state, side, db, log);
     if !state.sides[side].active_pokemon().fainted() {
@@ -1147,6 +1211,8 @@ fn apply_fixed_damage(
     let defender = state.sides[other].active_mut();
     let dealt = defender.take_damage(amount);
     if dealt > 0 {
+        // Same bookkeeping as an ordinary hit: a Seismic Toss still counts toward Rage Fist.
+        defender.times_hit += 1;
         defender.last_hit_taken = dealt;
         defender.last_hit_category = Some(category.to_string());
         let nickname = defender.nickname.clone();
@@ -1174,10 +1240,14 @@ fn apply_heal(state: &mut State, side: usize, fraction: f64, log: &mut Log) {
     }
 }
 
+// Eight arguments, for the same reason `calculate_hit` takes eight: this reads against the
+// Python's `_apply_damage`, and bundling them would make the two harder to diff.
+#[allow(clippy::too_many_arguments)]
 fn apply_damage(
     state: &mut State,
     side: usize,
     the_move: &Move,
+    listed_type: &str,
     effectiveness: f64,
     db: &Database,
     tape: &mut Tape,
@@ -1193,6 +1263,7 @@ fn apply_damage(
         _ => None,
     });
     let power_override = crate::power::effective_power(the_move, listed.flatten(), state, side, db, tape)?;
+    let overrides = crate::power::payload_overrides(the_move, listed_type, state.sides[side].active_pokemon());
 
     let (mut total_dealt, mut hits_landed, mut critical) = (0, 0, false);
     for _ in 0..planned {
@@ -1200,9 +1271,12 @@ fn apply_damage(
         // on the first blow has to be gone by the second.
         let (mut payload, eaten) = collect_damage_payload(state, side, the_move, db);
         payload.power_override = power_override;
-        payload.defense_stat_override = crate::power::defense_stat_override(the_move);
-        payload.ignore_burn |= crate::power::ignores_burn(the_move);
-        payload.ignore_weather_drop = crate::power::ignores_weather_drop(the_move);
+        payload.defense_stat_override = overrides.defense_stat;
+        payload.ignore_burn |= overrides.ignore_burn;
+        payload.ignore_weather_drop = overrides.ignore_weather_drop;
+        if let Some(modifier) = overrides.ate_power_mod {
+            payload.power_mods_4096.push(modifier);
+        }
         // An Air Balloon eats a Ground move whole, and the Python returns before rolling anything
         // — so the draws are skipped too, which is why this is here and not inside the formula.
         let absorbed = the_move.move_type == "GROUND"
@@ -1464,6 +1538,26 @@ pub fn apply_main_status(
     tape: &mut Tape,
     log: &mut Log,
 ) -> Result<(), Refusal> {
+    // A move knows what the weather is; an ability or a held orb does not.
+    let weather = state.field.weather.clone();
+    apply_main_status_from(state, target_side, status, Some(&weather), tape, log)
+}
+
+/// The same, told whether the caller knows the weather.
+///
+/// `weather: None` is not a shortcut — it is the Python's own behaviour. Only the move path passes
+/// `field` to `_apply_main_status`; the contact abilities and the Toxic and Flame Orbs all call it
+/// without one, and `_ability_immune_to_status` reads `field is not None` before it will let Leaf
+/// Guard block anything. So a Toxic Orb poisons its holder in blazing sun and a Leaf Guard cannot
+/// stop it, while Sleep Powder in the same sun fails.
+pub fn apply_main_status_from(
+    state: &mut State,
+    target_side: usize,
+    status: Status,
+    weather: Option<&str>,
+    tape: &mut Tape,
+    log: &mut Log,
+) -> Result<(), Refusal> {
     {
         let target = state.sides[target_side].active_pokemon();
         // Type immunity is silent in the Python. Corrosion would let a Poison type poison a Steel
@@ -1478,7 +1572,7 @@ pub fn apply_main_status(
         }
         // An ability immunity announces itself — as a plain `DoesNotAffect`, which says nothing
         // about *which* ability refused it. That is the Python's line, so it is this one's.
-        if crate::inline::ability_blocks_status(target, status, &state.field.weather) {
+        if crate::inline::ability_blocks_status(target, status, weather.unwrap_or("NONE")) {
             let nickname = target.nickname.clone();
             log.push(Event::DoesNotAffect { side: target_side as i32, pokemon: nickname });
             return Ok(());

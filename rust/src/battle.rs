@@ -95,6 +95,8 @@ pub struct Pokemon {
     /// "this turn" rather than "ever".
     /// How many hits this Pokemon has taken all battle (Rage Fist) and how many times its
     /// current run of Fury Cutter has connected.
+    /// Whole turns since this Pokemon's stint began, which Fake Out reads and a switch resets.
+    pub turns_active: i32,
     pub times_hit: i32,
     pub rolling_hits: i32,
     /// The species' base Attack, which Beat Up sums over the whole team, and its weight, which
@@ -222,6 +224,7 @@ impl Pokemon {
             just_switched_in: true,
             registered_at: 0,
             switch_in_boost_used: false,
+            turns_active: 0,
             times_hit: 0,
             rolling_hits: 0,
             base_attack: species.base_stats.attack,
@@ -275,6 +278,8 @@ pub struct Side {
     pub tailwind_turns: i32,
     /// Whether this side has already taken its action this turn. Analytic reads it.
     pub acted_this_turn: bool,
+    /// The move this side picked for the turn, by name — what Sucker Punch is trying to read.
+    pub chosen_move: Option<String>,
 }
 
 impl Side {
@@ -286,6 +291,7 @@ impl Side {
             screens: BTreeMap::new(),
             tailwind_turns: 0,
             acted_this_turn: false,
+            chosen_move: None,
         }
     }
 
@@ -352,7 +358,13 @@ pub struct State {
 impl State {
     pub fn new(first: Side, second: Side) -> Self {
         let mut state =
-            State { sides: [first, second], field: Field::default(), turn: 0, outcome: None, registrations: 0 };
+            State {
+                sides: [first, second],
+                field: Field::default(),
+                turn: 0,
+                outcome: None,
+                registrations: 0,
+            };
         for side in 0..2 {
             state.register_active(side);
         }

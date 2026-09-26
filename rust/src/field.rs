@@ -85,9 +85,8 @@ pub fn tick_side(state: &mut State, side: usize, log: &mut Log) {
     }
 }
 
-/// The sandstorm chip and the grassy-terrain heal, at `ResidualOrder.WEATHER` and `TERRAIN` — both
-/// ahead of the status chip, which is why they are here rather than folded into it.
-pub fn weather_and_terrain_residuals(state: &mut State, side: usize, log: &mut Log) {
+/// The sandstorm chip, at `ResidualOrder.WEATHER` (9000) — the first thing in the pass.
+pub fn weather_residual(state: &mut State, side: usize, log: &mut Log) {
     // Through `effective_weather`, so an Air Lock on either side stops the sand biting without
     // stopping the sandstorm.
     if crate::hooks::effective_weather(state) == "SANDSTORM" {
@@ -105,17 +104,6 @@ pub fn weather_and_terrain_residuals(state: &mut State, side: usize, log: &mut L
                 source: "sandstorm".into(),
                 amount: dealt,
             });
-        }
-    }
-    if state.field.terrain == "GRASSY" && is_grounded(state.sides[side].active_pokemon()) {
-        let active = state.sides[side].active_mut();
-        let amount = std::cmp::max(1, active.totals.hp / 16);
-        let before = active.hp;
-        active.hp = std::cmp::min(active.totals.hp, active.hp + amount);
-        let healed = active.hp - before;
-        if healed > 0 {
-            let nickname = active.nickname.clone();
-            log.push(Event::Healed { side: side as i32, pokemon: nickname, amount: healed });
         }
     }
 }
@@ -144,6 +132,23 @@ pub fn entry_hazards(state: &mut State, side: usize, db: &Database, log: &mut Lo
 }
 
 /// True if the arrival fainted to it.
+/// The grassy-terrain heal, at `TERRAIN` (8400) — *below* the weather abilities at 8500, which is
+/// why it is a separate function rather than sharing one with the sandstorm above it.
+pub fn terrain_residual(state: &mut State, side: usize, log: &mut Log) {
+    if state.field.terrain != "GRASSY" || !is_grounded(state.sides[side].active_pokemon()) {
+        return;
+    }
+    let active = state.sides[side].active_mut();
+    let amount = std::cmp::max(1, active.totals.hp / 16);
+    let before = active.hp;
+    active.hp = std::cmp::min(active.totals.hp, active.hp + amount);
+    let healed = active.hp - before;
+    if healed > 0 {
+        let nickname = active.nickname.clone();
+        log.push(Event::Healed { side: side as i32, pokemon: nickname, amount: healed });
+    }
+}
+
 fn stealth_rock(state: &mut State, side: usize, db: &Database, log: &mut Log) -> bool {
     if !state.sides[side].hazards.contains_key("STEALTH_ROCK") {
         return false;

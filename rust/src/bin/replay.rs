@@ -115,6 +115,13 @@ fn state_digest(state: &State) -> serde_json::Value {
     })
 }
 
+/// A set as a sorted list, so `--ported` reads the same way twice running.
+fn sorted(names: &std::collections::HashSet<&'static str>) -> Vec<&'static str> {
+    let mut all: Vec<&str> = names.iter().copied().collect();
+    all.sort_unstable();
+    all
+}
+
 fn main() {
     // `replay --ported` prints what this engine has actually implemented, so the scenario
     // generator can restrict itself to that without a second copy of the list drifting out of
@@ -123,9 +130,9 @@ fn main() {
         println!(
             "{}",
             json!({
-                "abilities": pokemon_engine::turn::ported_abilities(),
-                "items": pokemon_engine::turn::ported_items(),
-                "coded_moves": pokemon_engine::turn::ported_coded_moves(),
+                "abilities": sorted(pokemon_engine::turn::ported_abilities()),
+                "items": sorted(pokemon_engine::turn::ported_items()),
+                "coded_moves": sorted(pokemon_engine::turn::ported_coded_moves()),
                 "volatiles": pokemon_engine::turn::PORTED_VOLATILES.as_slice(),
             })
         );
