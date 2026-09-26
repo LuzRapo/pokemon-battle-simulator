@@ -141,6 +141,17 @@ pub enum Effect {
         #[serde(default)]
         is_secondary: bool,
     },
+    /// Damage that is not the formula's: a set number, the user's level, a share of somebody's HP.
+    FixedDamageEffect {
+        amount_formula: String,
+        set_amount: Option<i32>,
+    },
+    /// A move that heals its user by a fraction of its maximum.
+    HealEffect {
+        fraction: f64,
+    },
+    /// Every effect kind this engine cannot read. The catch-all is what makes a new kind appearing
+    /// in the export a refusal rather than a silent no-op.
     #[serde(other)]
     Unmodelled,
 }

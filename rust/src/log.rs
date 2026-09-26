@@ -23,6 +23,12 @@ pub enum Event {
     /// this by checking whether the log grew, so it is a statement about the log rather than about
     /// the move, and it is ported the same way.
     MoveFailed,
+    /// A move healing its user.
+    Healed {
+        side: i32,
+        pokemon: String,
+        amount: i32,
+    },
     /// How many times a multi-hit move landed, reported once after the blows.
     MultiHitSummary {
         hits: i32,

@@ -90,6 +90,11 @@ pub struct Pokemon {
     pub registered_at: u64,
     /// Dauntless Shield and Intrepid Sword fire once per battle, not once per switch-in.
     pub switch_in_boost_used: bool,
+    /// What the last hit this turn took off, and whether it was physical or special. Counter and
+    /// Mirror Coat are the readers; the Python clears both at the top of every turn, so they mean
+    /// "this turn" rather than "ever".
+    pub last_hit_taken: i32,
+    pub last_hit_category: Option<String>,
     /// Consecutive stalling moves. Protect-likes fail with odds 1 - 1/3^n, and the counter is
     /// broken by anything else the Pokemon does — including a turn it could not act on.
     pub protect_streak: i32,
@@ -209,6 +214,8 @@ impl Pokemon {
             just_switched_in: true,
             registered_at: 0,
             switch_in_boost_used: false,
+            last_hit_taken: 0,
+            last_hit_category: None,
             protect_streak: 0,
         })
     }

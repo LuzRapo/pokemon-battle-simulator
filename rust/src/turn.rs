@@ -264,6 +264,10 @@ pub fn step(
     let mut log = Log::new();
     for side in 0..2 {
         state.sides[side].acted_this_turn = false;
+        // "This turn" is what Counter and Mirror Coat mean, so the record starts empty.
+        let active = state.sides[side].active_mut();
+        active.last_hit_taken = 0;
+        active.last_hit_category = None;
     }
     // `_send_out_leads`: the leads' switch-in abilities fire before the turn is ordered, in
     // descending speed, so the slower weather-setter's weather is the one that stands. It takes no
@@ -549,7 +553,8 @@ fn targets_defender(effect: &Effect, the_move: &Move) -> bool {
         Effect::DamageEffect { .. } => true,
         Effect::InflictStatusEffect { .. } => the_move.target != "SELF",
         Effect::StatStageChangeEffect { target, .. } => target == "TARGET",
-        Effect::Unmodelled => false,
+        Effect::FixedDamageEffect { .. } => true,
+        Effect::HealEffect { .. } | Effect::Unmodelled => false,
     }
 }
 
@@ -661,6 +666,10 @@ fn resolve_move(
             Effect::StatStageChangeEffect { stages, probability, target, .. } => {
                 apply_stages(state, side, stages, *probability, target, tape, log)?;
             }
+            Effect::FixedDamageEffect { amount_formula, set_amount } => {
+                apply_fixed_damage(state, side, &the_move, amount_formula, *set_amount, db, log);
+            }
+            Effect::HealEffect { fraction } => apply_heal(state, side, *fraction, log),
             Effect::Unmodelled => return Err(Refusal::Unported(format!("{} has an unmodelled effect", the_move.name))),
         }
     }
@@ -780,6 +789,85 @@ fn planned_hits(the_move: &Move, tape: &mut Tape) -> Result<(bool, i32), Refusal
     Ok((true, tape.integer(low, high + 1)?))
 }
 
+/// `_fixed_amount`: damage that is not the formula's. `None` means the condition was not met, and
+/// the move then falls through to the empty-log "But it failed!".
+fn fixed_amount(state: &State, side: usize, formula: &str, set_amount: Option<i32>) -> Option<i32> {
+    let attacker = state.sides[side].active_pokemon();
+    let defender = state.sides[1 - side].active_pokemon();
+    match formula {
+        "LEVEL" => Some(attacker.level),
+        "SET" => set_amount,
+        "HALF_TARGET_HP" => Some(std::cmp::max(1, defender.hp / 2)),
+        "ENDEAVOR" => Some(defender.hp - attacker.hp).filter(|difference| *difference > 0),
+        "COUNTER" | "MIRROR_COAT" => {
+            let wanted = if formula == "COUNTER" { "PHYSICAL" } else { "SPECIAL" };
+            let valid = attacker.last_hit_category.as_deref() == Some(wanted) && attacker.last_hit_taken > 0;
+            valid.then(|| 2 * attacker.last_hit_taken)
+        }
+        "USER_HP" => Some(attacker.hp),
+        // The OHKO moves, which their own 30% accuracy already gates.
+        "TARGET_HP" => Some(defender.hp),
+        // Really the level times a roll between 0.5 and 1.5, taken at its mean: `_fixed_amount` is
+        // handed no RNG on the Python side either, so this takes no draw and must not.
+        "PSYWAVE" => Some(attacker.level),
+        _ => None,
+    }
+}
+
+/// `_apply_fixed_damage`. No effectiveness line, no crit, no damage roll — it consumes no
+/// randomness at all, which is the whole reason it is a separate path from the formula.
+fn apply_fixed_damage(
+    state: &mut State,
+    side: usize,
+    the_move: &Move,
+    formula: &str,
+    set_amount: Option<i32>,
+    db: &Database,
+    log: &mut Log,
+) {
+    let other = 1 - side;
+    let defender_types = state.sides[other].active_pokemon().types.clone();
+    if db.effectiveness(&the_move.move_type, &defender_types) == 0.0 {
+        log.push(Event::NoEffect {
+            side: other as i32,
+            pokemon: state.sides[other].active_pokemon().nickname.clone(),
+        });
+        return;
+    }
+    let Some(amount) = fixed_amount(state, side, formula, set_amount) else {
+        return;
+    };
+    let category = if formula == "MIRROR_COAT" { "SPECIAL" } else { "PHYSICAL" };
+    let defender = state.sides[other].active_mut();
+    let dealt = defender.take_damage(amount);
+    if dealt > 0 {
+        defender.last_hit_taken = dealt;
+        defender.last_hit_category = Some(category.to_string());
+        let nickname = defender.nickname.clone();
+        log.push(Event::DamageDealt { side: other as i32, pokemon: nickname, amount: dealt });
+    }
+    if state.sides[other].active_pokemon().fainted() {
+        log.push(Event::Fainted {
+            side: other as i32,
+            pokemon: state.sides[other].active_pokemon().nickname.clone(),
+        });
+    }
+}
+
+/// `_apply_heal`. Roost's half of this — dropping the bird's Flying type for the turn — belongs to
+/// Roost, which is still refused for being special-cased by name.
+fn apply_heal(state: &mut State, side: usize, fraction: f64, log: &mut Log) {
+    let pokemon = state.sides[side].active_mut();
+    let amount = std::cmp::max(1, (pokemon.totals.hp as f64 * fraction) as i32);
+    let before = pokemon.hp;
+    pokemon.hp = std::cmp::min(pokemon.totals.hp, pokemon.hp + amount);
+    let healed = pokemon.hp - before;
+    if healed > 0 {
+        let nickname = pokemon.nickname.clone();
+        log.push(Event::Healed { side: side as i32, pokemon: nickname, amount: healed });
+    }
+}
+
 fn apply_damage(
     state: &mut State,
     side: usize,
@@ -827,6 +915,12 @@ fn apply_damage(
         };
         critical = hit.is_crit;
         let dealt = state.sides[other].active_mut().take_damage(hit.amount);
+        if dealt > 0 {
+            // `_land_hit`: what Counter and Mirror Coat read back on their own turn.
+            let defender = state.sides[other].active_mut();
+            defender.last_hit_taken = dealt;
+            defender.last_hit_category = Some(hit_shape(the_move).0.to_string());
+        }
         total_dealt += dealt;
         hits_landed += 1;
         // A multi-hit move reports each blow where it happened; everything else reports one total

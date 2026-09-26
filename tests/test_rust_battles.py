@@ -94,6 +94,8 @@ def _status_and_stage_move_names() -> list[str]:
             return True
         if kind == "InflictStatusEffect":
             return getattr(getattr(effect, "status", None), "name", None) in landable
+        if kind in ("FixedDamageEffect", "HealEffect"):
+            return True
         return kind == "DamageEffect" and _plain_damage(effect)
 
     coded = set(json.loads((DATA / "rules.json").read_text())["coded_moves"])
@@ -324,23 +326,20 @@ def test_the_ported_volatiles_actually_land_in_the_swept_battles() -> None:
 
 
 def _moves_where(predicate) -> list[str]:  # type: ignore[no-untyped-def]
-    """The slice's moves whose first damage effect satisfies a predicate."""
-    wanted = []
-    for name in STATUS_MOVES:
-        move = next(m for m in get_all_moves().values() if m.name == name)
-        effect = next((e for e in move.effects if type(e).__name__ == "DamageEffect"), None)
-        if effect is not None and predicate(effect):
-            wanted.append(name)
-    return wanted
+    """The slice's moves carrying an effect that satisfies a predicate."""
+    by_name = {move.name: move for move in get_all_moves().values()}
+    return [name for name in STATUS_MOVES if any(predicate(e) for e in by_name[name].effects)]
 
 
 @needs_rust
 @pytest.mark.parametrize(
     ("event", "predicate"),
     [
-        ("MultiHitSummary", lambda e: e.multi_hit is not None),
-        ("Drained", lambda e: e.drain_percent is not None),
-        ("RecoilDamage", lambda e: e.recoil_percent is not None),
+        ("MultiHitSummary", lambda e: type(e).__name__ == "DamageEffect" and e.multi_hit is not None),
+        ("Drained", lambda e: type(e).__name__ == "DamageEffect" and e.drain_percent is not None),
+        ("RecoilDamage", lambda e: type(e).__name__ == "DamageEffect" and e.recoil_percent is not None),
+        ("DamageDealt", lambda e: type(e).__name__ == "FixedDamageEffect"),
+        ("Healed", lambda e: type(e).__name__ == "HealEffect"),
     ],
 )
 def test_the_rarer_move_classes_agree_when_the_teams_are_built_for_them(
