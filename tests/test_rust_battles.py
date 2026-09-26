@@ -44,7 +44,7 @@ PLAIN_SPECIES = ("Rhydon", "Machamp", "Kangaskhan", "Tauros", "Dewgong", "Golem"
 
 # The attachments that take a move out of the ported slice: a second use, a forced switch, a charge
 # or recharge turn, a user that blows itself up. Not `healing` — see `unsupported` in turn.rs.
-_UNPORTED_ATTACHMENTS = ("self_switch", "force_switch", "recharges", "charge", "self_destructs")
+_UNPORTED_ATTACHMENTS = ("self_switch", "charge")
 
 
 def _attached(move: object) -> bool:
@@ -321,8 +321,11 @@ def test_the_ported_volatiles_actually_land_in_the_swept_battles() -> None:
     about flinching perfectly. So this counts the entries the Python's own trace carries, which is
     the same trace the Rust engine is compared against.
     """
+    # A hundred and twenty, not forty: a flinch only *costs* a turn when its victim had not moved
+    # yet, and as the move pool widened forty battles started inflicting nine flinches without one
+    # of them ever landing on somebody still waiting.
     seen: Counter[str] = Counter()
-    for seed in range(40):
+    for seed in range(120):
         rng = random.Random(9000 + seed)
         teams = (
             _team(rng, size=3, pool=STATUS_MOVES, abilities=True, items=True),
@@ -337,7 +340,7 @@ def test_the_ported_volatiles_actually_land_in_the_swept_battles() -> None:
                     seen[event.get("reason") or "self_hit"] += 1
 
     for wanted in ("FLINCH", "CONFUSION", "flinch", "confused", "self_hit"):
-        assert seen[wanted] > 0, f"{wanted} never happened across 40 battles: {dict(seen)}"
+        assert seen[wanted] > 0, f"{wanted} never happened across 120 battles: {dict(seen)}"
 
 
 def _moves_where(predicate) -> list[str]:  # type: ignore[no-untyped-def]

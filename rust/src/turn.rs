@@ -236,12 +236,10 @@ pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
     // Everything else reading it is AI policy, not mechanics. A healing move that actually heals
     // carries a `HealEffect`, which arrives here as `Unmodelled` and is refused on its own merits;
     // refusing the flag as well cost the engine all twelve draining moves for nothing.
-    if the_move.self_switch
-        || the_move.force_switch
-        || the_move.recharges
-        || the_move.charge
-        || the_move.self_destructs
-    {
+    // `force_switch`, `recharges` and `self_destructs` are ported; a pivot and a charge turn are
+    // not. A pivot needs the turn loop to send somebody in mid-turn, and a charge needs the move to
+    // be remembered across one.
+    if the_move.self_switch || the_move.charge {
         return Some(Gap::UserOrFieldEffect);
     }
     // An effect list that is empty is not a gap: the Python has nothing to apply either, so the
@@ -256,6 +254,11 @@ pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
             {
                 return Some(Gap::Volatile)
             }
+            // Caught here as well as at use time. A refusal that only happens when the move is
+            // actually reached is still a refusal — but it makes the coverage number a promise
+            // rather than a measurement, and this report is supposed to be the honest one.
+            Effect::CodedEffect { .. } => return Some(Gap::CodedByName),
+            Effect::PseudoWeatherEffect { .. } => return Some(Gap::UserOrFieldEffect),
             Effect::Unmodelled => return Some(Gap::NoModelledEffect),
             _ => {}
         }
@@ -298,10 +301,17 @@ pub fn step(
             on_switch_in(state, side, &mut log);
         }
     }
+    // Who chose each action, by team slot. A Pokemon dragged out by Roar before it acted takes its
+    // queued move with it — resolving the slot anyway means the replacement uses whatever happens
+    // to be in that slot, which is a different move belonging to a different Pokemon.
+    let choosers = [state.sides[0].active, state.sides[1].active];
     let order = order_actions(state, &actions, db, tape)?;
     for side in order {
         if state.outcome.is_some() {
             break;
+        }
+        if state.sides[side].active != choosers[side] {
+            continue; // phazed out before acting
         }
         // A fainted Pokemon cannot move, but its side must still send out a replacement — and
         // that switch is the first thing to resolve. Skipping the side outright left the Rust
@@ -539,6 +549,13 @@ fn can_act(
         let active = state.sides[side].active_pokemon();
         (active.status, active.nickname.clone())
     };
+    // First of every gate, ahead of the freeze roll — so a frozen Pokemon spending its recharge
+    // turn does not take a thaw draw it was never entitled to.
+    if state.sides[side].active_pokemon().volatiles.contains_key("MUST_RECHARGE") {
+        state.sides[side].active_mut().volatiles.remove("MUST_RECHARGE");
+        log.push(Event::CantAct { side: side as i32, pokemon: nickname, reason: "recharge".into() });
+        return Ok(false);
+    }
     if status == Status::Freeze {
         // No draw at all when the move defrosts its user — which is the point. Rolling the check
         // anyway thawed the right Pokemon for the wrong reason and left the tape one draw short
@@ -760,12 +777,61 @@ fn resolve_move(
         }
     }
 
+    // Phazing drags a random healthy teammate in, and it counts as something happening — so it is
+    // before the "nothing happened" check, exactly where the Python puts it.
+    if the_move.force_switch && !state.sides[other].active_pokemon().fainted() {
+        force_random_switch(state, other, db, tape, log)?;
+    }
+
     // Nothing at all happened: every effect was skipped, most often because the target had already
     // been knocked out by the other side this turn. The Python decides this by whether the log grew
     // rather than by inspecting the move, so this does too.
     if log.entries.len() == log_before {
         log.push(Event::MoveFailed);
         crash_damage(state, side, &the_move, log);
+        return Ok(());
+    }
+
+    if the_move.recharges {
+        state.sides[side].active_mut().volatiles.insert("MUST_RECHARGE".to_string(), 1);
+    }
+    if the_move.self_destructs && !state.sides[side].active_pokemon().fainted() {
+        let user = state.sides[side].active_mut();
+        let all_of_it = user.hp;
+        user.take_damage(all_of_it);
+        let nickname = user.nickname.clone();
+        log.push(Event::Fainted { side: side as i32, pokemon: nickname });
+    }
+    Ok(())
+}
+
+/// `_force_random_switch`: Whirlwind, Roar and Dragon Tail drag somebody in at random.
+///
+/// The draw happens only when there *is* a bench to drag from, which is the Python's order — an
+/// empty bench costs the tape nothing.
+fn force_random_switch(
+    state: &mut State,
+    side: usize,
+    db: &Database,
+    tape: &mut Tape,
+    log: &mut Log,
+) -> Result<(), Refusal> {
+    let active = state.sides[side].active;
+    let bench: Vec<usize> = (0..state.sides[side].team.len())
+        .filter(|index| *index != active && !state.sides[side].team[*index].fainted())
+        .collect();
+    if bench.is_empty() {
+        return Ok(());
+    }
+    let chosen = bench[tape.integer(0, bench.len() as i32)? as usize];
+    let sent_out = state.sides[side].team[chosen].nickname.clone();
+    let withdrew = switch_out(&mut state.sides[side], chosen);
+    state.register_active(side);
+    state.sides[side].active_mut().just_switched_in = true;
+    log.push(Event::Switched { side: side as i32, withdrew, sent_out });
+    crate::field::entry_hazards(state, side, db, log);
+    if !state.sides[side].active_pokemon().fainted() {
+        on_switch_in(state, side, log);
     }
     Ok(())
 }
