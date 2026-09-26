@@ -198,7 +198,9 @@ def main() -> int:
     parser.add_argument("--team-size", type=int, default=3)
     parser.add_argument("--max-turns", type=int, default=60)
     parser.add_argument("--switches", action="store_true", help="let either side switch sometimes")
-    parser.add_argument("--abilities", action="store_true", help="give Pokemon the abilities and items the engine has ported")
+    parser.add_argument(
+        "--abilities", action="store_true", help="give Pokemon the abilities and items the engine has ported"
+    )
     parser.add_argument("--quiet", action="store_true", help="do not write failing scenarios to rust/failures/")
     parser.add_argument("--explain", type=int, metavar="SEED", help="show the first turn one seed disagrees on")
     args = parser.parse_args()

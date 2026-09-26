@@ -123,8 +123,8 @@ fn main() {
         println!(
             "{}",
             json!({
-                "abilities": pokemon_engine::abilities::PORTED.as_slice(),
-                "items": pokemon_engine::turn::PORTED_ITEMS.as_slice(),
+                "abilities": pokemon_engine::turn::ported_abilities(),
+                "items": pokemon_engine::turn::ported_items(),
                 "coded_moves": pokemon_engine::turn::PORTED_CODED_MOVES.as_slice(),
             })
         );

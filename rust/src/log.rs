@@ -23,6 +23,26 @@ pub enum Event {
     /// this by checking whether the log grew, so it is a statement about the log rather than about
     /// the move, and it is ported the same way.
     MoveFailed,
+    /// Rough Skin, Iron Barbs, Aftermath: an ability taking a bite out of whoever touched it.
+    AbilityChipDamage {
+        side: i32,
+        pokemon: String,
+        ability: String,
+        amount: i32,
+    },
+    /// Rocky Helmet's share of the same idea.
+    ItemChipDamage {
+        side: i32,
+        pokemon: String,
+        item: String,
+        amount: i32,
+    },
+    /// A berry eaten for health. The Python logs no amount here, only that it happened.
+    ItemHealed {
+        side: i32,
+        pokemon: String,
+        item: String,
+    },
     /// A resist berry halving a super-effective hit, and being eaten for it.
     BerryWeakened {
         side: i32,

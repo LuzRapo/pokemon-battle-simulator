@@ -88,6 +88,8 @@ pub struct Pokemon {
     /// fire in registration order, and a fold of `chain` modifiers is not commutative, so the
     /// order two abilities push into the same list is worth a point of damage.
     pub registered_at: u64,
+    /// Dauntless Shield and Intrepid Sword fire once per battle, not once per switch-in.
+    pub switch_in_boost_used: bool,
 }
 
 pub const STAGE_NAMES: [&str; 7] = [
@@ -203,6 +205,7 @@ impl Pokemon {
             // zero exactly the same way.
             just_switched_in: true,
             registered_at: 0,
+            switch_in_boost_used: false,
         })
     }
 

@@ -18,6 +18,7 @@
 use crate::battle::{Pokemon, Side, State, Status};
 use crate::abilities::{apply_damage_calc, Calc};
 use crate::damage::{calculate_hit, Payload, Rolls};
+use crate::hooks::{on_after_hit, on_switch_in, Hit};
 use crate::data::{Database, Effect, Move};
 use crate::log::{Event, Log};
 use crate::tape::Tape;
@@ -146,12 +147,25 @@ fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'
 /// sweep.
 pub const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
 
-/// Abilities and items this engine has implemented. Both empty for now, and that is the honest
-/// state of the port: every Pokemon carrying live behaviour is refused rather than played with
-/// three-quarters of its rules missing. Names come off these lists as they are ported and agreed
-/// across a sweep — 220 abilities and 110 items to go.
-use crate::abilities::PORTED as PORTED_ABILITIES;
-pub use crate::items::PORTED as PORTED_ITEMS;
+/// Everything this engine has implemented, gathered from the modules that implement it so a name
+/// cannot be claimed in one place and missing from the other.
+///
+/// A Pokemon carrying live behaviour absent from these is refused, not played with part of its
+/// rules missing. 220 abilities and 110 items are live in the Python; these say how far along the
+/// port is, and a name joins one only once it has been agreed across a sweep.
+pub fn ported_abilities() -> Vec<&'static str> {
+    let mut all: Vec<&str> = crate::abilities::PORTED.to_vec();
+    all.extend(crate::hooks::PORTED_ABILITIES);
+    all.sort_unstable();
+    all
+}
+
+pub fn ported_items() -> Vec<&'static str> {
+    let mut all: Vec<&str> = crate::items::PORTED.to_vec();
+    all.extend(crate::hooks::PORTED_ITEMS);
+    all.sort_unstable();
+    all
+}
 
 /// Why this Pokemon cannot be played, if it cannot.
 ///
@@ -159,10 +173,10 @@ pub use crate::items::PORTED as PORTED_ITEMS;
 /// built to catch — a wrong answer delivered in silence. Until Intimidate is written here, a
 /// scenario containing one stops the run.
 pub fn unsupported_pokemon(pokemon: &Pokemon, db: &Database) -> Option<String> {
-    if db.live_abilities.contains(&pokemon.ability) && !PORTED_ABILITIES.contains(&pokemon.ability.as_str()) {
+    if db.live_abilities.contains(&pokemon.ability) && !ported_abilities().contains(&pokemon.ability.as_str()) {
         return Some(format!("{} has {}, which is not ported", pokemon.nickname, pokemon.ability));
     }
-    if db.live_items.contains(&pokemon.item) && !PORTED_ITEMS.contains(&pokemon.item.as_str()) {
+    if db.live_items.contains(&pokemon.item) && !ported_items().contains(&pokemon.item.as_str()) {
         return Some(format!("{} is holding {}, which is not ported", pokemon.nickname, pokemon.item));
     }
     None
@@ -215,6 +229,18 @@ pub fn step(
     for side in 0..2 {
         state.sides[side].acted_this_turn = false;
     }
+    // `_send_out_leads`: the leads' switch-in abilities fire before the turn is ordered, in
+    // descending speed, so the slower weather-setter's weather is the one that stands. It takes no
+    // draws, but it does log, and the entries belong at the very top of turn zero.
+    if state.turn == 0 {
+        let mut leads = [0usize, 1];
+        leads.sort_by_key(|side| {
+            std::cmp::Reverse(effective_speed(state.sides[*side].active_pokemon(), &state.sides[*side]))
+        });
+        for side in leads {
+            on_switch_in(state, side, &mut log);
+        }
+    }
     let order = order_actions(state, &actions, db, tape)?;
     for side in order {
         if state.outcome.is_some() {
@@ -233,6 +259,10 @@ pub fn step(
                 state.register_active(side);
                 state.sides[side].active_mut().just_switched_in = true;
                 log.push(Event::Switched { side: side as i32, withdrew, sent_out });
+                // `_execute_switch` logs the swap and then emits, so an Intimidate lands after the
+                // line announcing who arrived. A Pokemon sent out already fainted is unregistered
+                // instead of announced, which cannot happen here — a switch target is never one.
+                on_switch_in(state, side, &mut log);
             }
             Action::Move { slot } => {
                 // Whether the *chosen* move melts its own user free, decided before anything is
@@ -562,6 +592,19 @@ fn thaw_on_hit(state: &mut State, defender_side: usize, the_move: &Move, log: &m
 /// The Python emits `ON_DAMAGE_CALC` with a base payload and lets handlers fill it in; this builds
 /// the same base and walks the same handlers in the same order. `contact` is a property of the hit
 /// rather than of the move, which is why it is computed here and passed along.
+/// The category and contact flag of the move's first damage effect — the two facts both the
+/// damage payload and the after-hit handlers ask about.
+fn hit_shape(the_move: &Move) -> (&str, bool) {
+    the_move
+        .effects
+        .iter()
+        .find_map(|e| match e {
+            Effect::DamageEffect { category, contact, .. } => Some((category.as_str(), *contact)),
+            _ => None,
+        })
+        .unwrap_or(("STATUS", false))
+}
+
 fn collect_damage_payload(
     state: &State,
     side: usize,
@@ -571,14 +614,7 @@ fn collect_damage_payload(
     let other = 1 - side;
     let attacker = state.sides[side].active_pokemon();
     let defender = state.sides[other].active_pokemon();
-    let (category, contact) = the_move
-        .effects
-        .iter()
-        .find_map(|e| match e {
-            Effect::DamageEffect { category, contact, .. } => Some((category.as_str(), *contact)),
-            _ => None,
-        })
-        .unwrap_or(("STATUS", false));
+    let (category, contact) = hit_shape(the_move);
     let calc = Calc {
         move_type: &the_move.move_type,
         category,
@@ -635,10 +671,16 @@ fn apply_damage(
             &payload,
         )
     };
+    let dealt = state.sides[other].active_mut().take_damage(hit.amount);
+    // Inside the per-hit loop in the Python, which for a single hit means *before* the crit and
+    // damage entries that get logged after it. So Rough Skin's chip is announced before the damage
+    // that caused it, and a berry is eaten before the number that made it ripen is printed.
+    let (category, contact) = hit_shape(the_move);
+    let shape = Hit { attacker_side: side, move_type: &the_move.move_type, category, contact, dealt };
+    on_after_hit(state, &shape, db, tape, log)?;
     if hit.is_crit {
         log.push(Event::CriticalHit);
     }
-    let dealt = state.sides[other].active_mut().take_damage(hit.amount);
     log.push(Event::DamageDealt {
         side: other as i32,
         pokemon: state.sides[other].active_pokemon().nickname.clone(),
@@ -683,9 +725,25 @@ fn apply_status(
     let status = Status::parse(status_name)
         .ok_or_else(|| Refusal::Unported(format!("{status_name} is a volatile, which is not ported")))?;
     let target_side = if to_self { side } else { 1 - side };
+    apply_main_status(state, target_side, status, tape, log)
+}
+
+/// `_apply_main_status`: everything after whatever roll decided the status should be attempted.
+///
+/// Shared, because a move's secondary and an ability like Static reach it by different routes and
+/// must land identically once they get there. The sleep-clause check the Python makes here is a
+/// no-op for this format — `_CLAUSED_STATUSES` is deliberately empty for Anything Goes — so it is
+/// not reproduced; if a format ever wants one, it belongs right here.
+pub fn apply_main_status(
+    state: &mut State,
+    target_side: usize,
+    status: Status,
+    tape: &mut Tape,
+    log: &mut Log,
+) -> Result<(), Refusal> {
     {
         let target = state.sides[target_side].active_pokemon();
-        // Type immunity is silent in the Python; an ability immunity announces itself, and
+        // Type immunity is silent in the Python; an ability immunity announces itself, and those
         // abilities are not ported, so only the silent half exists here.
         if target
             .types
@@ -705,7 +763,8 @@ fn apply_status(
             return Ok(());
         }
     }
-    // Sleep rolls its duration as it lands; toxic starts its counter at zero.
+    // Sleep rolls its duration as it lands; toxic starts its counter at zero. The status is set
+    // before the draw in the Python, which does not matter here but is why the order reads oddly.
     let turns = match status {
         Status::Sleep => tape.integer(2, 5)?,
         _ => 0,
@@ -735,6 +794,18 @@ fn apply_stages(
         return Ok(());
     }
     let target_side = if target == "SELF" { side } else { 1 - side };
+    apply_stage_changes(state, target_side, stages, "move", log);
+    Ok(())
+}
+
+/// `mechanics.stages.apply_stage_changes`, for the cases this engine can reach.
+///
+/// One entry is logged per stat *whether or not the stage moved* — something already at +6 still
+/// reports a requested +1 with a delta of 0, and the comparator would notice its absence. What is
+/// missing is everything gated on an ability or item that is still refused: Contrary and Simple
+/// rewriting the request, Clear Body and friends intercepting an opponent's drop, Defiant
+/// retaliating, a White Herb undoing it.
+pub fn apply_stage_changes(state: &mut State, target_side: usize, stages: &[(String, i32)], source: &str, log: &mut Log) {
     let pokemon = state.sides[target_side].active_mut();
     let nickname = pokemon.nickname.clone();
     for (stat, requested) in stages {
@@ -747,10 +818,9 @@ fn apply_stages(
             stat: stat.clone(),
             delta: after - before,
             requested: *requested,
-            source: "move".into(),
+            source: source.into(),
         });
     }
-    Ok(())
 }
 
 /// Status is on the struct but nothing sets it yet; kept so the digest comparison has a field to

@@ -121,6 +121,19 @@ def _ported() -> dict[str, list[str]]:
 
 
 PORTED = _ported()
+
+
+def _still_unported(kind: str, enum: type) -> str:
+    """Some live ability or item the engine has *not* implemented, whichever one that happens to be.
+
+    Named rather than hardcoded because a hardcoded example goes stale the moment it is ported —
+    this test was written against Intimidate and started failing the day Intimidate landed, which
+    is a test that stops testing rather than one that fails honestly.
+    """
+    live = set(json.loads((DATA / "rules.json").read_text())[f"live_{kind}"])
+    remaining = sorted(name for name in live - set(PORTED[kind]) if name in enum.__members__)
+    assert remaining, f"every live {kind[:-1]} is ported; this test needs rewriting"
+    return remaining[0]
 PLAIN_MOVES = _plain_move_names()
 STATUS_MOVES = _status_and_stage_move_names()
 
@@ -301,26 +314,23 @@ def test_every_ported_ability_and_item_reaches_a_battle() -> None:
 
 
 @needs_rust
-@pytest.mark.parametrize(
-    ("ability", "item", "expected"),
-    [(Ability.INTIMIDATE, Item.NONE, "INTIMIDATE"), (Ability.NONE, Item.LEFTOVERS, "LEFTOVERS")],
-)
-def test_live_abilities_and_items_are_refused_rather_than_ignored(
-    ability: Ability, item: Item, expected: str, tmp_path: Path
-) -> None:
+@pytest.mark.parametrize("carries", ["ability", "item"])
+def test_live_abilities_and_items_are_refused_rather_than_ignored(carries: str, tmp_path: Path) -> None:
     """Reading an ability off a Pokemon and doing nothing with it is a wrong answer in silence.
 
     Both of these are wired to the Python's event bus, so a battle containing one is not comparable
     until the Rust engine implements it. The engine has to say so.
     """
+    kind, enum = ("abilities", Ability) if carries == "ability" else ("items", Item)
+    expected = _still_unported(kind, enum)
     rng = random.Random(3)
     team = [
         PokemonSpec(
             species="Rhydon",
             nickname="P0",
             level=50,
-            ability=ability,
-            item=item,
+            ability=Ability[expected] if carries == "ability" else Ability.NONE,
+            item=Item[expected] if carries == "item" else Item.NONE,
             nature=Nature.HARDY,
             moves=["Earthquake", "Rock Slide"],
         )
@@ -336,20 +346,21 @@ def test_live_abilities_and_items_are_refused_rather_than_ignored(
 def test_a_pokemon_on_the_bench_is_checked_too(tmp_path: Path) -> None:
     """The lead is comparable; the one behind it is not. Finding that out on turn nine would mean
     eight turns had already been reported as agreement."""
+    unported = _still_unported("abilities", Ability)
     rng = random.Random(4)
     plain = PokemonSpec(
         species="Rhydon", nickname="P0", level=50, ability=Ability.NONE, item=Item.NONE,
         nature=Nature.HARDY, moves=["Earthquake", "Rock Slide"],
     )
     benched = PokemonSpec(
-        species="Rhydon", nickname="P1", level=50, ability=Ability.INTIMIDATE, item=Item.NONE,
+        species="Rhydon", nickname="P1", level=50, ability=Ability[unported], item=Item.NONE,
         nature=Nature.HARDY, moves=["Earthquake", "Rock Slide"],
     )
     scenario, _ = record(([plain, benched], [plain, benched]), _chooser(rng), seed=4, max_turns=4)
 
     theirs = _rust_trace(scenario, tmp_path)
 
-    assert isinstance(theirs, str) and "INTIMIDATE" in theirs, theirs
+    assert isinstance(theirs, str) and unported in theirs, theirs
 
 
 @needs_rust
