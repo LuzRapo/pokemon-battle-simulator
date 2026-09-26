@@ -90,8 +90,22 @@ const SAND_FORCE_TYPES: [&str; 3] = ["ROCK", "GROUND", "STEEL"];
 /// `_OVERLORD_POWER_4096`: +10% per fallen teammate, five deep.
 const OVERLORD_POWER_4096: [i64; 6] = [4096, 4506, 4915, 5325, 5734, 6144];
 
-/// Visit both actives in registration order, applying whatever each one's ability contributes.
-pub fn apply_damage_calc(state: &State, attacker_side: usize, calc: &Calc, payload: &mut Payload) {
+/// Apply what both actives' abilities and items contribute, in the order the Python's bus fires.
+///
+/// Every ability first, then every item — `EventPriority.ABILITY` is 2000 and `ITEM` is 1000, and
+/// the bus sorts by priority descending before falling back on registration order. Running each
+/// Pokemon's ability and item together instead, which reads more naturally, put one fold in the
+/// wrong place and came back a point light on a 65-damage hit.
+///
+/// Returns whatever wants consuming: a resist berry is eaten by the same handler that halves the
+/// hit, but this walk only holds the state by shared reference, so the eating is left to the
+/// caller rather than smuggled in behind it.
+pub fn apply_damage_calc(
+    state: &State,
+    attacker_side: usize,
+    calc: &Calc,
+    payload: &mut Payload,
+) -> Option<crate::items::Consumed> {
     let defender_side = 1 - attacker_side;
     let mut order = [attacker_side, defender_side];
     order.sort_by_key(|side| state.sides[*side].active_pokemon().registered_at);
@@ -105,6 +119,14 @@ pub fn apply_damage_calc(state: &State, attacker_side: usize, calc: &Calc, paylo
         let pokemon = state.sides[side].active_pokemon();
         handle(&pokemon.ability, pokemon, side == attacker_side, broken, calc, payload);
     }
+    let mut consumed = None;
+    for side in order {
+        let pokemon = state.sides[side].active_pokemon();
+        if let Some(eaten) = crate::items::on_damage_calc(pokemon, side, side == attacker_side, calc, payload) {
+            consumed = Some(eaten);
+        }
+    }
+    consumed
 }
 
 fn first_damage_effect(the_move: &Move) -> Option<&Effect> {

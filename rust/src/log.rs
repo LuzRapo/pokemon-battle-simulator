@@ -23,6 +23,12 @@ pub enum Event {
     /// this by checking whether the log grew, so it is a statement about the log rather than about
     /// the move, and it is ported the same way.
     MoveFailed,
+    /// A resist berry halving a super-effective hit, and being eaten for it.
+    BerryWeakened {
+        side: i32,
+        pokemon: String,
+        item: String,
+    },
     /// Crash damage, which the Python logs under the same entry as recoil.
     RecoilDamage {
         side: i32,

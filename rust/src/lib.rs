@@ -12,6 +12,7 @@ pub mod abilities;
 pub mod battle;
 pub mod damage;
 pub mod data;
+pub mod items;
 pub mod log;
 pub mod stats;
 pub mod tape;

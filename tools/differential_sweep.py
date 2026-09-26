@@ -83,8 +83,8 @@ def sweep(
         for seed in range(battles):
             rng = _teams_rng(which, seed)
             teams = (
-                _team(rng, size=team_size, pool=pool, abilities=abilities),
-                _team(rng, size=team_size, pool=pool, abilities=abilities),
+                _team(rng, size=team_size, pool=pool, abilities=abilities, items=abilities),
+                _team(rng, size=team_size, pool=pool, abilities=abilities, items=abilities),
             )
             scenario, expected = record(teams, _chooser(rng, switches), seed=seed, max_turns=max_turns)
             path.write_text(scenario.to_json())
@@ -147,8 +147,8 @@ def explain(
     """
     rng = _teams_rng(which, seed)
     teams = (
-        _team(rng, size=team_size, pool=SLICES[which], abilities=abilities),
-        _team(rng, size=team_size, pool=SLICES[which], abilities=abilities),
+        _team(rng, size=team_size, pool=SLICES[which], abilities=abilities, items=abilities),
+        _team(rng, size=team_size, pool=SLICES[which], abilities=abilities, items=abilities),
     )
     scenario, expected = record(teams, _chooser(rng, switches), seed=seed, max_turns=max_turns)
 
@@ -198,7 +198,7 @@ def main() -> int:
     parser.add_argument("--team-size", type=int, default=3)
     parser.add_argument("--max-turns", type=int, default=60)
     parser.add_argument("--switches", action="store_true", help="let either side switch sometimes")
-    parser.add_argument("--abilities", action="store_true", help="give Pokemon abilities the engine has ported")
+    parser.add_argument("--abilities", action="store_true", help="give Pokemon the abilities and items the engine has ported")
     parser.add_argument("--quiet", action="store_true", help="do not write failing scenarios to rust/failures/")
     parser.add_argument("--explain", type=int, metavar="SEED", help="show the first turn one seed disagrees on")
     args = parser.parse_args()

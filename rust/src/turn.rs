@@ -151,7 +151,7 @@ pub const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
 /// three-quarters of its rules missing. Names come off these lists as they are ported and agreed
 /// across a sweep — 220 abilities and 110 items to go.
 use crate::abilities::PORTED as PORTED_ABILITIES;
-pub const PORTED_ITEMS: [&str; 0] = [];
+pub use crate::items::PORTED as PORTED_ITEMS;
 
 /// Why this Pokemon cannot be played, if it cannot.
 ///
@@ -562,7 +562,12 @@ fn thaw_on_hit(state: &mut State, defender_side: usize, the_move: &Move, log: &m
 /// The Python emits `ON_DAMAGE_CALC` with a base payload and lets handlers fill it in; this builds
 /// the same base and walks the same handlers in the same order. `contact` is a property of the hit
 /// rather than of the move, which is why it is computed here and passed along.
-fn collect_damage_payload(state: &State, side: usize, the_move: &Move, db: &Database) -> Payload {
+fn collect_damage_payload(
+    state: &State,
+    side: usize,
+    the_move: &Move,
+    db: &Database,
+) -> (Payload, Option<crate::items::Consumed>) {
     let other = 1 - side;
     let attacker = state.sides[side].active_pokemon();
     let defender = state.sides[other].active_pokemon();
@@ -589,8 +594,8 @@ fn collect_damage_payload(state: &State, side: usize, the_move: &Move, db: &Data
         db,
     };
     let mut payload = Payload::new();
-    apply_damage_calc(state, side, &calc, &mut payload);
-    payload
+    let consumed = apply_damage_calc(state, side, &calc, &mut payload);
+    (payload, consumed)
 }
 
 fn apply_damage(
@@ -605,7 +610,13 @@ fn apply_damage(
     // Drawn here, in the Python's order: the crit first, then the damage roll. Both are certain
     // to be consumed by the time the formula is entered — see `Rolls`.
     let rolls = Rolls { crit: tape.probability()?, damage: tape.integer(85, 101)? };
-    let payload = collect_damage_payload(state, side, the_move, db);
+    let (payload, eaten) = collect_damage_payload(state, side, the_move, db);
+    // The berry is spent whether or not the hit goes on to kill, exactly where the Python's
+    // handler spends it: during the calculation, before the damage lands.
+    if let Some(consumed) = eaten {
+        let holder = state.sides[consumed.side].active_mut();
+        crate::items::consume(holder, consumed.side, &consumed.item, log);
+    }
     let hit = {
         let (mine, theirs) = state.sides.split_at(1);
         let (attacker, defender_side) = if side == 0 {

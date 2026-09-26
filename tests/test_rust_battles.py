@@ -126,19 +126,24 @@ STATUS_MOVES = _status_and_stage_move_names()
 
 
 def _team(
-    rng: random.Random, size: int = 2, pool: list[str] | None = None, abilities: bool = False
+    rng: random.Random,
+    size: int = 2,
+    pool: list[str] | None = None,
+    abilities: bool = False,
+    items: bool = False,
 ) -> list[PokemonSpec]:
     moves = pool if pool is not None else PLAIN_MOVES
-    # NONE stays in the draw so that "no ability" keeps being tested alongside the ported ones,
-    # and so a mixed board — one side with an ability, one without — happens often.
+    # NONE stays in each draw so that "nothing equipped" keeps being tested alongside the ported
+    # ones, and so a mixed board — one side carrying something, one not — happens often.
     choices = [Ability.NONE, *(Ability[name] for name in PORTED["abilities"])] if abilities else [Ability.NONE]
+    held = [Item.NONE, *(Item[name] for name in PORTED["items"])] if items else [Item.NONE]
     return [
         PokemonSpec(
             species=rng.choice(PLAIN_SPECIES),
             nickname=f"P{index}",
             level=50,
             ability=rng.choice(choices),
-            item=Item.NONE,
+            item=rng.choice(held),
             nature=Nature.HARDY,
             effort_values=EVs(),
             individual_values=IVs(),
@@ -260,7 +265,27 @@ def test_the_ported_abilities_agree_too(seed: int, tmp_path: Path) -> None:
 
 
 @needs_rust
-def test_every_ported_ability_reaches_a_battle() -> None:
+def test_the_ported_items_agree_too(tmp_path: Path) -> None:
+    """Held items, drawn the same way the abilities are."""
+    failures = []
+    for seed in range(25):
+        rng = random.Random(3000 + seed)
+        teams = (
+            _team(rng, size=3, pool=STATUS_MOVES, abilities=True, items=True),
+            _team(rng, size=3, pool=STATUS_MOVES, abilities=True, items=True),
+        )
+        scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=60)
+        theirs = _rust_trace(scenario, tmp_path)
+        if isinstance(theirs, str):
+            continue
+        divergence = compare(expected, theirs)
+        if divergence is not None:
+            failures.append(f"seed {seed}: {divergence}")
+    assert not failures, "\n".join(failures)
+
+
+@needs_rust
+def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 
     The ability tests would pass just as happily if the generator never picked half these names, so
@@ -268,9 +293,10 @@ def test_every_ported_ability_reaches_a_battle() -> None:
     expensive half is that turning the ability dispatch off makes 187 of 200 swept battles diverge.
     """
     rng = random.Random(0)
-    drawn = {spec.ability.name for _ in range(400) for spec in _team(rng, size=3, abilities=True)}
+    generated = [spec for _ in range(400) for spec in _team(rng, size=3, abilities=True, items=True)]
 
-    missing = set(PORTED["abilities"]) - drawn
+    missing = set(PORTED["abilities"]) - {spec.ability.name for spec in generated}
+    missing |= set(PORTED["items"]) - {spec.item.name for spec in generated}
     assert not missing, f"never generated: {sorted(missing)}"
 
 

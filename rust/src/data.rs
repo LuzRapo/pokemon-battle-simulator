@@ -23,6 +23,9 @@ pub struct Species {
     pub types: Vec<Option<String>>,
     #[serde(default)]
     pub weight_kg: f64,
+    /// Eviolite asks this and nothing else does yet.
+    #[serde(default)]
+    pub fully_evolved: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
