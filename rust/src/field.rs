@@ -32,10 +32,16 @@ pub const SCREENS: [&str; 3] = ["REFLECT", "LIGHT_SCREEN", "AURORA_VEIL"];
 /// `_SANDSTORM_IMMUNE_TYPES`.
 const SANDSTORM_IMMUNE: [&str; 3] = ["ROCK", "GROUND", "STEEL"];
 
-/// `Pokemon.is_grounded` — intrinsic only, as the Python's is. Levitate and an Air Balloon would
-/// also lift a Pokemon and both are still refused, so their absence here cannot be wrong yet.
+/// `Pokemon.is_grounded` — intrinsic only, as the Python's is: type, item, ability, and nothing
+/// from the field. Gravity would change the answer and is not ported.
+///
+/// Levitate and Air Balloon are read here even though neither is on the ported list: the clause is
+/// right, it is the *rest* of what they do that is missing, and a Pokemon carrying either is
+/// refused before it can reach this.
 pub fn is_grounded(pokemon: &Pokemon) -> bool {
     !pokemon.types.iter().flatten().any(|t| t == "FLYING")
+        && pokemon.item != "AIR_BALLOON"
+        && pokemon.ability != "LEVITATE"
 }
 
 /// `_tick_field_durations`, run once at the top of the residual pass.
@@ -84,7 +90,9 @@ pub fn tick_side(state: &mut State, side: usize, log: &mut Log) {
 pub fn weather_and_terrain_residuals(state: &mut State, side: usize, log: &mut Log) {
     if state.field.weather == "SANDSTORM" {
         let active = state.sides[side].active_pokemon();
-        let immune = active.types.iter().flatten().any(|t| SANDSTORM_IMMUNE.contains(&t.as_str()));
+        let immune = active.types.iter().flatten().any(|t| SANDSTORM_IMMUNE.contains(&t.as_str()))
+            || matches!(active.ability.as_str(), "SAND_VEIL" | "OVERCOAT")
+            || crate::inline::ignores_indirect_damage(active);
         if !immune {
             let active = state.sides[side].active_mut();
             let dealt = active.take_damage(std::cmp::max(1, active.totals.hp / 16));
@@ -113,6 +121,11 @@ pub fn weather_and_terrain_residuals(state: &mut State, side: usize, log: &mut L
 /// `_apply_entry_hazards`, in the Python's order: rocks, then spikes, then toxic spikes, then the
 /// web. Rocks and spikes each stop the rest if they knock the arrival out.
 pub fn entry_hazards(state: &mut State, side: usize, db: &Database, log: &mut Log) {
+    // Magic Guard cancels the whole ON_ENTRY_HAZARD emit, so not even Sticky Web's speed drop
+    // lands — it is not "no damage from hazards", it is "no hazards".
+    if crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon()) {
+        return;
+    }
     if stealth_rock(state, side, db, log) {
         return;
     }

@@ -98,7 +98,7 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
     let mut keys: Vec<(i32, i32, i32, f64, usize)> = Vec::new();
     for side in 0..2 {
         let actor = state.sides[side].active_pokemon();
-        let speed = effective_speed(actor, &state.sides[side]);
+        let speed = effective_speed(actor, &state.sides[side], &state.field);
         let priority = match &actions[side] {
             Action::Switch { .. } => 0,
             Action::Move { slot } => priority_of(move_in_slot(actor, *slot, db)?)?,
@@ -116,13 +116,22 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
 /// moment the Python was rolling accuracy for somebody else, and the two engines never recovered.
 /// Everything else in the Python's version is an ability, an item or a field effect, none of them
 /// ported, and each will have to be added here as it lands.
-fn effective_speed(pokemon: &Pokemon, side: &Side) -> i32 {
+fn effective_speed(pokemon: &Pokemon, side: &Side, field: &crate::battle::Field) -> i32 {
     let mut speed = pokemon.effective("SPEED");
-    if pokemon.status == Status::Paralysis {
+    if pokemon.status == Status::Paralysis && pokemon.ability != "QUICK_FEET" {
         speed /= 2;
+    }
+    if pokemon.ability == "QUICK_FEET" && pokemon.status != Status::None {
+        speed = speed * 3 / 2;
+    }
+    if crate::inline::doubles_speed_in(&pokemon.ability, &field.weather) {
+        speed *= 2;
     }
     if side.tailwind_turns > 0 {
         speed *= 2;
+    }
+    if pokemon.item == "CHOICE_SCARF" {
+        speed = speed * 3 / 2;
     }
     std::cmp::max(1, speed)
 }
@@ -162,6 +171,7 @@ pub const PORTED_VOLATILES: [&str; 2] = ["FLINCH", "CONFUSION"];
 pub fn ported_abilities() -> Vec<&'static str> {
     let mut all: Vec<&str> = crate::abilities::PORTED.to_vec();
     all.extend(crate::hooks::PORTED_ABILITIES);
+    all.extend(crate::inline::PORTED_ABILITIES);
     all.sort_unstable();
     all
 }
@@ -169,6 +179,7 @@ pub fn ported_abilities() -> Vec<&'static str> {
 pub fn ported_items() -> Vec<&'static str> {
     let mut all: Vec<&str> = crate::items::PORTED.to_vec();
     all.extend(crate::hooks::PORTED_ITEMS);
+    all.extend(crate::inline::PORTED_ITEMS);
     all.sort_unstable();
     all
 }
@@ -275,7 +286,11 @@ pub fn step(
     if state.turn == 0 {
         let mut leads = [0usize, 1];
         leads.sort_by_key(|side| {
-            std::cmp::Reverse(effective_speed(state.sides[*side].active_pokemon(), &state.sides[*side]))
+            std::cmp::Reverse(effective_speed(
+                state.sides[*side].active_pokemon(),
+                &state.sides[*side],
+                &state.field,
+            ))
         });
         for side in leads {
             on_switch_in(state, side, &mut log);
@@ -474,6 +489,9 @@ fn residuals(state: &mut State, log: &mut Log) {
 }
 
 fn status_chip(state: &mut State, side: usize, log: &mut Log) {
+    if crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon()) {
+        return;
+    }
     let active = state.sides[side].active_mut();
     let (source, amount) = match active.status {
         Status::Burn => ("burn", (active.totals.hp / 16).max(1)),
@@ -630,11 +648,19 @@ fn resolve_move(
     // Accuracy first, and only when the move has one — `_accuracy_check` returns True without
     // drawing when `accuracy_probability` is None, which is how a never-missing move leaves the
     // tape untouched.
-    if let Some(accuracy) = the_move.accuracy_probability {
-        let attacker_stage = state.sides[side].active_pokemon().stage("ACCURACY");
-        let defender_stage = state.sides[other].active_pokemon().stage("EVASION");
+    let attacker = state.sides[side].active_pokemon();
+    let defender = state.sides[other].active_pokemon();
+    let never_misses = crate::inline::never_misses(attacker, defender);
+    if let Some(accuracy) = the_move.accuracy_probability.filter(|_| !never_misses) {
+        let attacker_stage = attacker.stage("ACCURACY");
+        let defender_stage = defender.stage("EVASION");
         let net = (attacker_stage - defender_stage).clamp(-6, 6);
-        let multiplier = if net >= 0 { (3 + net) as f64 / 3.0 } else { 3.0 / (3 - net) as f64 };
+        let mut multiplier = if net >= 0 { (3 + net) as f64 / 3.0 } else { 3.0 / (3 - net) as f64 };
+        // The *move's* category, not its damage effect's — Hustle reads `move.category`, and the
+        // two are not always the same. Natural Gift's effect says one thing and the move says
+        // another, which was enough to turn a miss into a hit.
+        multiplier *=
+            crate::inline::accuracy_multiplier(attacker, defender, &the_move.category, &state.field.weather);
         if tape.probability()? >= (accuracy * multiplier).min(1.0) {
             log.push(Event::MoveMissed);
             crash_damage(state, side, &the_move, log);
@@ -738,7 +764,7 @@ fn resolve_move(
 /// failing, which is why the Python calls it from six places and why it is a separate function
 /// here rather than inlined into the miss path.
 fn crash_damage(state: &mut State, side: usize, the_move: &Move, log: &mut Log) {
-    if !the_move.has_crash_damage {
+    if !the_move.has_crash_damage || crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon()) {
         return;
     }
     let attacker = state.sides[side].active_mut();
@@ -790,6 +816,15 @@ fn hit_shape(the_move: &Move) -> (&str, bool) {
         .unwrap_or(("STATUS", false))
 }
 
+/// Whether this hit actually touches, which is not the same as whether the move is a contact move:
+/// Protective Pads and Long Reach clear it outright, and a Punching Glove clears it for punches.
+fn makes_contact(the_move: &Move, attacker: &Pokemon) -> bool {
+    hit_shape(the_move).1
+        && attacker.item != "PROTECTIVE_PADS"
+        && attacker.ability != "LONG_REACH"
+        && !(attacker.item == "PUNCHING_GLOVE" && the_move.punching)
+}
+
 fn collect_damage_payload(
     state: &State,
     side: usize,
@@ -799,13 +834,11 @@ fn collect_damage_payload(
     let other = 1 - side;
     let attacker = state.sides[side].active_pokemon();
     let defender = state.sides[other].active_pokemon();
-    let (category, contact) = hit_shape(the_move);
+    let (category, _) = hit_shape(the_move);
     let calc = Calc {
         move_type: &the_move.move_type,
         category,
-        // Protective Pads, Long Reach and a Punching Glove all clear the contact flag. All three
-        // are still refused, so none of them can be on the field; they belong here when they land.
-        contact,
+        contact: makes_contact(the_move, attacker),
         the_move,
         attacker,
         defender,
@@ -1005,32 +1038,43 @@ fn apply_damage(
         // Re-collected every hit, as the Python re-emits ON_DAMAGE_CALC every hit: a berry eaten
         // on the first blow has to be gone by the second.
         let (payload, eaten) = collect_damage_payload(state, side, the_move, db);
+        // An Air Balloon eats a Ground move whole, and the Python returns before rolling anything
+        // — so the draws are skipped too, which is why this is here and not inside the formula.
+        let absorbed = the_move.move_type == "GROUND"
+            && state.sides[other].active_pokemon().item == "AIR_BALLOON";
         // Drawn here, in the Python's order: the crit first, then the damage roll. Both are certain
         // to be consumed by the time the formula is entered — see `Rolls`.
-        let rolls = Rolls { crit: tape.probability()?, damage: tape.integer(85, 101)? };
+        let rolls = if absorbed {
+            None
+        } else {
+            Some(Rolls { crit: tape.probability()?, damage: tape.integer(85, 101)? })
+        };
         // The berry is spent whether or not the hit goes on to kill, exactly where the Python's
         // handler spends it: during the calculation, before the damage lands.
         if let Some(consumed) = eaten {
             let holder = state.sides[consumed.side].active_mut();
             crate::items::consume(holder, consumed.side, &consumed.item, log);
         }
-        let hit = {
-            let (mine, theirs) = state.sides.split_at(1);
-            let (attacker, defender_side) = if side == 0 {
-                (mine[0].active_pokemon(), &theirs[0])
-            } else {
-                (theirs[0].active_pokemon(), &mine[0])
-            };
-            calculate_hit(
-                attacker,
-                defender_side.active_pokemon(),
-                the_move,
-                &state.field,
-                defender_side,
-                db,
-                rolls,
-                &payload,
-            )
+        let hit = match rolls {
+            None => crate::damage::Hit::nothing(),
+            Some(rolls) => {
+                let (mine, theirs) = state.sides.split_at(1);
+                let (attacker, defender_side) = if side == 0 {
+                    (mine[0].active_pokemon(), &theirs[0])
+                } else {
+                    (theirs[0].active_pokemon(), &mine[0])
+                };
+                calculate_hit(
+                    attacker,
+                    defender_side.active_pokemon(),
+                    the_move,
+                    &state.field,
+                    defender_side,
+                    db,
+                    rolls,
+                    &payload,
+                )
+            }
         };
         critical = hit.is_crit;
         let dealt = state.sides[other].active_mut().take_damage(hit.amount);
@@ -1058,7 +1102,8 @@ fn apply_damage(
         // Inside the per-hit loop in the Python, which for a single hit means *before* the crit and
         // damage entries logged after it. So Rough Skin's chip is announced before the damage that
         // caused it, and a berry is eaten before the number that made it ripen is printed.
-        let (category, contact) = hit_shape(the_move);
+        let (category, _) = hit_shape(the_move);
+        let contact = makes_contact(the_move, state.sides[side].active_pokemon());
         let shape = Hit { attacker_side: side, move_type: &the_move.move_type, category, contact, dealt };
         on_after_hit(state, &shape, db, tape, log)?;
         if state.sides[other].active_pokemon().fainted() {
@@ -1105,6 +1150,7 @@ fn recoil_and_drain(state: &mut State, side: usize, the_move: &Move, total_dealt
     else {
         return;
     };
+    let attacker_is_guarded = crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon());
     if *struggle_recoil {
         // Logged as the amount it asked for rather than the amount that landed.
         let attacker = state.sides[side].active_mut();
@@ -1115,7 +1161,8 @@ fn recoil_and_drain(state: &mut State, side: usize, the_move: &Move, total_dealt
         return;
     }
     if let Some(percent) = recoil_percent {
-        if total_dealt > 0 {
+        let stopped = attacker_is_guarded || state.sides[side].active_pokemon().ability == "ROCK_HEAD";
+        if total_dealt > 0 && !stopped {
             let recoil = std::cmp::max(1, (total_dealt as f64 * percent) as i32);
             let attacker = state.sides[side].active_mut();
             attacker.take_damage(recoil);
@@ -1126,10 +1173,24 @@ fn recoil_and_drain(state: &mut State, side: usize, the_move: &Move, total_dealt
     if let Some(percent) = drain_percent {
         if total_dealt > 0 {
             let heal = std::cmp::max(1, (total_dealt as f64 * percent) as i32);
-            let attacker = state.sides[side].active_mut();
-            attacker.hp = std::cmp::min(attacker.totals.hp, attacker.hp + heal);
-            let nickname = attacker.nickname.clone();
-            log.push(Event::Drained { side: side as i32, pokemon: nickname, amount: heal });
+            // Liquid Ooze turns the drink into a wound. Magic Guard does not stop it: the Python
+            // applies the backfire unconditionally, and this engine agrees with that one.
+            if state.sides[1 - side].active_pokemon().ability == "LIQUID_OOZE" {
+                let attacker = state.sides[side].active_mut();
+                attacker.take_damage(heal);
+                let nickname = attacker.nickname.clone();
+                log.push(Event::DrainBackfired {
+                    side: side as i32,
+                    pokemon: nickname,
+                    ability: "LIQUID_OOZE".into(),
+                    amount: heal,
+                });
+            } else {
+                let attacker = state.sides[side].active_mut();
+                attacker.hp = std::cmp::min(attacker.totals.hp, attacker.hp + heal);
+                let nickname = attacker.nickname.clone();
+                log.push(Event::Drained { side: side as i32, pokemon: nickname, amount: heal });
+            }
         }
     }
 }

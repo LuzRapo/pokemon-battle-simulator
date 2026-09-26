@@ -82,9 +82,11 @@ pub fn on_after_hit(
     Ok(())
 }
 
-/// Chip damage from an ability, as `AbilityChipDamage`. Magic Guard blocks it and is still refused,
-/// so its absence here cannot be wrong yet — it belongs in the guard when it lands.
+/// Chip damage from an ability, as `AbilityChipDamage`.
 fn chip(state: &mut State, side: usize, divisor: i32, ability: &str, log: &mut Log) {
+    if crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon()) {
+        return;
+    }
     let victim = state.sides[side].active_mut();
     if victim.fainted() {
         return;

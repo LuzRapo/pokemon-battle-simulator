@@ -83,6 +83,13 @@ pub enum Event {
     MultiHitSummary {
         hits: i32,
     },
+    /// Liquid Ooze turning a drink into a wound.
+    DrainBackfired {
+        side: i32,
+        pokemon: String,
+        ability: String,
+        amount: i32,
+    },
     /// A draining move giving its user back a share of what it dealt.
     Drained {
         side: i32,

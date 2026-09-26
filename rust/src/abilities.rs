@@ -19,7 +19,7 @@ use crate::damage::Payload;
 use crate::data::{Database, Effect, Move};
 
 /// Every ability implemented here. `unsupported_pokemon` refuses anything live and absent.
-pub const PORTED: [&str; 47] = [
+pub const PORTED: [&str; 48] = [
     "ADAPTABILITY",
     "ANALYTIC",
     "AURA_BREAK",
@@ -36,6 +36,7 @@ pub const PORTED: [&str; 47] = [
     "GUTS",
     "HEATPROOF",
     "HUGE_POWER",
+    "HUSTLE",
     "ICE_SCALES",
     "IRON_FIST",
     "MARVEL_SCALE",
@@ -142,6 +143,8 @@ fn handle(ability: &str, pokemon: &Pokemon, is_actor: bool, aura_broken: bool, c
         // -- the attacker's own output ------------------------------------------------------
         "ADAPTABILITY" if is_actor => payload.stab_4096 = 8192,
         "HUGE_POWER" | "PURE_POWER" if is_actor && physical => payload.attack_mods_4096.push(8192),
+        // Hustle trades accuracy for power; the other half of it is in `inline::accuracy_multiplier`.
+        "HUSTLE" if is_actor && physical => payload.attack_mods_4096.push(6144),
         "GUTS" if is_actor => {
             if physical && pokemon.status != Status::None {
                 payload.attack_mods_4096.push(6144);

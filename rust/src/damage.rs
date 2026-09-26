@@ -23,7 +23,7 @@ pub struct Hit {
 }
 
 impl Hit {
-    fn nothing() -> Hit {
+    pub fn nothing() -> Hit {
         Hit { amount: 0, is_crit: false }
     }
 }
@@ -149,7 +149,11 @@ pub fn calculate_hit(
 
     // The crit is rolled here and only here, which is what keeps the tape aligned: every early
     // return above happens *before* a draw, exactly as in the Python.
-    let is_crit = rolls.crit < crit_chance(crit_stage);
+    //
+    // Merciless does not raise the stage, it overrules the roll — and the two armors refuse the
+    // result however it was reached. So the draw happens either way; only its verdict changes.
+    let stage = crit_stage + crate::inline::crit_stage_bonus(attacker);
+    let is_crit = crate::inline::crit_overrides(attacker, defender, rolls.crit < crit_chance(stage));
 
     let (attack_stat, defense_stat) = if category == "PHYSICAL" {
         ("ATTACK", "DEFENCE")
@@ -184,7 +188,8 @@ pub fn calculate_hit(
 
     damage = chain(damage, weather_modifier(&the_move.move_type, &field.weather));
     if is_crit {
-        damage = chain(damage, 6144);
+        // Sniper's crits are half again as hard as anybody else's.
+        damage = chain(damage, if attacker.ability == "SNIPER" { 9216 } else { 6144 });
     }
 
     damage = damage * rolls.damage / 100;
