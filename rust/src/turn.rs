@@ -168,7 +168,7 @@ fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'
 /// Deliberately short and explicit. That net is why silent wrong answers have been rare; a move
 /// only comes off it once its Python behaviour has been read, ported, and agreed about across a
 /// sweep.
-pub const PORTED_CODED_MOVES: [&str; 5] = [
+pub const PORTED_CODED_MOVES: [&str; 7] = [
     "Struggle",
     // Sleep Talk (the redirect at the top of `resolve_move` plus `power::sleep_talk_choice`) and
     // Roost (the `ROOSTED` volatile set in `apply_heal`) both have real, ported behaviour behind
@@ -184,6 +184,13 @@ pub const PORTED_CODED_MOVES: [&str; 5] = [
     // ability (eating whatever is about to be Tricked onto him *before* it lands) — Nine Lives is
     // still refused, so nobody can ever actually take that branch. Ordinary, like King's Shield.
     "Trick",
+    // `_DELAYED_DAMAGE_MOVES = {"Future Sight", "Doom Desire"}` names both by literal string —
+    // the check that keeps their own `DamageEffect` from landing immediately, which
+    // `resolve_move`'s own `_DELAYED_DAMAGE_MOVES` check mirrors. Real ported behaviour, not a
+    // false positive like the two above; grouped here anyway since this is where a move's name
+    // gets freed from the by-name gate.
+    "Future Sight",
+    "Doom Desire",
 ];
 
 /// Every coded move this engine has learned: Struggle, plus the rules in `power.rs`.
@@ -240,7 +247,7 @@ pub const PORTED_VOLATILES: [&str; 14] = [
 /// `CodedMoveKind` variants `apply_coded` has learned. Named by the exported enum member, which is
 /// what `variant` carries — not by move name, since several moves share a kind (the four
 /// `WEATHER_HEAL` moves, the two `CURE_PARTY` ones).
-pub const PORTED_CODED_KINDS: [&str; 19] = [
+pub const PORTED_CODED_KINDS: [&str; 24] = [
     "REST",
     "WEATHER_HEAL",
     "PAIN_SPLIT",
@@ -260,6 +267,11 @@ pub const PORTED_CODED_KINDS: [&str; 19] = [
     "ENTRAINMENT",
     "WORRY_SEED",
     "SIMPLE_BEAM",
+    "WISH",
+    "HEALING_WISH",
+    "REVIVAL_BLESSING",
+    "SHED_TAIL",
+    "FUTURE_SIGHT",
 ];
 
 /// Everything this engine has implemented, gathered from the modules that implement it so a name
@@ -467,6 +479,7 @@ pub fn step(
                 // ability never fires. So a Pokemon that dies to Stealth Rock on the way in does
                 // not get to Intimidate on the way past.
                 if !state.sides[side].active_pokemon().fainted() {
+                    grant_switch_in_bonuses(state, side, &mut log);
                     // `_execute_switch` logs the swap and then emits, so an Intimidate lands after
                     // the line announcing who arrived.
                     on_switch_in(state, side, &mut log);
@@ -508,7 +521,7 @@ pub fn step(
         }
     }
     if state.outcome.is_none() {
-        residuals(state, tape, &mut log)?;
+        residuals(state, db, tape, &mut log)?;
         state.update_outcome();
         if let Some(outcome) = state.outcome {
             log.push(Event::BattleEnded { outcome: outcome.name().to_string() });
@@ -656,7 +669,7 @@ fn withdraw(side: &mut Side, to: usize) -> String {
 /// toxic takes a sixteenth rather than nothing.
 ///
 /// Sides are ticked in order, which is the order the Python emits `ON_RESIDUAL` for them.
-fn residuals(state: &mut State, tape: &mut Tape, log: &mut Log) -> Result<(), Refusal> {
+fn residuals(state: &mut State, db: &Database, tape: &mut Tape, log: &mut Log) -> Result<(), Refusal> {
     // `_apply_residuals` in order: the field's own clocks first, then each side — its chips, then
     // its durations. A sandstorm that expires this turn still chips on the way out only if the
     // tick and the chip are in this order, which is why the field goes first.
@@ -706,6 +719,32 @@ fn residuals(state: &mut State, tape: &mut Tape, log: &mut Log) -> Result<(), Re
             }
             if tick_countdown(state, side, "DISABLE", "disable_ended", log) {
                 state.sides[side].active_mut().disabled_slot = None;
+            }
+        }
+        // `_tick_side_durations`, run per side whether or not its active fainted this same pass —
+        // Wish, Future Sight and Tailwind are side-level clocks, not Pokemon-level ones.
+        if state.sides[side].wish_turns > 0 {
+            state.sides[side].wish_turns -= 1;
+            if state.sides[side].wish_turns == 0 {
+                let recipient = state.sides[side].active_pokemon();
+                if !recipient.fainted() {
+                    let pending = state.sides[side].wish_pending;
+                    let recipient = state.sides[side].active_mut();
+                    let before = recipient.hp;
+                    recipient.hp = std::cmp::min(recipient.totals.hp, recipient.hp + pending);
+                    let healed = recipient.hp - before;
+                    if healed > 0 {
+                        let nickname = recipient.nickname.clone();
+                        log.push(Event::Healed { side: side as i32, pokemon: nickname, amount: healed });
+                    }
+                }
+                state.sides[side].wish_pending = 0;
+            }
+        }
+        if state.sides[side].future_sight_turns > 0 {
+            state.sides[side].future_sight_turns -= 1;
+            if state.sides[side].future_sight_turns == 0 {
+                resolve_future_sight(state, side, db, tape, log)?;
             }
         }
         crate::field::tick_side(state, side, log);
@@ -1150,6 +1189,14 @@ fn resolve_move(
     // Effects resolve in the order the move lists them, which is the order `_apply_effect` is
     // called in and therefore the order their draws come off the tape.
     for effect in &the_move.effects {
+        // `_DELAYED_DAMAGE_MOVES`: Future Sight and Doom Desire carry a real `DamageEffect` for the
+        // residual to apply two turns on, and it must not also land immediately on the turn the
+        // move is used — the `CodedEffect(FUTURE_SIGHT)` alongside it is what actually queues it.
+        if matches!(effect, Effect::DamageEffect { .. })
+            && matches!(the_move.name.as_str(), "Future Sight" | "Doom Desire")
+        {
+            continue;
+        }
         // A knocked-out target takes no more of the move — not the burn from Steam Eruption, not
         // the speed drop from Icy Wind. What still lands is anything aimed elsewhere: the user's
         // own boost, a hazard, a side effect. Skipping the effect has to skip its probability draw
@@ -1217,7 +1264,7 @@ fn resolve_move(
                 if !PORTED_CODED_KINDS.contains(&variant.as_str()) {
                     return Err(Refusal::Unported(format!("{variant} is hand-written in the Python engine")));
                 }
-                apply_coded(state, side, variant, behind_substitute, db, log)?;
+                apply_coded(state, side, &the_move, variant, behind_substitute, db, log)?;
             }
             Effect::Unmodelled => return Err(Refusal::Unported(format!("{} has an unmodelled effect", the_move.name))),
         }
@@ -1276,6 +1323,39 @@ fn resolve_move(
     Ok(())
 }
 
+/// `_grant_healing_wish` and Shed Tail's substitute handoff — the two side-level gifts a Pokemon
+/// can arrive to. `_execute_switch` is the one place Python does either, whichever of the three
+/// ways a switch happens (a chosen action, a pivot's replacement, a phazing drag), so this is
+/// called from all three Rust equivalents rather than only the first one found to need it.
+fn grant_switch_in_bonuses(state: &mut State, side: usize, log: &mut Log) {
+    // `_grant_healing_wish`: only if there is actually something to fix — a healthy, unstatused
+    // arrival leaves the wish pending for a later switch-in instead of spending it on nothing.
+    if state.sides[side].healing_wish_pending {
+        let incoming = state.sides[side].active_pokemon();
+        let hurt = incoming.hp < incoming.totals.hp || incoming.status != Status::None;
+        if hurt {
+            state.sides[side].healing_wish_pending = false;
+            let incoming = state.sides[side].active_mut();
+            let before = incoming.hp;
+            incoming.hp = incoming.totals.hp;
+            incoming.status = Status::None;
+            incoming.status_turns = 0;
+            let healed = incoming.hp - before;
+            let nickname = incoming.nickname.clone();
+            log.push(Event::Healed { side: side as i32, pokemon: nickname, amount: healed });
+        }
+    }
+    // Shed Tail's parting gift: the passed substitute has ordinary substitute HP, already computed
+    // when the move that queued it was used.
+    if state.sides[side].pending_substitute > 0
+        && !state.sides[side].active_pokemon().volatiles.contains_key("SUBSTITUTE")
+    {
+        let given = state.sides[side].pending_substitute;
+        state.sides[side].active_mut().volatiles.insert("SUBSTITUTE".to_string(), given);
+        state.sides[side].pending_substitute = 0;
+    }
+}
+
 /// The harness's `replacement_chooser`: the lowest-index healthy benched Pokemon, always.
 ///
 /// Deterministic on purpose. It consumes no randomness, so it cannot shift the tape, and both
@@ -1296,6 +1376,7 @@ fn send_out_replacement(state: &mut State, side: usize, db: &Database, log: &mut
     log.push(Event::Switched { side: side as i32, withdrew, sent_out });
     crate::field::entry_hazards(state, side, db, log);
     if !state.sides[side].active_pokemon().fainted() {
+        grant_switch_in_bonuses(state, side, log);
         on_switch_in(state, side, log);
     }
 }
@@ -1328,6 +1409,7 @@ fn force_random_switch(
     log.push(Event::Switched { side: side as i32, withdrew, sent_out });
     crate::field::entry_hazards(state, side, db, log);
     if !state.sides[side].active_pokemon().fainted() {
+        grant_switch_in_bonuses(state, side, log);
         on_switch_in(state, side, log);
     }
     Ok(())
@@ -1531,7 +1613,7 @@ fn apply_side_condition(
         log.push(Event::ScreenSet { side: target as i32, screen: variant.to_string() });
         return;
     }
-    let standing = state.sides[target].hazards.get(variant).copied().unwrap_or(0);
+    let standing = state.sides[target].hazards.get(variant).unwrap_or(0);
     if standing >= crate::field::max_layers(variant) {
         log.push(Event::MoveFailed);
         return;
@@ -1652,6 +1734,7 @@ fn apply_heal(state: &mut State, side: usize, fraction: f64, move_name: &str, lo
 fn apply_coded(
     state: &mut State,
     side: usize,
+    the_move: &Move,
     variant: &str,
     behind_substitute: bool,
     db: &Database,
@@ -1736,6 +1819,65 @@ fn apply_coded(
         }
         "WORRY_SEED" => take_ability(state, 1 - side, "INSOMNIA", log),
         "SIMPLE_BEAM" => take_ability(state, 1 - side, "SIMPLE", log),
+        "WISH" => {
+            let attacker = state.sides[side].active_pokemon();
+            if state.sides[side].wish_turns == 0 {
+                let pending = std::cmp::max(1, attacker.totals.hp / 2);
+                let nickname = attacker.nickname.clone();
+                state.sides[side].wish_pending = pending;
+                state.sides[side].wish_turns = 2;
+                log.push(Event::WishMade { side: side as i32, pokemon: nickname });
+            }
+        }
+        "HEALING_WISH" => {
+            state.sides[side].healing_wish_pending = true;
+            let nickname = state.sides[side].active_pokemon().nickname.clone();
+            log.push(Event::WishMade { side: side as i32, pokemon: nickname });
+        }
+        "REVIVAL_BLESSING" => {
+            let Some(fallen) = state.sides[side].team.iter_mut().find(|p| p.fainted()) else {
+                log.push(Event::MoveFailed);
+                return Ok(());
+            };
+            let amount = std::cmp::max(1, fallen.totals.hp / 2);
+            fallen.hp = std::cmp::min(fallen.totals.hp, fallen.hp + amount);
+            let nickname = fallen.nickname.clone();
+            log.push(Event::Revived { side: side as i32, pokemon: nickname });
+        }
+        "SHED_TAIL" => {
+            let attacker = state.sides[side].active_pokemon();
+            let cost = std::cmp::max(1, attacker.totals.hp / 2);
+            let active = state.sides[side].active;
+            let has_healthy_bench =
+                state.sides[side].team.iter().enumerate().any(|(i, p)| i != active && !p.fainted());
+            if cost >= attacker.hp || !has_healthy_bench {
+                log.push(Event::MoveFailed);
+                return Ok(());
+            }
+            let attacker = state.sides[side].active_mut();
+            attacker.take_damage(cost);
+            let sub_hp = attacker.totals.hp / 4;
+            let nickname = attacker.nickname.clone();
+            state.sides[side].pending_substitute = sub_hp;
+            log.push(Event::VolatileInflicted { side: side as i32, pokemon: nickname, volatile: "SUBSTITUTE".into() });
+            // `side.needs_switch = True` plus `_resolve_pending_switches`, called right after
+            // *every* action resolves — not a later, AI-side concern the way it first looked. The
+            // replacement arrives the same instant Shed Tail does, exactly like an ordinary pivot's
+            // `send_out_replacement`, which is the call this reuses.
+            send_out_replacement(state, side, db, log);
+        }
+        "FUTURE_SIGHT" => {
+            let other = 1 - side;
+            if state.sides[other].future_sight_turns > 0 {
+                return Ok(());
+            }
+            let attacker_index = state.sides[side].active;
+            let nickname = state.sides[side].active_pokemon().nickname.clone();
+            state.sides[other].future_sight_attacker = Some((side, attacker_index));
+            state.sides[other].future_sight_move = Some(the_move.name.clone());
+            state.sides[other].future_sight_turns = 3;
+            log.push(Event::FutureAttackQueued { side: side as i32, pokemon: nickname, the_move: the_move.name.clone() });
+        }
         _ => unreachable!("gated by PORTED_CODED_KINDS"),
     }
     Ok(())
@@ -1964,6 +2106,52 @@ fn curse(state: &mut State, side: usize, log: &mut Log) {
         "move",
         log,
     );
+}
+
+/// `_resolve_future_sight`: lands the queued hit on whoever is at this position now, using the
+/// attacker's *current* stats — it may not be the same Pokemon that was here when the move was
+/// used, if the position's owner switched in the meantime, and Python reads the same live object
+/// either way. `side` is the *defending* side, whose countdown just reached zero.
+///
+/// The attacker not still being the one active on its own side is refused rather than guessed:
+/// every damage-calc site downstream of `apply_damage` — ability, item, `calculate_hit` itself —
+/// reads "the attacker" as "whoever is active on the attacking side", and there is no attacker
+/// index threaded through any of them to say otherwise. Reproducing a switch in between correctly
+/// would mean plumbing one through the whole pipeline for a single move's rarest case; refusing it
+/// keeps that case honest instead of silently charging the damage to the wrong Pokemon's ability.
+fn resolve_future_sight(state: &mut State, side: usize, db: &Database, tape: &mut Tape, log: &mut Log) -> Result<(), Refusal> {
+    let (attacker_side, attacker_index) =
+        state.sides[side].future_sight_attacker.take().expect("only called when the countdown hit zero");
+    let move_name = state.sides[side].future_sight_move.take().expect("set alongside the attacker");
+    if state.sides[attacker_side].active != attacker_index {
+        return Err(Refusal::Unported(
+            "Future Sight/Doom Desire landing after its attacker switched out is not ported".into(),
+        ));
+    }
+    if state.sides[side].active_pokemon().fainted() {
+        return Ok(());
+    }
+    let the_move = db
+        .move_named(&move_name)
+        .ok_or_else(|| Refusal::Unported(format!("unknown move {move_name:?}")))?
+        .clone();
+    let listed_type = the_move.move_type.clone();
+    let behind_substitute = state.sides[side].active_pokemon().volatiles.contains_key("SUBSTITUTE")
+        && !the_move.bypass_substitute
+        && state.sides[attacker_side].active_pokemon().ability != "INFILTRATOR";
+    let defender = state.sides[side].active_pokemon();
+    let effectiveness =
+        db.effectiveness_bypassing(&the_move.move_type, &defender.battle_types(), &defender.identify_bypass());
+    let nickname = defender.nickname.clone();
+    log.push(Event::FutureAttackLands { side: side as i32, pokemon: nickname, the_move: the_move.name.clone() });
+    // `_stopped_before_any_hit`: normally asked by the caller before `_apply_damage` is even
+    // reached, but this path calls it directly, so the same immunity gate belongs here instead.
+    if effectiveness == 0.0 {
+        let nickname = state.sides[side].active_pokemon().nickname.clone();
+        log.push(Event::NoEffect { side: side as i32, pokemon: nickname });
+        return Ok(());
+    }
+    apply_damage(state, attacker_side, &the_move, &listed_type, effectiveness, behind_substitute, db, tape, log)
 }
 
 // Eight arguments, for the same reason `calculate_hit` takes eight: this reads against the

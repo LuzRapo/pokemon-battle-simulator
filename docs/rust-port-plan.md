@@ -6,12 +6,12 @@ then replace the Python engine.
 ## Where it stands
 
 Branch `feature/vectorised-engine`. Sections 1 and 2 (charges and volatiles) are both done.
-Section 3 (the remaining coded moves) is most of the way through — 19 of roughly 26 remaining
-`CodedMoveKind`s are ported; see its own status below for what is left.
+Section 3 (the remaining coded moves) is essentially done — every `CodedMoveKind` is ported;
+`Transform` is the only move left in the whole database.
 
 | | done | total |
 |---|---|---|
-| moves | 835 | 843 (99%) |
+| moves | 842 | 843 (99.9%) |
 | abilities | 127 | 220 (58%) |
 | items | 33 | 193 — see note |
 | volatiles | 18 | 18 — every volatile in the database is ported |
@@ -22,15 +22,19 @@ export had never been able to see, for reasons worth reading in section 3's own 
 are correctly refused now rather than silently wrong, which is why the *ported* item count did not
 move even though total climbed by 83.
 
-The 8 moves still refused are all special-cased by name — the last of section 3, itemised there.
-The pseudo-weather rooms are done; the "does something to its user or the field" refusal cause is
-gone entirely.
+`Transform` is the only move still refused, and it is special-cased by name — the last of section
+3, itemised there. The pseudo-weather rooms are done; the "does something to its user or the field"
+refusal cause is gone entirely. Wish, Healing Wish/Lunar Dance, Revival Blessing, Shed Tail, and
+Future Sight/Doom Desire are all done too — see the batch write-up below for the two real bugs that
+batch turned up (an immediate-switch gap and a log-ordering gap, both fixed).
 
 Several thousand randomly generated battles agree turn for turn, event for event, draw for draw,
 including a pool built specifically to force charging on both the semi-invulnerable and the
 ordinary two-turn moves (`test_charge_moves_actually_charge_and_agree`), and a vacuity check that
 disabling `power::out_of_reach` turns 251/300 of them red. ~240k turns/s single-threaded against
-the Python's ~2.2k.
+the Python's ~2.2k. The latest full sweep of this batch: 3000 status-slice battles with switching
+enabled, 2964/3000 agreed, 36 refused (all the same documented Future Sight scope limit below),
+0 diverged; a 2000-battle plain-slice sweep came back 2000/2000 agreed, 0 diverged.
 
 ## The loop
 
@@ -217,11 +221,43 @@ not the speed stat — the one file in the whole Python that reads `PseudoWeathe
 Vacuity-checked: disabling the inversion alone, with the field state otherwise untouched, turns
 177/300 of a deliberately slow-vs-fast matchup red.
 
-**Left — 8 moves:** `Wish`, `Healing Wish`/`Lunar Dance`, `Revival Blessing`, `Shed Tail` (all need
-a `Side`-level pending-effect field this engine does not have yet: `wish_turns`/`wish_pending`,
-`healing_wish_pending`, and `pending_substitute` respectively), `Future Sight`/`Doom Desire`
-(delayed damage — needs `Side.future_sight_turns`/`_attacker`/`_move` and a residual landing two
-turns later), and `Transform` (a full stat/moveset/forme copy — the largest single one left).
+**Also done: Wish, Healing Wish/Lunar Dance, Revival Blessing, Shed Tail, Future Sight/Doom
+Desire.** Each got its own `Side`-level pending-effect field this engine didn't have before
+(`wish_turns`/`wish_pending`, `healing_wish_pending`, `pending_substitute`,
+`future_sight_turns`/`_attacker`/`_move`), and a shared `grant_switch_in_bonuses` helper (healing
+wish's heal, a pending Shed Tail substitute) now runs from all three switch-in sites — the direct
+`Action::Switch` handler, `send_out_replacement`, and `force_random_switch` — rather than just the
+one that was obvious at first. Future Sight/Doom Desire store `(side, team_index)` for the
+attacker, a stable identity across switches; landing after that attacker has switched out is an
+explicit, documented `Refusal::Unported` rather than an attempt to thread an attacker index through
+a damage-calc pipeline that assumes attacker == the active Pokemon on its side.
+
+Two real bugs turned up while testing this batch, both found by the differential sweep rather than
+by inspection:
+
+- **Shed Tail's forced switch was silently never happening.** The initial assumption — that
+  `needs_switch` is only ever consumed by the AI's own switch-choice — was wrong:
+  `_resolve_pending_switches` in the Python's `turn.py` runs after *every* action resolves, not at
+  some later checkpoint, so Shed Tail's substitute-then-switch has to happen inline, in the same
+  action, not on the next `step()` call. Fixed by calling `send_out_replacement` directly from the
+  `SHED_TAIL` dispatch arm. Covered by `test_shed_tail_forces_an_immediate_switch`.
+- **Two same-turn pseudo-weather expiries logged out of order.** Python's `dict` preserves cast
+  (insertion) order; a Rust `BTreeMap` sorts by key, so `Field::pseudo_weather` alphabetised
+  `PseudoWeatherEnded` lines instead of preserving cast order — agreeing whenever the two happened
+  to coincide alphabetically and diverging the rest of the time. Found by a 6000-battle sweep (1
+  divergence, seed 3368). Fixed with a new `OrderedCounts` newtype (a `Vec<(String,i32)>` with
+  dict-like update-in-place-else-append semantics) applied to `Field::pseudo_weather` and, since
+  they share the identical shape and the identical latent bug, `Side::hazards` and `Side::screens`
+  too. Covered by `test_two_rooms_fading_together_log_in_cast_order_not_alphabetical`, which scripts
+  both cast orders deterministically (Trick Room and Wonder Room, cast turn 0 by two Pokemon of
+  equal speed, never recast afterward) rather than relying on random play to hold still for the
+  five turns both durations need to align.
+
+**Left — 1 move: `Transform`.** A full stat/moveset/forme copy keyed by stable `(side, team_index)`
+identity — needs new `Pokemon` fields this engine doesn't store post-construction yet (base stats,
+nature, EVs, IVs — currently only the derived `totals: StatTotals` survives), a snapshot/restore
+mechanic, a moveset+PP overwrite capped at 5 PP each, a stat_stages copy, and a
+`refresh_stats()`-equivalent recompute callable after construction. The largest single move left.
 
 ### 4. Abilities — 93 left
 

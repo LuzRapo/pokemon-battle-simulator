@@ -189,7 +189,7 @@ fn stealth_rock(state: &mut State, side: usize, db: &Database, log: &mut Log) ->
 }
 
 fn spikes(state: &mut State, side: usize, log: &mut Log) -> bool {
-    let layers = state.sides[side].hazards.get("SPIKES").copied().unwrap_or(0);
+    let layers = state.sides[side].hazards.get("SPIKES").unwrap_or(0);
     if layers <= 0 {
         return false;
     }
@@ -231,7 +231,7 @@ fn sticky_web(state: &mut State, side: usize, log: &mut Log) {
 }
 
 fn toxic_spikes(state: &mut State, side: usize, log: &mut Log) {
-    let layers = state.sides[side].hazards.get("TOXIC_SPIKES").copied().unwrap_or(0);
+    let layers = state.sides[side].hazards.get("TOXIC_SPIKES").unwrap_or(0);
     let incoming = state.sides[side].active_pokemon();
     let types: Vec<&str> = incoming.types.iter().flatten().map(|t| t.as_str()).collect();
     let nickname = incoming.nickname.clone();

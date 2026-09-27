@@ -23,6 +23,7 @@ from battle_sim.database.loader import get_all_moves
 from battle_sim.differential import Scenario, compare, record
 from battle_sim.engine import legal_actions
 from battle_sim.models.actions import ActionType
+from battle_sim.models.moves import MoveSlot
 from battle_sim.models.spec import PokemonSpec
 from battle_sim.models.stats import EVs, IVs
 from battle_sim.utils import Ability, Item, Nature
@@ -354,17 +355,24 @@ def test_the_ported_volatiles_actually_land_in_the_swept_battles() -> None:
 
 
 def _some_coded_move_this_engine_has_not_learned() -> str:
-    """Some move the Python special-cases by name that the engine has not ported yet.
+    """Some move the Python special-cases that the engine has not ported yet.
 
     Named rather than hardcoded, same reasoning as `_still_unported`: a hardcoded example goes
-    stale the moment it lands. This used to derive from an unported *volatile* instead, which was
-    Leech Seed and then a rotating cast of others — until Substitute was the last one and every
-    volatile in the database became ported, and that derivation had nothing left to return.
+    stale the moment it lands. This has already been rewritten twice for exactly that reason — it
+    used to derive from an unported *volatile* (Leech Seed, then a rotating cast of others, until
+    Substitute was the last one), then from a move refused by *name* (until Doom Desire and Future
+    Sight were the last two of those). What's left is refused by `CodedMoveKind` instead — a move's
+    behaviour can be special-cased without its name ever appearing as a literal anywhere — so this
+    derives from that gap now, and will need rewriting again the day nothing does.
     """
-    coded = set(json.loads((DATA / "rules.json").read_text())["coded_moves"])
-    remaining = sorted(coded - set(PORTED["coded_moves"]))
-    assert remaining, "every coded move is ported; this test needs rewriting"
-    return remaining[0]
+    known_kinds = set(PORTED["coded_kinds"])
+    for move in sorted(get_all_moves().values(), key=lambda m: m.name):
+        for effect in move.effects:
+            if type(effect).__name__ == "CodedEffect":
+                kind = getattr(getattr(effect, "kind", None), "name", None)
+                if kind is not None and kind not in known_kinds:
+                    return move.name
+    raise AssertionError("every CodedMoveKind is ported; this test needs rewriting")
 
 
 def _inflicts(effect: object, volatile: str) -> bool:
@@ -979,6 +987,144 @@ def test_trick_room_inverts_the_speed_sort(tmp_path: Path) -> None:
                 slow_mon_moved_first += 1
 
     assert slow_mon_moved_first > 0, "the level-1 Golem never once moved first"
+
+
+@needs_rust
+def test_two_rooms_fading_together_log_in_cast_order_not_alphabetical(tmp_path: Path) -> None:
+    """A real divergence the sweep found while this batch was being tested: when Trick Room and
+    Wonder Room expire on the same residual pass, Python's `PseudoWeatherEnded` lines come out in
+    the order they were *cast*, because a Python `dict` preserves insertion order — a `BTreeMap`
+    on the Rust side logged them alphabetically instead, which agreed whenever the two happened to
+    coincide and diverged the rest of the time. `Field::pseudo_weather` (and `Side::hazards` and
+    `Side::screens`, the same shape) are `OrderedCounts` now, not `BTreeMap`, for exactly this
+    reason. Both cast orders are exercised here since the pool doesn't favour either.
+    """
+    def team(first: str, second: str) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species="Rhydon", nickname="P0", level=50, ability=Ability.NONE, item=Item.NONE,
+                nature=Nature.HARDY, moves=[first, second, "Tackle"],
+            )
+        ]
+
+    # Scripted rather than random: both sides cast their own room on turn 0 (so both timers start
+    # together), then only Tackle after that (so neither timer is refreshed) -- random play almost
+    # never holds still for the five turns both durations need to actually align, which is exactly
+    # why the sweep needed a much larger, noisier battle to find this in the first place. Each side
+    # always casts its own first-listed move on turn 0: which room that is depends only on which
+    # team a side is holding, so swapping the two teams between sides (rather than reindexing the
+    # chooser) is what actually flips which name gets cast -- and so logged -- first.
+    def choose(state, side_index):  # type: ignore[no-untyped-def]
+        options = legal_actions(state, side_index)
+        wanted = MoveSlot.FIRST if state.turn == 0 else MoveSlot.THIRD
+        for action in options:
+            if action.action is ActionType.USE_MOVE and action.move is wanted:
+                return action
+        return options[0]
+
+    both_faded_together = 0
+    team_trick_room_first = team("Trick Room", "Wonder Room")
+    team_wonder_room_first = team("Wonder Room", "Trick Room")
+    for teams in ((team_trick_room_first, team_wonder_room_first), (team_wonder_room_first, team_trick_room_first)):
+        scenario, expected = record(teams, choose, seed=1, max_turns=15)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, str(divergence)
+        for turn in expected:
+            fades = [e["kind"] for e in turn["events"] if e["type"] == "PseudoWeatherEnded"]
+            if len(fades) >= 2:
+                both_faded_together += 1
+
+    assert both_faded_together > 0, "Trick Room and Wonder Room never once faded on the same turn"
+
+
+@needs_rust
+def test_wish_and_the_delayed_moves_fire_and_agree(tmp_path: Path) -> None:
+    """Wish, Healing Wish/Lunar Dance, Revival Blessing, and Future Sight/Doom Desire.
+
+    Shed Tail is exercised by the same pool but asserted on separately below, since its own
+    regression (a same-turn forced switch this engine wasn't performing at all) is worth its own
+    failure message rather than folding into this one.
+    """
+    pool = ["Wish", "Healing Wish", "Revival Blessing", "Future Sight", "Doom Desire", "Tackle", "Explosion"]
+
+    def team(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species=rng.choice(PLAIN_SPECIES),
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool), rng.choice(pool)],
+            )
+            for index in range(4)
+        ]
+
+    seen: Counter[str] = Counter()
+    for seed in range(40):
+        rng = random.Random(35000 + seed)
+        teams = (team(rng), team(rng))
+        scenario, expected = record(teams, _switching_chooser(rng), seed=seed, max_turns=100)
+        theirs = _rust_trace(scenario, tmp_path)
+        if isinstance(theirs, str):
+            # Future Sight/Doom Desire landing after their attacker switched away is refused
+            # rather than guessed at (see resolve_future_sight); a battle built to force switching
+            # hits that refusal often, and that is the correct engine, not a broken generator.
+            continue
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            for e in turn["events"]:
+                if e["type"] in ("WishMade", "Revived", "FutureAttackQueued", "FutureAttackLands"):
+                    seen[e["type"]] += 1
+
+    for wanted in ("WishMade", "Revived", "FutureAttackQueued", "FutureAttackLands"):
+        assert seen[wanted] > 0, f"{wanted} never happened across 40 battles: {dict(seen)}"
+
+
+@needs_rust
+def test_shed_tail_forces_an_immediate_switch(tmp_path: Path) -> None:
+    """A real regression the sweep found: Shed Tail's `needs_switch` is not an AI-side-only
+    concern the way it first looked — `_resolve_pending_switches` runs right after *every* action
+    resolves, so the replacement arrives the same turn, immediately after the substitute is left
+    behind. Vacuity-checked directly: without the same `send_out_replacement` call an ordinary
+    pivot already uses, 94/300 of this exact matchup diverged.
+    """
+    pool = ["Shed Tail", "Tackle"]
+
+    def team(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species=rng.choice(PLAIN_SPECIES),
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool), rng.choice(pool)],
+            )
+            for index in range(4)
+        ]
+
+    immediate_switches = 0
+    for seed in range(40):
+        rng = random.Random(36000 + seed)
+        teams = (team(rng), team(rng))
+        scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=60)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            names = [e["type"] for e in turn["events"]]
+            for i, name in enumerate(names):
+                if name == "MoveUsed" and turn["events"][i]["move"] == "Shed Tail" and "Switched" in names[i:]:
+                    immediate_switches += 1
+
+    assert immediate_switches > 0, "Shed Tail never once forced a same-turn switch"
 
 
 @needs_rust

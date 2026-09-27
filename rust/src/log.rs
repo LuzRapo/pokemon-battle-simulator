@@ -119,6 +119,28 @@ pub enum Event {
     PseudoWeatherEnded {
         kind: String,
     },
+    /// Wish or Healing Wish/Lunar Dance queued — the same event either way, as the Python logs it.
+    WishMade {
+        side: i32,
+        pokemon: String,
+    },
+    /// Revival Blessing bringing a fallen teammate back.
+    Revived {
+        side: i32,
+        pokemon: String,
+    },
+    FutureAttackQueued {
+        side: i32,
+        pokemon: String,
+        #[serde(rename = "move")]
+        the_move: String,
+    },
+    FutureAttackLands {
+        side: i32,
+        pokemon: String,
+        #[serde(rename = "move")]
+        the_move: String,
+    },
     ScreenSet {
         side: i32,
         screen: String,

@@ -7,8 +7,68 @@
 
 use crate::data::{Database, Species};
 use crate::stats::{totals, with_stage, Spread, StatTotals};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+/// A small string-keyed counter that remembers *insertion* order rather than sorting by key —
+/// hazards, screens and pseudo-weather all need this, because the Python's `dict` does the same
+/// and more than one of them can end its turn on the same residual pass. A `BTreeMap` here logged
+/// `TRICK_ROOM` before `WONDER_ROOM` fading together on the same turn regardless of which was cast
+/// first, which the Python never does — it iterates in cast order, and this was found by two rooms
+/// disagreeing about which one the log said ended first.
+///
+/// Updating an existing key does not move it, matching a Python `dict`'s own behaviour; only a new
+/// key is appended. Every collection here stays under half a dozen entries for the life of a
+/// battle, so the linear scans this does instead of a map's O(1) lookup cost nothing that matters.
+#[derive(Debug, Clone, Default)]
+pub struct OrderedCounts(Vec<(String, i32)>);
+
+impl OrderedCounts {
+    pub fn new() -> Self {
+        OrderedCounts(Vec::new())
+    }
+
+    pub fn get(&self, key: &str) -> Option<i32> {
+        self.0.iter().find(|(k, _)| k == key).map(|(_, v)| *v)
+    }
+
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.0.iter().any(|(k, _)| k == key)
+    }
+
+    /// Insert a new key at the end, or overwrite an existing one in place.
+    pub fn insert(&mut self, key: String, value: i32) {
+        match self.0.iter_mut().find(|(k, _)| *k == key) {
+            Some(entry) => entry.1 = value,
+            None => self.0.push((key, value)),
+        }
+    }
+
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut i32> {
+        self.0.iter_mut().find(|(k, _)| k == key).map(|(_, v)| v)
+    }
+
+    pub fn remove(&mut self, key: &str) -> Option<i32> {
+        let index = self.0.iter().position(|(k, _)| k == key)?;
+        Some(self.0.remove(index).1)
+    }
+
+    /// Keys in insertion order — the one thing a `BTreeMap` could not give this.
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.iter().map(|(k, _)| k)
+    }
+}
+
+impl Serialize for OrderedCounts {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (key, value) in &self.0 {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
 
 /// A non-volatile status. The names match the Python enum exactly because the trace compares them
 /// as strings.
@@ -335,13 +395,28 @@ impl Pokemon {
 pub struct Side {
     pub team: Vec<Pokemon>,
     pub active: usize,
-    pub hazards: BTreeMap<String, i32>,
-    pub screens: BTreeMap<String, i32>,
+    pub hazards: OrderedCounts,
+    pub screens: OrderedCounts,
     pub tailwind_turns: i32,
     /// Whether this side has already taken its action this turn. Analytic reads it.
     pub acted_this_turn: bool,
     /// The move this side picked for the turn, by name — what Sucker Punch is trying to read.
     pub chosen_move: Option<String>,
+    /// Wish: turns left, and how much it will heal when it lands (fixed at cast time, off the
+    /// caster's own max HP — not whoever is standing there when it lands).
+    pub wish_turns: i32,
+    pub wish_pending: i32,
+    /// Healing Wish / Lunar Dance: granted to whichever Pokemon next switches in on this side.
+    pub healing_wish_pending: bool,
+    /// Shed Tail's parting gift: the substitute HP the next switch-in arrives with already up.
+    pub pending_substitute: i32,
+    /// Future Sight / Doom Desire: turns left, which (side, team index) queued it — a stable
+    /// identity across switches, since Python holds the live Pokemon object itself and reads its
+    /// *current* stats at landing time, not a snapshot from when it was queued — and the move
+    /// name, re-looked-up in the database at landing rather than carried as a whole `Move`.
+    pub future_sight_turns: i32,
+    pub future_sight_attacker: Option<(usize, usize)>,
+    pub future_sight_move: Option<String>,
 }
 
 impl Side {
@@ -349,11 +424,18 @@ impl Side {
         Side {
             team,
             active: 0,
-            hazards: BTreeMap::new(),
-            screens: BTreeMap::new(),
+            hazards: OrderedCounts::new(),
+            screens: OrderedCounts::new(),
             tailwind_turns: 0,
             acted_this_turn: false,
             chosen_move: None,
+            wish_turns: 0,
+            wish_pending: 0,
+            healing_wish_pending: false,
+            pending_substitute: 0,
+            future_sight_turns: 0,
+            future_sight_attacker: None,
+            future_sight_move: None,
         }
     }
 
@@ -395,7 +477,7 @@ pub struct Field {
     pub terrain_turns_left: i32,
     /// Trick Room, Gravity, Magic Room, Wonder Room: kind -> turns left. Several can stand at
     /// once, unlike weather or terrain, so this is a map rather than a single slot.
-    pub pseudo_weather: BTreeMap<String, i32>,
+    pub pseudo_weather: OrderedCounts,
 }
 
 impl Default for Field {
@@ -405,7 +487,7 @@ impl Default for Field {
             weather_turns_left: 0,
             terrain: "NONE".into(),
             terrain_turns_left: 0,
-            pseudo_weather: BTreeMap::new(),
+            pseudo_weather: OrderedCounts::new(),
         }
     }
 }
