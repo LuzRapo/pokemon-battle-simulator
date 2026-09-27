@@ -1,5 +1,5 @@
-//! `ON_SWITCH_IN` and `ON_AFTER_HIT`: the two events where abilities and items *do* something
-//! rather than adjust a number.
+//! `ON_SWITCH_IN`, `ON_AFTER_HIT` and `ON_BEFORE_MOVE`: the events where abilities and items *do*
+//! something rather than adjust a number.
 //!
 //! Separate from `abilities.rs` because the shape of the problem is different. A damage-calc
 //! handler reads the board and pushes a modifier; these ones deal damage, inflict statuses, move
@@ -13,10 +13,130 @@
 //! after — so Rough Skin's chip is announced before the damage that caused it.
 
 use crate::battle::{State, Status};
-use crate::data::Database;
+use crate::data::{Database, Effect, Move};
 use crate::log::{Event, Log};
 use crate::tape::Tape;
-use crate::turn::{apply_main_status_from, apply_stage_changes, Refusal};
+use crate::turn::{apply_main_status_from, apply_stage_changes, Refusal, DEFENDER_FACING};
+
+/// Abilities implemented here, at `ON_BEFORE_MOVE` — a move that could reach the defender (a
+/// damaging one, or one that targets the opponent directly, exactly the Python's own `damaging or
+/// move.target in _DEFENDER_FACING_TARGETS` gate), before the effectiveness/immunity check. None
+/// of the handlers below draw from the tape — every one of them is a deterministic function of the
+/// defending ability and the move's type or sound flag.
+pub const PORTED_BEFORE_MOVE_ABILITIES: [&str; 11] = [
+    "EARTH_EATER",
+    "FLASH_FIRE",
+    "LEVITATE",
+    "LIGHTNING_ROD",
+    "MOTOR_DRIVE",
+    "SAP_SIPPER",
+    "SOUNDPROOF",
+    "STORM_DRAIN",
+    "VOLT_ABSORB",
+    "WATER_ABSORB",
+    "WELL_BAKED_BODY",
+];
+
+/// `True` if the move was cancelled here — the caller skips the effectiveness gate and the hit
+/// entirely, the same as a Python handler returning `HandlerResult(cancel=True, ...)`.
+pub fn ability_before_move(state: &mut State, side: usize, the_move: &Move, log: &mut Log) -> bool {
+    let other = 1 - side;
+    let damaging = the_move
+        .effects
+        .iter()
+        .any(|e| matches!(e, Effect::DamageEffect { .. } | Effect::FixedDamageEffect { .. }));
+    // `if not move.effects and not move.force_switch: MoveFailed; return` — the Python's own check
+    // one line above where it emits `ON_BEFORE_MOVE`, so a data-only move (Electrify's own effect
+    // is unmodelled and its list is empty) never reaches an absorber at all, even one of a matching
+    // type. Rust's own equivalent is the generic `log_before == log.entries.len()` fallback in
+    // `resolve_move`, reached further down and unaffected by returning `false` here.
+    if the_move.effects.is_empty() && !the_move.force_switch {
+        return false;
+    }
+    if !damaging && !DEFENDER_FACING.contains(&the_move.target.as_str()) {
+        return false;
+    }
+    let ability = state.sides[other].active_pokemon().ability.clone();
+    let move_type = the_move.move_type.as_str();
+    match ability.as_str() {
+        "VOLT_ABSORB" if move_type == "ELECTRIC" => absorb_heal(state, other, "VOLT_ABSORB", log),
+        "WATER_ABSORB" if move_type == "WATER" => absorb_heal(state, other, "WATER_ABSORB", log),
+        "EARTH_EATER" if move_type == "GROUND" => absorb_heal(state, other, "EARTH_EATER", log),
+        "MOTOR_DRIVE" if move_type == "ELECTRIC" => absorb_boost(state, other, "SPEED", 1, "motor_drive", log),
+        "LIGHTNING_ROD" if move_type == "ELECTRIC" => {
+            absorb_boost(state, other, "SP_ATTACK", 1, "lightning_rod", log)
+        }
+        "STORM_DRAIN" if move_type == "WATER" => absorb_boost(state, other, "SP_ATTACK", 1, "storm_drain", log),
+        "SAP_SIPPER" if move_type == "GRASS" => absorb_boost(state, other, "ATTACK", 1, "sap_sipper", log),
+        "WELL_BAKED_BODY" if move_type == "FIRE" => {
+            absorb_boost(state, other, "DEFENCE", 2, "well_baked_body", log)
+        }
+        "FLASH_FIRE" if move_type == "FIRE" => {
+            let pokemon = state.sides[other].active_mut();
+            let nickname = pokemon.nickname.clone();
+            if pokemon.flash_fire_active {
+                log.push(Event::FlashFireAbsorbed { side: other as i32, pokemon: nickname });
+            } else {
+                pokemon.flash_fire_active = true;
+                log.push(Event::FlashFireActivated { side: other as i32, pokemon: nickname });
+            }
+            true
+        }
+        "LEVITATE" if move_type == "GROUND" => {
+            let nickname = state.sides[other].active_pokemon().nickname.clone();
+            log.push(Event::AvoidedWithLevitate { side: other as i32, pokemon: nickname });
+            true
+        }
+        "SOUNDPROOF" if the_move.sound => {
+            let nickname = state.sides[other].active_pokemon().nickname.clone();
+            log.push(Event::DoesNotAffect { side: other as i32, pokemon: nickname });
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Volt Absorb / Water Absorb / Earth Eater: a quarter heal, or `AbsorbBlocked` at full HP —
+/// `_bind_type_absorb`'s own `if healed > 0 ... else ...`, not the silent-when-zero convention
+/// `heal_by` uses for the residual healers.
+fn absorb_heal(state: &mut State, side: usize, ability: &str, log: &mut Log) -> bool {
+    let pokemon = state.sides[side].active_mut();
+    let amount = std::cmp::max(1, pokemon.totals.hp / 4);
+    let before = pokemon.hp;
+    pokemon.hp = std::cmp::min(pokemon.totals.hp, pokemon.hp + amount);
+    let healed = pokemon.hp - before;
+    let nickname = pokemon.nickname.clone();
+    if healed > 0 {
+        log.push(Event::AbsorbHealed { side: side as i32, pokemon: nickname, ability: ability.to_string(), amount: healed });
+    } else {
+        log.push(Event::AbsorbBlocked { side: side as i32, pokemon: nickname, ability: ability.to_string() });
+    }
+    true
+}
+
+/// Motor Drive / Lightning Rod / Storm Drain / Sap Sipper / Well Baked Body: the raw
+/// `change_stat_stage`, logged only when the stage actually moved — same shape as Speed Boost's
+/// residual bump, and deliberately not `apply_stage_changes`, which (correctly, for the callers
+/// that want it) logs unconditionally. Contrary and Simple never enter into it: the ability
+/// boosting itself here is the only ability this Pokemon has.
+fn absorb_boost(state: &mut State, side: usize, stat: &str, amount: i32, source: &str, log: &mut Log) -> bool {
+    let pokemon = state.sides[side].active_mut();
+    let before = pokemon.stage(stat);
+    let after = (before + amount).clamp(-6, 6);
+    pokemon.stages.insert(stat.to_string(), after);
+    if after > before {
+        let nickname = pokemon.nickname.clone();
+        log.push(Event::StatStageChanged {
+            side: side as i32,
+            pokemon: nickname,
+            stat: stat.to_string(),
+            delta: after - before,
+            requested: amount,
+            source: source.to_string(),
+        });
+    }
+    true
+}
 
 /// Abilities implemented here, on top of the damage-calc ones.
 pub const PORTED_ABILITIES: [&str; 17] = [

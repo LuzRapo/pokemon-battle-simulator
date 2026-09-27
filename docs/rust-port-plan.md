@@ -17,13 +17,13 @@ this doc; per invariant 2 the batch now belongs on the "done" side.
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 145 | 220 (66%) |
+| abilities | 156 | 220 (71%) |
 | items | 33 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
 The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
 a release build for this update:
-`{"abilities":{"live":220,"ported":145},"items":{"live":193,"ported":33},"moves":{"playable":843,
+`{"abilities":{"live":220,"ported":156},"items":{"live":193,"ported":33},"moves":{"playable":843,
 "refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
 row above. The stale code comment at `rust/src/turn.rs:318` ("220 abilities and 110 items are
 live") has been corrected to 193 for items.
@@ -391,15 +391,60 @@ PORTED` (48 → 49) was the entire change. Covered by
 boost, the defense reduction, the burn immunity) vacuity-checked individually, each turning its own
 half of the test into a digest mismatch on its own. 145/220 in the table above now.
 
-The remaining 75, grouped and roughly ordered by what unblocks the most (see "6. Hooks still
-missing" below — several of these clusters are gated on hooks that don't exist yet, and building
-one hook first is cheaper than building each ability's workaround separately):
+**Also done: section 6's `ON_BEFORE_MOVE` hook, and eleven of the twelve abilities it unblocked.**
+`hooks::ability_before_move`, called from `resolve_move` right after the accuracy roll and before
+the effectiveness/immunity gate — the same spot the Python emits it, for a damaging move or one
+that targets the opponent directly (`damaging or move.target in _DEFENDER_FACING_TARGETS`). None of
+its handlers draw from the tape; the ability/move-type pair alone decides them. Ported: Volt Absorb,
+Water Absorb, Earth Eater (a quarter heal, or `AbsorbBlocked` at full HP), Motor Drive, Lightning
+Rod, Storm Drain, Sap Sipper, Well Baked Body (a fixed stat bump, logged only if the stage actually
+moved — the raw `change_stat_stage`, not the `apply_stage_changes` wrapper other callers want),
+Flash Fire (a flag, not a heal or a boost — see its own paragraph below), Levitate's move-cancelling
+half (its grounding half was already written and simply unreachable, same shape as Water Bubble's
+burn immunity above), and Soundproof (keyed on the move's own `sound` flag, not its type). Dry Skin
+is the one name left out of the twelve — it has two more behaviors this hook doesn't cover (a Fire
+vulnerability multiplier and a weather-driven heal/chip), scoped out of this batch rather than
+half-ported.
 
-- **Unblocked by `ON_BEFORE_MOVE` (12) — type immunity / absorption**: Flash Fire, Volt Absorb,
-  Water Absorb, Sap Sipper, Motor Drive, Lightning Rod, Storm Drain, Dry Skin, Earth Eater, Well
-  Baked Body, Soundproof, Levitate (Levitate's grounding half is already a one-liner in
-  `inline.rs`; its move-cancelling half needs this hook, which is why it's deliberately kept off
-  the ported list — see `inline.rs:19-23`).
+Also required: catching a check the Python has that this hook's first draft didn't — `if not
+move.effects and not move.force_switch: MoveFailed` sits one line above where Python emits
+`ON_BEFORE_MOVE`, and without it, Electrify (an Electric-type status move whose own effect is
+unmodelled — `effects` is empty in the exported data) falsely triggered Motor Drive's boost before
+this had a dedicated test. Caught by the pre-existing `test_the_ported_abilities_agree_too` sweep on
+the very first run with the new hook live, not by a test aimed at the cluster; the regression test
+that followed is `test_effectless_moves_never_falsely_trigger_an_absorber`.
+
+Flash Fire's boost turned up a second, more expensive bug, this one past every dedicated test and
+caught only by a 2000-battle plain-slice sweep (seed 1232, turn 30): the boost was first written
+pushing 6144 onto `attack_mods_4096`, which reads like the obvious list for "1.5x this Pokemon's own
+damage" and is exactly what Water Bubble and Huge Power use — but the Python's own `boost_fire`
+pushes onto `pre_screen_mods_4096` instead, folding in much later in the chain (after STAB and the
+type multiplier, not onto the attack stat before the base-damage division). The two are not
+interchangeable: a Rock/Ground Golem's Mind Blown landed for 36 in Python and 35 here, one point of
+rounding apart, purely from which stage of the chain the same nominal 1.5x entered at. Fixed by
+moving the push to `pre_screen_mods_4096`; a fresh 5000-battle plain-slice sweep came back clean
+afterward. Worth remembering for anything else in the remaining abilities that reads like a plain
+attack-stat boost — check which list the Python actually pushes onto before assuming.
+
+Ten differential tests cover the batch: `test_type_absorbing_abilities_cancel_the_move_and_agree`
+(the eight-ability table), `test_effectless_moves_never_falsely_trigger_an_absorber` (the Electrify
+regression), `test_flash_fire_activates_once_and_boosts_fire_moves_afterward`, and
+`test_levitate_cancels_ground_moves_and_soundproof_blocks_sound`. Every one of the eleven abilities'
+own code paths, plus the empty-effects guard, was vacuity-checked individually (rename the ability
+string or zero the multiplier, rebuild, run only that ability's test, confirm it goes red, revert) —
+thirteen checks in total, each a tape divergence or a plain digest mismatch depending on whether the
+disabled clause changes what the tape needs or only what a fold computes. Confirmed with the full
+validation suite and three differential sweeps: 3000 status-slice (2952/3000 agreed, 48 refused, the
+same documented Future Sight limit, 0 diverged), 2000 plain-slice (2000/2000, 0 diverged), and the
+5000-battle plain-slice re-check above. 156/220 abilities now.
+
+The remaining 64, grouped and roughly ordered by what unblocks the most:
+
+- **Dry Skin**: the one name left over from the `ON_BEFORE_MOVE` cluster above — its own absorb half
+  would be a one-line addition to `hooks::ability_before_move` (`"DRY_SKIN" if move_type ==
+  "WATER"`, heal-style like Volt Absorb), but the Fire-vulnerability multiplier
+  (`ON_DAMAGE_CALC`, a one-liner in `abilities::handle`) and the weather-driven heal/chip
+  (`ON_TURN_END`, not built yet — see below) both have to land in the same pass, per invariant 2.
 - **Unblocked by `ON_FAINT` (2)**: Moxie, Beast Boost.
 - **Unblocked by `ON_SWITCH_OUT` (2)**: Regenerator, Natural Cure.
 - **Unblocked by `ON_TURN_START` (2)**: Protosynthesis, Quark Drive.
@@ -475,9 +520,13 @@ use, for a cost the direct-call pattern already pays cheaply elsewhere.
 
 Build in this order — each one sized to unlock the next-biggest ability/item cluster above:
 
-1. **`ON_BEFORE_MOVE`** — called from wherever `turn.rs` resolves a move's targets, before damage
-   calc. Unblocks the 13-ability type-immunity/absorption cluster (by far the largest single
-   ability cluster left) plus Magic Bounce and Air Balloon's float.
+1. **`ON_BEFORE_MOVE` — done.** `hooks::ability_before_move`, called from `resolve_move` right
+   after the accuracy roll, before the effectiveness/immunity gate. Unblocked eleven of the twelve
+   type-immunity/absorption abilities (Dry Skin held back, see section 4) and Air Balloon's float
+   is ready to ride along once items catch up to it. Magic Bounce turned out not to need this hook
+   at all — a fresh read placed its bounce check at a separate, earlier site in `moves.py` (before
+   the Protect check, not alongside the immunity gate), a correction to this doc's own earlier
+   claim caught the same way Water Bubble's and Synchronize's were.
 2. **`ON_FAINT`** — called at every existing `fainted()` check site in `turn.rs`/`field.rs`/
    `damage.rs` (there are several; a single shared call is fine as long as every site calls it).
    Unblocks Moxie, Beast Boost, Battle Bond's post-KO half.
@@ -521,10 +570,12 @@ hand-mapped signature crystals.
 
 ## Rough sizing
 
-Sections 1–3 are done. Section 6 (the five missing hooks) should come first now, not last — it's
-small on its own but it's what turns section 4's largest cluster (13 type-immunity abilities) from
-blocked into one-liners, so do it before resuming section 4. Section 4 is the largest remaining
-block at 75 abilities but most of it is one-liners once section 6 lands — call it two sessions.
+Sections 1–3 are done. Section 6's first hook, `ON_BEFORE_MOVE`, is done and has already unblocked
+its cluster (eleven of its twelve abilities — see section 4). The remaining four hooks
+(`ON_FAINT`, `ON_SWITCH_OUT`, `ON_TURN_START`, `ON_TURN_END`) are still worth building ahead of
+resuming section 4 at large, for the same reason the first one was: small on their own, each turns
+a blocked cluster into one-liners. Section 4 is the largest remaining block at 64 abilities but most
+of it is one-liners once the rest of section 6 lands — call it a session and a half from here.
 Section 5 (160 items) is one, mostly following section 4's abilities in to reuse their plumbing
 (Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega stones).
 Section 7 (Z-moves/megas/formes) is a scope question before it's a sizing question — check bot
@@ -534,8 +585,7 @@ up.
 The tail is not uniform: absorption abilities and formes are each a small architecture change, and
 the butler's revival mechanic has no reference outside this codebase.
 
-**Immediate next step for whoever picks this up**: the nine-ability one-liner batch is now verified
-and committed (tests, individual vacuity checks, a confirming differential sweep — see its write-up
-in section 4 above). Start section 6, the five missing hooks — `ON_BEFORE_MOVE` first, since it
-unblocks the largest single ability cluster (13 type-immunity/absorption abilities) plus Magic
-Bounce and Air Balloon's float.
+**Immediate next step for whoever picks this up**: `ON_BEFORE_MOVE` is done, along with eleven of
+the twelve abilities it unblocked (Dry Skin held back — see its own note in section 4). Build the
+next hook, `ON_FAINT`, which unblocks Moxie and Beast Boost — small, and the same "one hook first"
+logic applies for the same reason it did last time.

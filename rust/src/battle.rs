@@ -194,6 +194,9 @@ pub struct Pokemon {
     pub encored_slot: Option<usize>,
     /// The slot Disable has silenced, while `DISABLE` is in `volatiles`.
     pub disabled_slot: Option<usize>,
+    /// Flash Fire: set the first time a Fire move is absorbed, cleared on switch-out. Boosts every
+    /// Fire move this Pokemon uses afterward, until then.
+    pub flash_fire_active: bool,
 }
 
 /// A pre-Transform form, restored on switch-out. Mirrors `models.pokemon.FormSnapshot` exactly —
@@ -339,6 +342,7 @@ impl Pokemon {
             last_move_slot: None,
             encored_slot: None,
             disabled_slot: None,
+            flash_fire_active: false,
         })
     }
 

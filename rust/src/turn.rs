@@ -252,7 +252,7 @@ pub fn ported_coded_moves() -> &'static std::collections::HashSet<&'static str> 
 }
 
 /// `_DEFENDER_FACING_TARGETS`: the targets a Protect can stand in the way of.
-const DEFENDER_FACING: [&str; 3] = ["SINGLE_OPPONENT", "ALL_ADJACENT_ENEMIES", "ALL_ADJACENT"];
+pub const DEFENDER_FACING: [&str; 3] = ["SINGLE_OPPONENT", "ALL_ADJACENT_ENEMIES", "ALL_ADJACENT"];
 
 /// The volatiles this engine knows. Everything else in `ExtraStatus` still makes a move unplayable.
 ///
@@ -322,6 +322,7 @@ pub fn ported_abilities() -> &'static std::collections::HashSet<&'static str> {
     ONCE.get_or_init(|| {
         let mut all: std::collections::HashSet<&str> = crate::abilities::PORTED.into_iter().collect();
         all.extend(crate::hooks::PORTED_ABILITIES);
+        all.extend(crate::hooks::PORTED_BEFORE_MOVE_ABILITIES);
         all.extend(crate::inline::PORTED_ABILITIES);
         all.extend(crate::hooks::PORTED_RESIDUAL_ABILITIES);
         all.extend(crate::power::PORTED_ATE_ABILITIES);
@@ -694,6 +695,7 @@ fn withdraw(side: &mut Side, to: usize) -> String {
     outgoing.last_move_slot = None;
     outgoing.encored_slot = None;
     outgoing.disabled_slot = None;
+    outgoing.flash_fire_active = false;
     if outgoing.status == Status::Toxic {
         outgoing.status_turns = 0;
     }
@@ -1198,6 +1200,16 @@ fn resolve_move(
             crash_damage(state, side, &the_move, log);
             return Ok(());
         }
+    }
+
+    // `ON_BEFORE_MOVE`: absorption/immunity that cancels the move outright, for a damaging move or
+    // one that targets the opponent directly. *After* accuracy, *before* the effectiveness/
+    // immunity gate below — exactly where the Python emits it, so Volt Absorb still takes Thunder
+    // Wave's own miss chance before it gets a say, and a cancelled move still pays its own crash
+    // damage (Jump Kick into a Volt Absorb) the same way a Protect or an out-of-reach miss does.
+    if crate::hooks::ability_before_move(state, side, &the_move, log) {
+        crash_damage(state, side, &the_move, log);
+        return Ok(());
     }
 
     let effectiveness = if the_move.typeless {

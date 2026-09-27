@@ -207,6 +207,35 @@ pub enum Event {
         ability: String,
         amount: i32,
     },
+    /// `ON_BEFORE_MOVE`'s type-absorbing abilities (Volt Absorb, Water Absorb, Earth Eater):
+    /// healed by the move it just cancelled.
+    AbsorbHealed {
+        side: i32,
+        pokemon: String,
+        ability: String,
+        amount: i32,
+    },
+    /// The same absorb, already at full HP.
+    AbsorbBlocked {
+        side: i32,
+        pokemon: String,
+        ability: String,
+    },
+    /// Levitate cancelling a Ground move outright.
+    AvoidedWithLevitate {
+        side: i32,
+        pokemon: String,
+    },
+    /// Flash Fire's first activation on a given switch-in.
+    FlashFireActivated {
+        side: i32,
+        pokemon: String,
+    },
+    /// A later Fire hit while Flash Fire is already active.
+    FlashFireAbsorbed {
+        side: i32,
+        pokemon: String,
+    },
     /// The weather or terrain a Pokemon brings onto the field.
     WeatherSetByAbility {
         side: i32,

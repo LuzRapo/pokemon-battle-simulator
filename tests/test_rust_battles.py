@@ -1637,6 +1637,208 @@ def test_water_bubble_doubles_its_own_water_and_halves_fire_taken(tmp_path: Path
 
 
 @needs_rust
+def test_type_absorbing_abilities_cancel_the_move_and_agree(tmp_path: Path) -> None:
+    """The first eight names in `_TYPE_ABSORBING_ABILITIES`: a move of the matching type never
+    lands at all -- no damage, no secondary, no accuracy draw needed since the type check alone
+    decides it -- and either heals a quarter HP (Volt Absorb, Water Absorb, Earth Eater) or bumps a
+    stat by a fixed amount (Motor Drive, Lightning Rod, Storm Drain, Sap Sipper, Well Baked Body).
+    Each heal-style ability is checked twice: once with prior damage taken (heals), once at full HP
+    (`AbsorbBlocked`, no heal) -- the same "measure the block, don't assume it" the batch above used
+    for Shield Dust.
+
+    This is also the cluster that caught a real bug during development: `ability_before_move` fired
+    for Electrify (an Electric-type move whose own effect is unmodelled — `effects` is empty in the
+    exported data) before this test was even written, because nothing checked for an empty effect
+    list the way Python's own `if not move.effects and not move.force_switch: MoveFailed` does one
+    line above where it emits `ON_BEFORE_MOVE`. Caught by the pre-existing
+    `test_the_ported_abilities_agree_too` sweep, not by a test aimed at this cluster specifically —
+    see `test_effectless_moves_never_falsely_trigger_an_absorber` below for the regression test that
+    followed.
+
+    Vacuity-checked directly: each of the eight, disabled on its own by renaming its match arm in
+    `hooks::ability_before_move`, turned its own case here into a plain digest mismatch (the move
+    landing and dealing damage in this engine where Python absorbed it) or, for Earthquake against
+    Earth Eater, a `NoEffect`/`DamageDealt` split.
+    """
+    heal_style = [
+        ("VOLT_ABSORB", "Thunder Shock", "Machamp"),
+        ("WATER_ABSORB", "Water Gun", "Machamp"),
+        ("EARTH_EATER", "Earthquake", "Machamp"),
+    ]
+    for index, (ability, move, species) in enumerate(heal_style):
+        # Tackle first, to chip HP with a Normal hit the ability has no opinion about, then the
+        # real move on turn 2 -- round-robin so slot FIRST (Tackle) goes before slot SECOND (the
+        # absorbed move), not a random one of the four padded copies of either.
+        attacker = [_mon("Rhydon", "A0", Ability.NONE, ["Tackle", move])]
+        damaged_defender = [_mon(species, "B0", Ability[ability], ["Splash"])]
+        scenario, expected = record((attacker, damaged_defender), _round_robin_chooser(), seed=0, max_turns=2)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"{ability} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"{ability}"
+        chip_turn, absorb_turn = expected[0]["events"], expected[1]["events"]
+        assert any(e["type"] == "DamageDealt" for e in chip_turn), f"{ability}: Tackle never chipped it\n{chip_turn}"
+        assert any(
+            e["type"] == "AbsorbHealed" and e["ability"] == ability for e in absorb_turn
+        ), f"{ability}: never healed off a hit it should have absorbed\n{absorb_turn}"
+        assert not any(
+            e["type"] == "DamageDealt" for e in absorb_turn
+        ), f"{ability}: the absorbed move should never have landed\n{absorb_turn}"
+
+        full_hp_attacker = [_mon("Rhydon", "A0", Ability.NONE, [move])]
+        full_hp_defender = [_mon(species, "B0", Ability[ability], ["Splash"])]
+        scenario, expected = record(
+            (full_hp_attacker, full_hp_defender), _chooser(random.Random(50000 + index)), seed=0, max_turns=1
+        )
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"{ability} (full HP) was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"{ability} (full HP)"
+        events = expected[0]["events"]
+        assert any(
+            e["type"] == "AbsorbBlocked" and e["ability"] == ability for e in events
+        ), f"{ability}: should report AbsorbBlocked at full HP\n{events}"
+
+    boost_style = [
+        ("MOTOR_DRIVE", "Thunder Shock", "SPEED", "motor_drive"),
+        ("LIGHTNING_ROD", "Thunder Shock", "SP_ATTACK", "lightning_rod"),
+        ("STORM_DRAIN", "Water Gun", "SP_ATTACK", "storm_drain"),
+        ("SAP_SIPPER", "Vine Whip", "ATTACK", "sap_sipper"),
+        ("WELL_BAKED_BODY", "Ember", "DEFENCE", "well_baked_body"),
+    ]
+    for index, (ability, move, stat, source) in enumerate(boost_style):
+        attacker = [_mon("Rhydon", "A0", Ability.NONE, [move])]
+        defender = [_mon("Tauros", "B0", Ability[ability], ["Splash"])]
+        scenario, expected = record((attacker, defender), _chooser(random.Random(50100 + index)), seed=0, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"{ability} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"{ability}"
+        events = expected[0]["events"]
+        boosts = [e for e in events if e["type"] == "StatStageChanged" and e["source"] == source]
+        assert boosts and boosts[0]["stat"] == stat, f"{ability}: never boosted {stat} via {source}\n{events}"
+        assert not any(e["type"] == "DamageDealt" for e in events), f"{ability}: the move should never have landed"
+
+
+@needs_rust
+def test_effectless_moves_never_falsely_trigger_an_absorber(tmp_path: Path) -> None:
+    """The regression test for the bug `test_type_absorbing_abilities_cancel_the_move_and_agree`'s
+    own docstring describes: Electrify is an Electric-type status move whose effect is entirely
+    unmodelled (`effects` is empty in the exported data), so Python's own `if not move.effects and
+    not move.force_switch` sends it to `MoveFailed` a line before `ON_BEFORE_MOVE` is ever emitted.
+    A Motor Drive Pokemon on the receiving end must see the same `MoveFailed` this engine's own
+    generic empty-effects fallback already produces, not a false Speed boost.
+
+    Vacuity-checked directly: removing the `effects.is_empty()` guard from `ability_before_move`
+    turned this into a digest mismatch -- a `StatStageChanged` in this engine where Python's
+    `MoveFailed` has nothing left to trigger it.
+    """
+    team_a = [_mon("Rhydon", "A0", Ability.NONE, ["Electrify"])]
+    team_b = [_mon("Tauros", "B0", Ability.MOTOR_DRIVE, ["Splash"])]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "MoveFailed" for e in events), events
+    assert not any(e["type"] == "StatStageChanged" for e in events), events
+
+
+@needs_rust
+def test_flash_fire_activates_once_and_boosts_fire_moves_afterward(tmp_path: Path) -> None:
+    """Flash Fire: the first Fire move absorbed sets a flag rather than healing or boosting a stat
+    (`FlashFireActivated`), a second one while it's already set is a no-op beyond announcing it
+    (`FlashFireAbsorbed`), and every Fire move *this Pokemon then uses itself* is boosted 1.5x for
+    as long as the flag stays set -- cleared only on switch-out. The two halves live in different
+    files (`hooks::ability_before_move` sets the flag, `abilities::handle` reads it), so this is the
+    one absorber in the batch that needs a whole battle rather than one turn to prove both ends.
+
+    The boost itself found a real bug during development, independently of this test: it was first
+    written pushing 6144 onto `attack_mods_4096` (the same list Huge Power and Water Bubble use),
+    which reads like the obvious place for a "1.5x this Pokemon's own damage" effect. The Python's
+    own `boost_fire` pushes onto `pre_screen_mods_4096` instead, which folds in much later -- after
+    STAB and the type multiplier, not onto the attack stat before the base-damage division -- and
+    the two are not interchangeable: the 5000-battle plain-slice sweep this batch was verified
+    against caught a Mind Blown landing for 36 in Python and 35 here, one point of rounding apart,
+    because a Rock/Ground Golem's boosted Special Attack rounds differently depending on which
+    stage of the chain the 1.5x enters at. Fixed by moving the push to `pre_screen_mods_4096`.
+
+    Vacuity-checked directly, against the corrected code: renaming `FLASH_FIRE`'s match arm in
+    `hooks::ability_before_move` (the activation guard) turned turn 1 into a tape divergence: this
+    engine took Ember as a landed hit where the Python absorbed it, so the two disagreed about how
+    many draws the move even needed. Turning the boost's own `pre_screen_mods_4096.push(6144)` into
+    a no-op multiplier (4096, i.e. 1x) turned turn 3 into a plain digest mismatch instead -- the
+    boosted `DamageDealt` this test asserts against a flat, unboosted one.
+    """
+    # Scripted rather than round-robin: Gengar (A0) has to sit still on Splash for the first two
+    # turns to be the one *receiving* Rhydon's Ember, then switch to dishing its own out boosted --
+    # a plain round-robin would have both sides attacking every turn and no way to tell "the
+    # incoming hit was absorbed" apart from "the outgoing hit happened to also land" in the same
+    # turn's event list.
+    def scripted_both_sides(sequence: list[MoveSlot]):  # type: ignore[no-untyped-def]
+        counters = {0: 0, 1: 0}
+
+        def choose(state, side_index):  # type: ignore[no-untyped-def]
+            slot = sequence[counters[side_index]]
+            counters[side_index] += 1
+            return Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=slot)
+
+        return choose
+
+    team_b = [_mon("Rhydon", "B0", Ability.NONE, ["Ember", "Splash"])]
+
+    def play(a_ability):  # type: ignore[no-untyped-def]
+        a = [_mon("Gengar", "A0", a_ability, ["Splash", "Ember"])]
+        sequence = [MoveSlot.FIRST, MoveSlot.FIRST, MoveSlot.SECOND]
+        scenario, expected = record((a, team_b), scripted_both_sides(sequence), seed=0, max_turns=3)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"was refused: {theirs}"
+        assert compare(expected, theirs) is None
+        return expected
+
+    expected = play(Ability.FLASH_FIRE)
+    turn1, turn2, turn3 = expected[0]["events"], expected[1]["events"], expected[2]["events"]
+    assert any(e["type"] == "FlashFireActivated" for e in turn1), turn1
+    assert not any(e["type"] == "DamageDealt" and e["side"] == 0 for e in turn1), turn1
+    assert any(e["type"] == "FlashFireAbsorbed" for e in turn2), turn2
+    assert not any(e["type"] == "DamageDealt" and e["side"] == 0 for e in turn2), turn2
+    boosted_amount = _damage_dealt(turn3)
+
+    reference = play(Ability.NONE)
+    reference_amount = _damage_dealt(reference[2]["events"])
+    assert boosted_amount > reference_amount * 1.3, f"{boosted_amount} was not boosted over {reference_amount}"
+
+
+@needs_rust
+def test_levitate_cancels_ground_moves_and_soundproof_blocks_sound(tmp_path: Path) -> None:
+    """Levitate's move-cancelling half (its grounding half, `field::is_grounded`, was already
+    written and simply unreachable until "LEVITATE" joined a `PORTED` array here) and Soundproof,
+    which reads the move's own `sound` flag rather than its type. Earthquake and Boomburst are both
+    always-hit, so both cases are deterministic.
+
+    Vacuity-checked directly: removing either match arm from `hooks::ability_before_move` turned
+    its own case into a plain digest mismatch -- a landed `DamageDealt` here against Python's
+    `AvoidedWithLevitate` or `DoesNotAffect`.
+    """
+    grounded_attacker = [_mon("Machamp", "A0", Ability.NONE, ["Earthquake"])]
+    levitator = [_mon("Gengar", "B0", Ability.LEVITATE, ["Splash"])]
+    scenario, expected = record((grounded_attacker, levitator), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"Levitate case was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "AvoidedWithLevitate" for e in events), events
+    assert not any(e["type"] == "DamageDealt" for e in events), events
+
+    loud_attacker = [_mon("Machamp", "A0", Ability.NONE, ["Boomburst"])]
+    deaf_defender = [_mon("Rhydon", "B0", Ability.SOUNDPROOF, ["Splash"])]
+    scenario, expected = record((loud_attacker, deaf_defender), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"Soundproof case was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "DoesNotAffect" for e in events), events
+    assert not any(e["type"] == "DamageDealt" for e in events), events
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

@@ -161,6 +161,20 @@ fn handle(ability: &str, pokemon: &Pokemon, is_actor: bool, aura_broken: bool, c
         }
         "DEFEATIST" if is_actor && pokemon.hp * 2 <= pokemon.totals.hp => payload.attack_mods_4096.push(2048),
         "WATER_BUBBLE" if is_actor && calc.move_type == "WATER" => payload.attack_mods_4096.push(8192),
+        // The other half of Flash Fire lives in `hooks::ability_before_move`, which is what sets
+        // this flag the first time a Fire move is absorbed — deliberately not on this file's own
+        // `PORTED` array, per the module doc, since the name is only genuinely ported once both
+        // halves are (it belongs to `hooks::PORTED_BEFORE_MOVE_ABILITIES` instead).
+        //
+        // `pre_screen_mods_4096`, not `attack_mods_4096` — the Python's own `boost_fire` pushes
+        // there, which folds much later in the chain (after STAB and the type multiplier, before
+        // screens) rather than onto the attack stat before the base-damage division. The two are
+        // not interchangeable: applying 1.5x to the attack stat and applying it to the near-final
+        // damage round differently, which is exactly the divergence that caught this the first
+        // time it was written with the wrong list.
+        "FLASH_FIRE" if is_actor && calc.move_type == "FIRE" && pokemon.flash_fire_active => {
+            payload.pre_screen_mods_4096.push(6144)
+        }
         "STEELWORKER" if is_actor && calc.move_type == "STEEL" => payload.attack_mods_4096.push(6144),
         "DRAGONS_MAW" if is_actor && calc.move_type == "DRAGON" => payload.attack_mods_4096.push(6144),
         "ROCKY_PAYLOAD" if is_actor && calc.move_type == "ROCK" => payload.attack_mods_4096.push(6144),
