@@ -199,9 +199,9 @@ const DEFENDER_FACING: [&str; 3] = ["SINGLE_OPPONENT", "ALL_ADJACENT_ENEMIES", "
 /// Volatiles carried by `InflictStatusEffect` but *not* dispatched through `apply_volatile` —
 /// each has its own bespoke landing rule the Python gives it in `_apply_status` rather than the
 /// generic one, so routing it through the generic path would silently play it wrong.
-pub const PORTED_BESPOKE_VOLATILES: [&str; 1] = ["LOCKED_MOVE"];
+pub const PORTED_BESPOKE_VOLATILES: [&str; 3] = ["LOCKED_MOVE", "ENCORE", "DISABLE"];
 
-pub const PORTED_VOLATILES: [&str; 10] = [
+pub const PORTED_VOLATILES: [&str; 11] = [
     "FLINCH",
     "CONFUSION",
     "PROTECT",
@@ -212,6 +212,7 @@ pub const PORTED_VOLATILES: [&str; 10] = [
     "SALT_CURE",
     "PARTIALLY_TRAPPED",
     "YAWN",
+    "TAUNT",
 ];
 
 /// Everything this engine has implemented, gathered from the modules that implement it so a name
@@ -574,6 +575,8 @@ fn withdraw(side: &mut Side, to: usize) -> String {
     outgoing.charging_slot = None;
     outgoing.locked_slot = None;
     outgoing.last_move_slot = None;
+    outgoing.encored_slot = None;
+    outgoing.disabled_slot = None;
     if outgoing.status == Status::Toxic {
         outgoing.status_turns = 0;
     }
@@ -614,10 +617,37 @@ fn residuals(state: &mut State, tape: &mut Tape, log: &mut Log) -> Result<(), Re
             for gone in ["FLINCH", "PROTECT", "ENDURE"] {
                 state.sides[side].active_mut().volatiles.remove(gone);
             }
+            // `_tick_countdown`: Taunt, Encore and Disable each count down here, and Encore/Disable
+            // also release the slot they were pinning the moment the count reaches zero.
+            tick_countdown(state, side, "TAUNT", "taunt_ended", log);
+            if tick_countdown(state, side, "ENCORE", "encore_ended", log) {
+                state.sides[side].active_mut().encored_slot = None;
+            }
+            if tick_countdown(state, side, "DISABLE", "disable_ended", log) {
+                state.sides[side].active_mut().disabled_slot = None;
+            }
         }
         crate::field::tick_side(state, side, log);
     }
     Ok(())
+}
+
+/// `_tick_countdown`: decrement a plain volatile counter, clear it and log `StatusCleared` the
+/// turn it reaches zero. Returns whether it just expired, so a caller with a slot to release along
+/// with it (Encore, Disable) knows to do that too — mirroring the Python's `on_expire` callback.
+fn tick_countdown(state: &mut State, side: usize, volatile: &str, clearance: &str, log: &mut Log) -> bool {
+    let Some(left) = state.sides[side].active_pokemon().volatiles.get(volatile).copied() else {
+        return false;
+    };
+    let left = left - 1;
+    if left > 0 {
+        state.sides[side].active_mut().volatiles.insert(volatile.to_string(), left);
+        return false;
+    }
+    state.sides[side].active_mut().volatiles.remove(volatile);
+    let nickname = state.sides[side].active_pokemon().nickname.clone();
+    log.push(Event::StatusCleared { side: side as i32, pokemon: nickname, clearance: clearance.to_string() });
+    true
 }
 
 fn status_chip(state: &mut State, side: usize, log: &mut Log) {
@@ -748,9 +778,14 @@ fn resolve_move(
     log: &mut Log,
 ) -> Result<(), Refusal> {
     let other = 1 - side;
-    // A rampage or a charge continues the original use whatever slot the recorded action names —
-    // a short moveset pads itself by repeating its first move, so the same move can sit in several
-    // slots and the recorded action can name a different one of them.
+    // Encore, a rampage or a charge each continue a use the Pokemon already committed to, whatever
+    // slot the recorded action names — a short moveset pads itself by repeating its first move, so
+    // the same move can sit in several slots and the recorded action can name a different one of
+    // them. Applied in the Python's own order: Encore first, then a rampage, then a charge.
+    let encored = {
+        let actor = state.sides[side].active_pokemon();
+        actor.volatiles.contains_key("ENCORE") && actor.encored_slot.is_some()
+    };
     let rampaging = {
         let actor = state.sides[side].active_pokemon();
         actor.volatiles.contains_key("LOCKED_MOVE") && actor.locked_slot.is_some()
@@ -759,17 +794,30 @@ fn resolve_move(
         let actor = state.sides[side].active_pokemon();
         actor.volatiles.contains_key("CHARGING") && actor.charging_slot.is_some()
     };
-    let slot = if rampaging {
-        state.sides[side].active_pokemon().locked_slot.expect("checked above")
-    } else if releasing_charge {
-        state.sides[side].active_pokemon().charging_slot.expect("checked above")
-    } else {
-        slot
-    };
+    let mut slot = slot;
+    if encored {
+        slot = state.sides[side].active_pokemon().encored_slot.expect("checked above");
+    }
+    if rampaging {
+        slot = state.sides[side].active_pokemon().locked_slot.expect("checked above");
+    }
+    if releasing_charge {
+        slot = state.sides[side].active_pokemon().charging_slot.expect("checked above");
+    }
+    let slot = slot;
     let chosen = {
         let actor = state.sides[side].active_pokemon();
         move_in_slot(actor, slot, db)?.clone()
     };
+    // `if slot is attacker.disabled_slot: DisabledBlocked; return` — *before* PP is spent or
+    // Struggle substituted, and using the move that was actually chosen (Struggle never can be:
+    // an empty slot is never the one Disable silenced, since Disable needs a move to have been
+    // used first).
+    if state.sides[side].active_pokemon().disabled_slot == Some(slot) {
+        let nickname = state.sides[side].active_pokemon().nickname.clone();
+        log.push(Event::DisabledBlocked { side: side as i32, pokemon: nickname, the_move: chosen.name });
+        return Ok(());
+    }
     // An empty slot is Struggle, and Struggle costs nothing — there is nothing left to spend. The
     // Python substitutes here rather than at choice time, so the recorded action still names the
     // move that was picked. Missing this only showed up past turn 60, once the PP had run out.
@@ -804,6 +852,14 @@ fn resolve_move(
         if let Some(left) = state.sides[side].active_mut().pp.get_mut(crate::battle::SLOT_NAMES[slot]) {
             *left = (*left - 1).max(0);
         }
+    }
+    // Taunt: after PP is spent, before the move is announced. A status move turned aside here still
+    // cost its user the point, which is the whole reason this sits after the PP-spend block above
+    // rather than before it, unlike Disable's check.
+    if state.sides[side].active_pokemon().volatiles.contains_key("TAUNT") && the_move.category == "STATUS" {
+        let nickname = state.sides[side].active_pokemon().nickname.clone();
+        log.push(Event::TauntBlocked { side: side as i32, pokemon: nickname, the_move: the_move.name.clone() });
+        return Ok(());
     }
     // `TRACE_DRAWS=1` prints where on the tape each move started. When the two engines disagree
     // about *how many* draws a turn took, the divergence message names the position but not the
@@ -1648,6 +1704,14 @@ fn apply_status(
     match Status::parse(status_name) {
         Some(status) => apply_main_status(state, target_side, status, tape, log),
         None if status_name == "LOCKED_MOVE" => start_rampage(state, target_side, tape),
+        None if status_name == "ENCORE" => {
+            start_encore(state, target_side, log);
+            Ok(())
+        }
+        None if status_name == "DISABLE" => {
+            start_disable(state, target_side, log);
+            Ok(())
+        }
         None if PORTED_VOLATILES.contains(&status_name) => {
             apply_volatile(state, target_side, status_name, tape, log)
         }
@@ -1667,6 +1731,36 @@ fn start_rampage(state: &mut State, target_side: usize, tape: &mut Tape) -> Resu
     target.volatiles.insert("LOCKED_MOVE".to_string(), turns);
     target.locked_slot = target.last_move_slot;
     Ok(())
+}
+
+/// `_start_encore`: fails silently (no draw, no log — the move then falls through to the empty-log
+/// `MoveFailed`) with nothing to encore or an encore already running.
+fn start_encore(state: &mut State, target_side: usize, log: &mut Log) {
+    let target = state.sides[target_side].active_pokemon();
+    if target.last_move_slot.is_none() || target.volatiles.contains_key("ENCORE") {
+        return;
+    }
+    let target = state.sides[target_side].active_mut();
+    target.encored_slot = target.last_move_slot;
+    target.volatiles.insert("ENCORE".to_string(), 3);
+    let nickname = target.nickname.clone();
+    log.push(Event::VolatileInflicted { side: target_side as i32, pokemon: nickname, volatile: "ENCORE".into() });
+}
+
+/// `_start_disable`: fails silently with nothing to disable or one already in effect. Logs
+/// `DisableApplied` naming the move it silenced, not the generic `VolatileInflicted`.
+fn start_disable(state: &mut State, target_side: usize, log: &mut Log) {
+    let target = state.sides[target_side].active_pokemon();
+    if target.last_move_slot.is_none() || target.disabled_slot.is_some() {
+        return;
+    }
+    let slot = target.last_move_slot.expect("checked above");
+    let disabled_move = target.moves[slot].clone();
+    let target = state.sides[target_side].active_mut();
+    target.disabled_slot = Some(slot);
+    target.volatiles.insert("DISABLE".to_string(), 5);
+    let nickname = target.nickname.clone();
+    log.push(Event::DisableApplied { side: target_side as i32, pokemon: nickname, the_move: disabled_move });
 }
 
 /// `_apply_volatile`, for the two this engine knows.
@@ -1707,6 +1801,7 @@ fn apply_volatile(
         "CONFUSION" => tape.integer(2, 6)?,
         "PARTIALLY_TRAPPED" => tape.integer(4, 6)?,
         "YAWN" => 2,
+        "TAUNT" => 3,
         _ => 1,
     };
     let pokemon = state.sides[target_side].active_mut();

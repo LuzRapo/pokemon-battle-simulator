@@ -122,6 +122,10 @@ pub struct Pokemon {
     /// records it after the substitution). Encore and Disable both read this to pick their target;
     /// a rampage sets `locked_slot` from it directly rather than reading it again later.
     pub last_move_slot: Option<usize>,
+    /// The slot Encore is forcing, while `ENCORE` is in `volatiles`.
+    pub encored_slot: Option<usize>,
+    /// The slot Disable has silenced, while `DISABLE` is in `volatiles`.
+    pub disabled_slot: Option<usize>,
 }
 
 pub const STAGE_NAMES: [&str; 7] = [
@@ -250,6 +254,8 @@ impl Pokemon {
             charging_slot: None,
             locked_slot: None,
             last_move_slot: None,
+            encored_slot: None,
+            disabled_slot: None,
         })
     }
 

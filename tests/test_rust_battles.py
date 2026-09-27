@@ -567,6 +567,52 @@ def test_rollout_and_ice_ball_escalate_and_lock(tmp_path: Path) -> None:
 
 
 @needs_rust
+def test_move_restriction_volatiles_fire_and_agree(tmp_path: Path) -> None:
+    """Taunt, Encore and Disable: three different ways of taking a move off the table.
+
+    Disable's block is checked before any PP is spent or `MoveUsed` is logged; Taunt's is checked
+    after. Getting either one on the wrong side of the PP-spend line was worth a vacuity check on
+    its own (272/300 and 194/300 of a restriction-heavy batch turned red with each disabled), so
+    this asserts the three distinguishable outcomes — `DisabledBlocked`, `TauntBlocked`, and an
+    `ENCORE` volatile actually landing — all happen and all agree.
+    """
+    pool = ["Taunt", "Encore", "Disable", "Tackle", "Growl"]
+
+    def team(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species=rng.choice(PLAIN_SPECIES),
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool), rng.choice(pool)],
+            )
+            for index in range(3)
+        ]
+
+    seen: Counter[str] = Counter()
+    for seed in range(40):
+        rng = random.Random(24000 + seed)
+        teams = (team(rng), team(rng))
+        scenario, expected = record(teams, _switching_chooser(rng), seed=seed, max_turns=60)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            for e in turn["events"]:
+                if e["type"] in ("DisabledBlocked", "TauntBlocked", "DisableApplied"):
+                    seen[e["type"]] += 1
+                elif e["type"] == "VolatileInflicted" and e.get("volatile") == "ENCORE":
+                    seen["Encored"] += 1
+
+    for wanted in ("DisabledBlocked", "TauntBlocked", "DisableApplied", "Encored"):
+        assert seen[wanted] > 0, f"{wanted} never happened across 40 battles: {dict(seen)}"
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

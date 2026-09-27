@@ -26,6 +26,27 @@ pub enum Event {
         #[serde(rename = "move")]
         the_move: String,
     },
+    /// Disable landing: which move it silenced.
+    DisableApplied {
+        side: i32,
+        pokemon: String,
+        #[serde(rename = "move")]
+        the_move: String,
+    },
+    /// A disabled move chosen anyway: refused before any PP is spent or `MoveUsed` is logged.
+    DisabledBlocked {
+        side: i32,
+        pokemon: String,
+        #[serde(rename = "move")]
+        the_move: String,
+    },
+    /// A status move turned aside by Taunt.
+    TauntBlocked {
+        side: i32,
+        pokemon: String,
+        #[serde(rename = "move")]
+        the_move: String,
+    },
     /// The move resolved but nothing came of it — every effect it had was skipped. The Python adds
     /// this by checking whether the log grew, so it is a statement about the log rather than about
     /// the move, and it is ported the same way.
