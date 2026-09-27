@@ -474,6 +474,22 @@ pub fn step(
 /// Any non-stalling move clears the streak, so the counter really does mean "in a row". A failed
 /// check clears it too — the chain is broken by the failure itself, not only by doing something
 /// else.
+/// `_break_rolling`: a miss or a Protect ends the run, power and commitment together — but the
+/// commitment only if it was Rollout or Ice Ball's. A rampage's lock survives a miss; that is the
+/// entire reason it needs its own `_is_rolling_slot` gate rather than clearing unconditionally.
+fn break_rolling(state: &mut State, side: usize) {
+    let active = state.sides[side].active_mut();
+    active.rolling_hits = 0;
+    let is_rolling_slot = active.locked_slot.is_some_and(|slot| {
+        active.volatiles.contains_key("LOCKED_MOVE")
+            && active.moves.get(slot).is_some_and(|name| crate::power::ROLLING_MOVES.contains(&name.as_str()))
+    });
+    if is_rolling_slot {
+        active.volatiles.remove("LOCKED_MOVE");
+        active.locked_slot = None;
+    }
+}
+
 fn stall_check(state: &mut State, side: usize, the_move: &Move, tape: &mut Tape) -> Result<bool, Refusal> {
     let actor = state.sides[side].active_mut();
     if !the_move.stalling {
@@ -811,9 +827,12 @@ fn resolve_move(
     // changes what `move` points at without changing `slot` itself.
     state.sides[side].active_mut().last_move_slot = Some(slot);
 
-    // Any other move ends the run, so the next Fury Cutter starts from base. Set here rather than
-    // where the counter is incremented, because the run ends whether or not *this* move lands.
-    if the_move.name != "Fury Cutter" {
+    // `ESCALATING_MOVES`: any move outside {Fury Cutter, Rollout, Ice Ball} ends the run, so the
+    // next one of these starts from base. Set here rather than where the counter is incremented,
+    // because the run ends whether or not *this* move lands — and an escalating move must not zero
+    // its own count before its own power reads it a few lines below.
+    let escalating = the_move.name == "Fury Cutter" || crate::power::ROLLING_MOVES.contains(&the_move.name.as_str());
+    if !escalating {
         state.sides[side].active_mut().rolling_hits = 0;
     }
 
@@ -860,7 +879,7 @@ fn resolve_move(
     {
         let nickname = state.sides[other].active_pokemon().nickname.clone();
         log.push(Event::Protected { side: other as i32, pokemon: nickname });
-        state.sides[side].active_mut().rolling_hits = 0; // `_break_rolling`
+        break_rolling(state, side); // `_break_rolling`
         crash_damage(state, side, &the_move, log);
         return Ok(());
     }
@@ -873,7 +892,7 @@ fn resolve_move(
         && crate::power::out_of_reach(state.sides[other].active_pokemon(), &the_move, db)
     {
         log.push(Event::MoveMissed);
-        state.sides[side].active_mut().rolling_hits = 0; // `_break_rolling`
+        break_rolling(state, side); // `_break_rolling`
         crash_damage(state, side, &the_move, log);
         return Ok(());
     }
@@ -901,7 +920,7 @@ fn resolve_move(
         );
         if tape.probability()? >= (accuracy * multiplier).min(1.0) {
             log.push(Event::MoveMissed);
-            state.sides[side].active_mut().rolling_hits = 0; // `_break_rolling`
+            break_rolling(state, side); // `_break_rolling`
             crash_damage(state, side, &the_move, log);
             return Ok(());
         }
@@ -1019,10 +1038,17 @@ fn resolve_move(
         return Ok(());
     }
 
-    // `ESCALATING_MOVES`: Fury Cutter counts its run without being locked into it. Rollout and
-    // Ice Ball, which pay for their doubling with a lock, are still refused.
+    // `ESCALATING_MOVES`: Fury Cutter counts its run without being locked into it. Rollout and Ice
+    // Ball pay for their doubling with a lock, taken here on the hit that starts the run.
     if the_move.name == "Fury Cutter" {
         state.sides[side].active_mut().rolling_hits += 1;
+    } else if crate::power::ROLLING_MOVES.contains(&the_move.name.as_str()) {
+        let attacker = state.sides[side].active_mut();
+        attacker.rolling_hits += 1;
+        if !attacker.volatiles.contains_key("LOCKED_MOVE") {
+            attacker.volatiles.insert("LOCKED_MOVE".to_string(), crate::power::ROLLING_LOCK_TURNS);
+            attacker.locked_slot = Some(slot);
+        }
     }
     // A pivot leaves at once, so a target still waiting to act this turn faces whoever arrived
     // rather than the pivot's user. `send_out_replacement` is the harness's rule — the lowest

@@ -527,6 +527,46 @@ def test_rampage_moves_lock_in_and_confuse_themselves_out(tmp_path: Path) -> Non
 
 
 @needs_rust
+def test_rollout_and_ice_ball_escalate_and_lock(tmp_path: Path) -> None:
+    """The other use of `LOCKED_MOVE`: a run that doubles its power and stops clean, no confusion.
+
+    Forced onto its own rolling_hits bug once already — the reset that clears the counter for any
+    move outside the escalating set was written to look only for Fury Cutter, so a landed Rollout
+    zeroed its own count before its own power reads it a few lines later. Every hit after the first
+    came out at base power. This pool makes that regression concrete and fixed at 800/800.
+    """
+    pool = ["Rollout", "Ice Ball", "Tackle"]
+
+    def team(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species=rng.choice(PLAIN_SPECIES),
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool), "Tackle"],
+            )
+            for index in range(3)
+        ]
+
+    escalated = 0
+    for seed in range(30):
+        rng = random.Random(23000 + seed)
+        teams = (team(rng), team(rng))
+        scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=60)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        hits = [e["amount"] for turn in expected for e in turn["events"] if e["type"] == "DamageDealt"]
+        escalated += sum(1 for a, b in zip(hits, hits[1:], strict=False) if b > a)
+
+    assert escalated > 0, "no consecutive hit ever came out harder than the one before it"
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

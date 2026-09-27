@@ -15,7 +15,7 @@ use crate::tape::Tape;
 use crate::turn::Refusal;
 
 /// Coded moves whose power rule is implemented here. They come off the by-name refusal.
-pub const PORTED: [&str; 53] = [
+pub const PORTED: [&str; 55] = [
     // `_POWER_FORMULAS`
     "Low Kick",
     "Grass Knot",
@@ -29,6 +29,8 @@ pub const PORTED: [&str; 53] = [
     "Rage Fist",
     "Beat Up",
     "Fury Cutter",
+    "Rollout",
+    "Ice Ball",
     "Water Spout",
     "Eruption",
     "Dragon Energy",
@@ -83,9 +85,6 @@ fn positive_stages(pokemon: &Pokemon) -> i32 {
     STAGED.iter().map(|stat| pokemon.stage(stat).max(0)).sum()
 }
 
-/// Rollout, Ice Ball and Pursuit are absent. The first two lock their user into a run, which needs
-/// the locked-move volatile; Pursuit reads the *other side's chosen action*, which this engine does
-/// not keep past the ordering step.
 fn formula(
     name: &str,
     state: &State,
@@ -139,6 +138,9 @@ fn formula(
             }
         }
         "Fury Cutter" => [40, 80, 160][std::cmp::min(attacker.rolling_hits as usize, 2)],
+        "Rollout" | "Ice Ball" => {
+            ROLLING_POWERS[std::cmp::min(attacker.rolling_hits as usize, ROLLING_POWERS.len() - 1)]
+        }
         "Water Spout" | "Eruption" | "Dragon Energy" => {
             std::cmp::max(1, 150 * attacker.hp / attacker.totals.hp)
         }
@@ -515,10 +517,12 @@ fn every_other_move_used(attacker: &Pokemon, db: &Database) -> bool {
     })
 }
 
-/// `ROLLING_MOVES`: still refused as damaging moves (their power is rolled, not listed), but named
-/// here so the rampage residual can tell "my lock just ended, was it a rampage or a roll" without
-/// waiting for either to be ported. A rampage confuses its user on the way out; a roll does not.
+/// `ROLLING_MOVES`: Rollout and Ice Ball, which pay for doubling their power with a lock.
 pub const ROLLING_MOVES: [&str; 2] = ["Rollout", "Ice Ball"];
+/// `_ROLLING_POWERS`: doubles per connected hit, then holds. Its length is also
+/// `ROLLING_LOCK_TURNS` — the run is committed for as many turns as the table has entries.
+const ROLLING_POWERS: [i32; 5] = [30, 60, 120, 240, 480];
+pub const ROLLING_LOCK_TURNS: i32 = ROLLING_POWERS.len() as i32;
 
 /// The 17 charge (two-turn) moves: `move.charge` in `models/moves.py`. All of them are ported —
 /// this is the whole set, not a subset — so `unsupported` reads this rather than refusing every
