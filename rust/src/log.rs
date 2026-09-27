@@ -47,6 +47,23 @@ pub enum Event {
         #[serde(rename = "move")]
         the_move: String,
     },
+    /// A hit the substitute took without breaking.
+    SubstituteTookHit {
+        side: i32,
+        pokemon: String,
+    },
+    /// The hit that broke it.
+    SubstituteBroke {
+        side: i32,
+        pokemon: String,
+    },
+    /// Substitute used with one already up.
+    SubstituteAlready {
+        side: i32,
+        pokemon: String,
+    },
+    /// Substitute used at a quarter max HP or below: no fields at all, matching the Python.
+    SubstituteTooWeak,
     /// The move resolved but nothing came of it — every effect it had was skipped. The Python adds
     /// this by checking whether the log grew, so it is a statement about the log rather than about
     /// the move, and it is ported the same way.

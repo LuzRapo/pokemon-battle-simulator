@@ -199,7 +199,7 @@ const DEFENDER_FACING: [&str; 3] = ["SINGLE_OPPONENT", "ALL_ADJACENT_ENEMIES", "
 /// Volatiles carried by `InflictStatusEffect` but *not* dispatched through `apply_volatile` —
 /// each has its own bespoke landing rule the Python gives it in `_apply_status` rather than the
 /// generic one, so routing it through the generic path would silently play it wrong.
-pub const PORTED_BESPOKE_VOLATILES: [&str; 3] = ["LOCKED_MOVE", "ENCORE", "DISABLE"];
+pub const PORTED_BESPOKE_VOLATILES: [&str; 4] = ["LOCKED_MOVE", "ENCORE", "DISABLE", "SUBSTITUTE"];
 
 pub const PORTED_VOLATILES: [&str; 14] = [
     "FLINCH",
@@ -1030,6 +1030,13 @@ fn resolve_move(
 
     let log_before = log.entries.len();
 
+    // `behind_substitute`: computed once, here, before any effect runs — not rechecked per effect.
+    // Infiltrator is still refused, so it can never be the attacker's ability; the clause is kept
+    // anyway so this reads the same as the Python and needs no revisiting once the ability lands.
+    let behind_substitute = state.sides[other].active_pokemon().volatiles.contains_key("SUBSTITUTE")
+        && !the_move.bypass_substitute
+        && state.sides[side].active_pokemon().ability != "INFILTRATOR";
+
     // Effects resolve in the order the move lists them, which is the order `_apply_effect` is
     // called in and therefore the order their draws come off the tape.
     for effect in &the_move.effects {
@@ -1044,20 +1051,32 @@ fn resolve_move(
         match effect {
             Effect::DamageEffect { .. } => {
                 // Effectiveness is logged inside, because the hit-count roll comes before it.
-                apply_damage(state, side, &the_move, &listed_type, effectiveness, db, tape, log)?;
+                apply_damage(state, side, &the_move, &listed_type, effectiveness, behind_substitute, db, tape, log)?;
             }
             Effect::InflictStatusEffect { status, probability, to_self, .. } => {
                 // `_apply_status_routed`: the *move* targeting its user is enough, whatever the
                 // effect says. Endure's effect is not marked `to_self` and it is plainly not
-                // something you do to somebody else.
+                // something you do to somebody else. A substitute blocks a status effect aimed at
+                // its owner completely — not even the probability draw happens, exactly as the
+                // Python's `elif not behind_substitute` skips the whole call.
                 let at_self = *to_self || the_move.target == "SELF";
-                apply_status(state, side, status, *probability, at_self, tape, log)?;
+                if !at_self && behind_substitute {
+                    // no draw
+                } else {
+                    apply_status(state, side, status, *probability, at_self, tape, log)?;
+                }
             }
             Effect::StatStageChangeEffect { stages, probability, target, .. } => {
-                apply_stages(state, side, stages, *probability, target, tape, log)?;
+                // Same rule as the status case: a substitute blocks a stage drop aimed at its
+                // owner before the probability draw, not after.
+                if target != "SELF" && behind_substitute {
+                    // no draw
+                } else {
+                    apply_stages(state, side, stages, *probability, target, tape, log)?;
+                }
             }
             Effect::FixedDamageEffect { amount_formula, set_amount } => {
-                apply_fixed_damage(state, side, &the_move, amount_formula, *set_amount, db, log);
+                apply_fixed_damage(state, side, &the_move, amount_formula, *set_amount, behind_substitute, db, log);
             }
             Effect::HealEffect { fraction } => apply_heal(state, side, *fraction, log),
             Effect::WeatherEffect { variant, duration_turns } => {
@@ -1218,9 +1237,30 @@ fn crash_damage(state: &mut State, side: usize, the_move: &Move, log: &mut Log) 
 }
 
 /// `_thaw_on_hit`: the hit itself melting a frozen defender.
-fn thaw_on_hit(state: &mut State, defender_side: usize, the_move: &Move, log: &mut Log) {
+/// `_damage_substitute`: the sub takes the hit, and its own HP is the only clamp — no Endure, no
+/// survival at 1. Returns what was absorbed, which recoil and drain still count even though the
+/// real Pokemon never felt it (PS gen 5+).
+fn damage_substitute(state: &mut State, defender_side: usize, damage: i32, log: &mut Log) -> i32 {
+    let defender = state.sides[defender_side].active_mut();
+    let sub_hp = *defender.volatiles.get("SUBSTITUTE").expect("checked by the caller");
+    let nickname = defender.nickname.clone();
+    if damage >= sub_hp {
+        defender.volatiles.remove("SUBSTITUTE");
+        log.push(Event::SubstituteBroke { side: defender_side as i32, pokemon: nickname });
+        sub_hp
+    } else {
+        defender.volatiles.insert("SUBSTITUTE".to_string(), sub_hp - damage);
+        log.push(Event::SubstituteTookHit { side: defender_side as i32, pokemon: nickname });
+        damage
+    }
+}
+
+fn thaw_on_hit(state: &mut State, defender_side: usize, the_move: &Move, behind_substitute: bool, log: &mut Log) {
     let defender = state.sides[defender_side].active_pokemon();
-    if defender.status != Status::Freeze || defender.fainted() {
+    // Rechecked fresh, not the value carried in from the top of the move: a substitute that broke
+    // on this very hit no longer stands between the move and the thaw.
+    let soaked = behind_substitute && defender.volatiles.contains_key("SUBSTITUTE");
+    if defender.status != Status::Freeze || defender.fainted() || soaked {
         return;
     }
     if !(the_move.thaws_target || (the_move.move_type == "FIRE" && the_move.category != "STATUS")) {
@@ -1270,6 +1310,7 @@ fn collect_damage_payload(
     the_move: &Move,
     db: &Database,
     seed_power_mods: &[i64],
+    behind_substitute: bool,
 ) -> (Payload, Option<crate::items::Consumed>) {
     let other = 1 - side;
     let weather = crate::hooks::effective_weather(state);
@@ -1287,6 +1328,7 @@ fn collect_damage_payload(
         defender_side_acted: state.sides[other].acted_this_turn,
         weather: &weather,
         db,
+        behind_substitute,
     };
     let mut payload = Payload::new();
     payload.power_mods_4096 = seed_power_mods.to_vec();
@@ -1419,12 +1461,14 @@ fn clear_hazards(state: &mut State, side: usize, log: &mut Log) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_fixed_damage(
     state: &mut State,
     side: usize,
     the_move: &Move,
     formula: &str,
     set_amount: Option<i32>,
+    behind_substitute: bool,
     db: &Database,
     log: &mut Log,
 ) {
@@ -1441,6 +1485,12 @@ fn apply_fixed_damage(
     let Some(amount) = fixed_amount(state, side, formula, set_amount) else {
         return;
     };
+    // Unlike a DamageEffect hit, a soaked fixed-damage hit does not count toward Rage Fist — the
+    // Python returns right after `_damage_substitute` with no `times_hit` increment at all here.
+    if behind_substitute && state.sides[other].active_pokemon().volatiles.contains_key("SUBSTITUTE") {
+        damage_substitute(state, other, amount, log);
+        return;
+    }
     let category = if formula == "MIRROR_COAT" { "SPECIAL" } else { "PHYSICAL" };
     let defender = state.sides[other].active_mut();
     let dealt = defender.take_damage(amount);
@@ -1483,6 +1533,7 @@ fn apply_damage(
     the_move: &Move,
     listed_type: &str,
     effectiveness: f64,
+    behind_substitute: bool,
     db: &Database,
     tape: &mut Tape,
     log: &mut Log,
@@ -1512,7 +1563,8 @@ fn apply_damage(
     for _ in 0..planned {
         // Re-collected every hit, as the Python re-emits ON_DAMAGE_CALC every hit: a berry eaten
         // on the first blow has to be gone by the second.
-        let (mut payload, eaten) = collect_damage_payload(state, side, the_move, db, &shared_power_mods);
+        let (mut payload, eaten) =
+            collect_damage_payload(state, side, the_move, db, &shared_power_mods, behind_substitute);
         payload.power_override = power_override;
         payload.attack_stat_override = overrides.attack_stat;
         payload.use_target_attack = overrides.use_target_attack;
@@ -1561,6 +1613,21 @@ fn apply_damage(
             }
         };
         critical = hit.is_crit;
+        // The substitute soaks the hit before anything else looks at it: no survival clamp
+        // (Endure, an item cousin), no `on_after_hit` — no contact reaches the real Pokemon, so no
+        // contact ability fires — and the loop moves straight to the next planned hit without ever
+        // checking for a faint that could not have happened. Checked fresh every iteration rather
+        // than cached, because a hit that breaks the sub partway through a multi-hit move leaves
+        // the *remaining* hits landing on the real Pokemon instead — `damage_substitute` deletes
+        // the volatile the instant it breaks, and nothing here remembers that it ever stood.
+        // Reproduced rather than "fixed"; see docs/python-oddities.md.
+        if behind_substitute && state.sides[other].active_pokemon().volatiles.contains_key("SUBSTITUTE") {
+            let absorbed = damage_substitute(state, other, hit.amount, log);
+            total_dealt += absorbed;
+            hits_landed += 1;
+            state.sides[other].active_mut().times_hit += 1;
+            continue;
+        }
         // `_land_hit`: Endure clamps the blow to leave exactly one hit point.
         let mut incoming = hit.amount;
         {
@@ -1626,7 +1693,7 @@ fn apply_damage(
     // Between the damage and the faint, in that order, as `_thaw_on_hit` sits between them: a
     // frozen defender that takes a Fire move — or one of the three off-type thawers — is free
     // again, and then takes its turn normally instead of rolling the 20% check.
-    thaw_on_hit(state, other, the_move, log);
+    thaw_on_hit(state, other, the_move, behind_substitute, log);
     if state.sides[other].active_pokemon().fainted() {
         log.push(Event::Fainted {
             side: other as i32,
@@ -1732,6 +1799,10 @@ fn apply_status(
             start_disable(state, target_side, log);
             Ok(())
         }
+        None if status_name == "SUBSTITUTE" => {
+            start_substitute(state, target_side, log);
+            Ok(())
+        }
         None if PORTED_VOLATILES.contains(&status_name) => {
             apply_volatile(state, target_side, status_name, tape, log)
         }
@@ -1781,6 +1852,27 @@ fn start_disable(state: &mut State, target_side: usize, log: &mut Log) {
     target.volatiles.insert("DISABLE".to_string(), 5);
     let nickname = target.nickname.clone();
     log.push(Event::DisableApplied { side: target_side as i32, pokemon: nickname, the_move: disabled_move });
+}
+
+/// `_make_substitute`: a quarter of max HP, paid up front, with its own two failure logs rather
+/// than the empty-log `MoveFailed` — one already up, or too little HP left to afford it.
+fn start_substitute(state: &mut State, target_side: usize, log: &mut Log) {
+    let target = state.sides[target_side].active_pokemon();
+    let cost = target.totals.hp / 4;
+    if target.volatiles.contains_key("SUBSTITUTE") {
+        let nickname = target.nickname.clone();
+        log.push(Event::SubstituteAlready { side: target_side as i32, pokemon: nickname });
+        return;
+    }
+    if cost >= target.hp {
+        log.push(Event::SubstituteTooWeak);
+        return;
+    }
+    let target = state.sides[target_side].active_mut();
+    target.take_damage(cost);
+    target.volatiles.insert("SUBSTITUTE".to_string(), cost);
+    let nickname = target.nickname.clone();
+    log.push(Event::VolatileInflicted { side: target_side as i32, pokemon: nickname, volatile: "SUBSTITUTE".into() });
 }
 
 /// `_apply_volatile`, for the two this engine knows.

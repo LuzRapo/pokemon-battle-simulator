@@ -276,7 +276,9 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
     let ability = state.sides[side].active_pokemon().ability.clone();
     match ability.as_str() {
         "INTIMIDATE" => {
-            if !state.sides[other].active_pokemon().fainted() {
+            // A sub blocks Intimidate (gen 8+).
+            let opponent = state.sides[other].active_pokemon();
+            if !opponent.fainted() && !opponent.volatiles.contains_key("SUBSTITUTE") {
                 crate::turn::apply_stage_changes_from(
                     state,
                     other,

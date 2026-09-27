@@ -84,6 +84,11 @@ pub struct Calc<'a> {
     pub defender_side_acted: bool,
     pub weather: &'a str,
     pub db: &'a Database,
+    /// Read by the resist berries, which must not react to a hit a substitute is about to take —
+    /// unlike everything else in this struct, which still runs the same either way (the Python's
+    /// own `ON_DAMAGE_CALC` emit happens *before* the substitute check, so a berry reacting to
+    /// projected low HP still triggers; only the resist berries ask this specifically).
+    pub behind_substitute: bool,
 }
 
 /// Types Sand Force boosts, from `_SAND_FORCE_TYPES`.

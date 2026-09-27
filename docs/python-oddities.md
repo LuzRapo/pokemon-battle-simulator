@@ -165,6 +165,20 @@ the accuracy half was never written, so a faithful port has to leave it unwritte
 because it's the kind of gap a Rust author porting from the *games* rather than from this codebase
 would silently "fix", which would be its own divergence.
 
+### A multi-hit move that breaks a substitute finishes on the real Pokemon
+
+`engine/damage_apply.py:_apply_damage`. The substitute-soak branch is `if behind_substitute and
+SUBSTITUTE in defender.volatiles`, checked fresh on every hit of a multi-hit move rather than once
+for the whole move. `_damage_substitute` deletes the volatile the instant a hit's damage meets or
+exceeds what is left of it — so a five-hit Fury Attack that breaks the sub on hit two lands hits
+three through five squarely on the Pokemon that was standing behind it.
+
+In the real games a substitute breaking stops a multi-hit move outright; the rest of the hits never
+happen. Reproduced here rather than fixed — the per-hit fresh check is exactly what makes the sub
+correctly absorb only up to its remaining HP on a *single* hit that overkills it, and fixing the
+multi-hit case without breaking that would need a different piece of state (whether the sub broke
+*this move*, not just whether it currently exists).
+
 ### Fury Cutter's run is broken by *any* other move, including a failed one
 
 `engine/moves.py:193` resets `rolling_hits` for any move that is not in `ESCALATING_MOVES`, and it

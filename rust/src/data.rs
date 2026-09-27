@@ -100,6 +100,9 @@ pub struct Move {
     pub self_destructs: bool,
     /// PS `hasCrashDamage`: (High) Jump Kick loses half its user's max HP when it fails.
     pub has_crash_damage: bool,
+    /// PS `bypasssub`: sound moves, Chatter and the rest reach straight through a Substitute.
+    #[serde(default)]
+    pub bypass_substitute: bool,
 }
 
 /// Effects are a tagged union in the export (`kind` names the Python dataclass). Only the shapes

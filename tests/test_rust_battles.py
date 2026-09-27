@@ -257,7 +257,7 @@ def test_a_move_it_has_not_learned_is_refused_rather_than_guessed(tmp_path: Path
     The move is chosen rather than named, for the same reason the ability is: this test was written
     against Leech Seed and started failing the day Leech Seed landed.
     """
-    unported = _a_move_carrying_an_unported_volatile()
+    unported = _some_coded_move_this_engine_has_not_learned()
     rng = random.Random(99)
     team = [
         PokemonSpec(
@@ -351,16 +351,18 @@ def test_the_ported_volatiles_actually_land_in_the_swept_battles() -> None:
         assert seen[wanted] > 0, f"{wanted} never happened across 120 battles: {dict(seen)}"
 
 
-def _a_move_carrying_an_unported_volatile() -> str:
-    """Some move whose volatile the engine has not learned, whichever one that happens to be."""
-    # The real statuses are not volatiles and are all ported, so they are excluded by name.
-    known = set(PORTED["volatiles"]) | {"BURN", "FREEZE", "PARALYSIS", "POISON", "TOXIC", "SLEEP", "NONE"}
-    for move in sorted(get_all_moves().values(), key=lambda m: m.name):
-        for effect in move.effects:
-            name = getattr(getattr(effect, "status", None), "name", None)
-            if type(effect).__name__ == "InflictStatusEffect" and name and name not in known:
-                return move.name
-    raise AssertionError("every volatile in the database is ported; this test needs rewriting")
+def _some_coded_move_this_engine_has_not_learned() -> str:
+    """Some move the Python special-cases by name that the engine has not ported yet.
+
+    Named rather than hardcoded, same reasoning as `_still_unported`: a hardcoded example goes
+    stale the moment it lands. This used to derive from an unported *volatile* instead, which was
+    Leech Seed and then a rotating cast of others — until Substitute was the last one and every
+    volatile in the database became ported, and that derivation had nothing left to return.
+    """
+    coded = set(json.loads((DATA / "rules.json").read_text())["coded_moves"])
+    remaining = sorted(coded - set(PORTED["coded_moves"]))
+    assert remaining, "every coded move is ported; this test needs rewriting"
+    return remaining[0]
 
 
 def _inflicts(effect: object, volatile: str) -> bool:
@@ -704,6 +706,49 @@ def test_identify_bypasses_a_ghost_or_dark_immunity(tmp_path: Path) -> None:
         )
 
     assert landed > 0, "an identified Sableye never actually took damage from the bypassed type"
+
+
+@needs_rust
+def test_substitute_soaks_hits_and_blocks_secondaries(tmp_path: Path) -> None:
+    """The whole Substitute lifecycle: standing up, soaking, breaking, and blocking what a status
+    or a stage drop would otherwise have done to the Pokemon behind it.
+
+    Two features, each vacuity-checked in isolation: disabling the per-hit soak turned 241/300 of
+    this exact batch red, and disabling the status/stage block (an opponent-targeted effect must
+    not even draw for its probability while a substitute stands) turned 191/300 red.
+    """
+    pool = ["Substitute", "Tackle", "Thunder Fang", "Fury Attack", "Will-O-Wisp", "Growl"]
+
+    def team(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species=rng.choice(PLAIN_SPECIES),
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool), rng.choice(pool)],
+            )
+            for index in range(4)
+        ]
+
+    seen: Counter[str] = Counter()
+    for seed in range(40):
+        rng = random.Random(27000 + seed)
+        teams = (team(rng), team(rng))
+        scenario, expected = record(teams, _switching_chooser(rng), seed=seed, max_turns=60)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            for e in turn["events"]:
+                if e["type"] in ("SubstituteTookHit", "SubstituteBroke", "SubstituteAlready", "SubstituteTooWeak"):
+                    seen[e["type"]] += 1
+
+    for wanted in ("SubstituteTookHit", "SubstituteBroke", "SubstituteAlready", "SubstituteTooWeak"):
+        assert seen[wanted] > 0, f"{wanted} never happened across 40 battles: {dict(seen)}"
 
 
 @needs_rust

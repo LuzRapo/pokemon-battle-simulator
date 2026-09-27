@@ -129,9 +129,9 @@ pub fn on_damage_calc(
         payload.defense_mods_4096.push(6144);
     }
     if let Some((_, weakened)) = RESIST_BERRIES.iter().find(|(name, _)| *name == item) {
-        // `behind_substitute` gates this in the Python; substitutes are still refused, so there is
-        // no state here that could be true. It belongs in this condition when they land.
-        if calc.move_type == *weakened && calc.db.effectiveness(weakened, &pokemon.types) >= 2.0 {
+        // A hit a substitute is about to take is not one this berry reacts to — the Python's own
+        // handler asks `payload["behind_substitute"]` before anything else.
+        if !calc.behind_substitute && calc.move_type == *weakened && calc.db.effectiveness(weakened, &pokemon.types) >= 2.0 {
             payload.final_mods_4096.push(2048);
             return Some(Consumed { side, item: item.to_string() });
         }

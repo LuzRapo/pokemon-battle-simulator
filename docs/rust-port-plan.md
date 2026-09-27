@@ -5,15 +5,17 @@ then replace the Python engine.
 
 ## Where it stands
 
-Branch `feature/vectorised-engine`. Charge/two-turn moves (section 1 below) are done, unlike the
-table below's snapshot before them.
+Branch `feature/vectorised-engine`. Sections 1 and 2 below (charges and volatiles) are both done.
 
 | | done | total |
 |---|---|---|
-| moves | 790 | 843 (94%) |
+| moves | 804 | 843 (95%) |
 | abilities | 127 | 220 (58%) |
 | items | 33 | 110 (30%) |
-| volatiles | 10 | ~18 |
+| volatiles | 18 | 18 — every volatile in the database is ported |
+
+The 39 moves still refused are 4 that do something to their user or the field (pseudo-weather
+rooms) and 35 special-cased by name (the remaining coded moves, section 3).
 
 Several thousand randomly generated battles agree turn for turn, event for event, draw for draw,
 including a pool built specifically to force charging on both the semi-invulnerable and the
@@ -112,15 +114,52 @@ four reachers used across the multiple `_REACHES_THROUGH` tables (Earthquake, Su
 and asserts both that a `ChargingUp` event actually appears and that the traces agree. Vacuity
 check: commenting out the `out_of_reach` call turns 251/300 of a charge-heavy stress batch red.
 
-### 2. Volatiles — 12 moves
+### 2. Volatiles — **done**
 
-`Substitute` (the big one: gates secondaries, drain, Infiltrator), `Taunt`, `Encore`, `Disable`,
-`Destiny Bond`, `LOCKED_MOVE` (Outrage/Petal Dance/Thrash/Raging Fury, plus Rollout and Ice Ball,
-which need it for their lock), `Foresight`/`Odor Sleuth`/`Miracle Eye` (the `IDENTIFIED` bypass).
+Every volatile in the database now has a home, across four commits:
 
-`Taunt`, `Encore` and `Disable` need move-choice restriction, which lives in `engine/choices.py` —
-the harness records actions, so the engine side is only the blocking check (`TauntBlocked`,
-`DisabledBlocked`) plus the volatile's countdown.
+- **Rampage** (Outrage, Petal Dance, Raging Fury, Thrash): `locked_slot`/`last_move_slot` on
+  `Pokemon`, the same redirect-and-skip-PP shape as a charge, `LOCKED_MOVE` dispatched through its
+  own bespoke path (`start_rampage`) rather than the generic volatile one — no log line, no
+  ability/type immunity, matching `_apply_status`'s own special case for it exactly. A `LOCKED_MOVE`
+  residual counts the lock down and confuses the user on natural expiry, unless the lock was a roll
+  rather than a rampage.
+- **Rollout / Ice Ball**: reuse the same `LOCKED_MOVE` machinery via `_continue_rolling`'s shape,
+  and turned up a real bug in the process — the "any other move ends the escalation" reset checked
+  only for `"Fury Cutter"` by name instead of the whole `ESCALATING_MOVES` set, so a landed Rollout
+  zeroed its own hit counter before its own power formula read it. Fixed; `break_rolling` now gates
+  the lock-clearing half of a miss on `_is_rolling_slot`, since a rampage's lock must survive a miss
+  that a roll's must not.
+- **Taunt, Encore, Disable**: move-choice restriction. The harness already records legal actions via
+  Python's own `legal_actions`, so the engine side is only the blocking check (`TauntBlocked` after
+  PP is spent, `DisabledBlocked` *before* — a real ordering difference worth getting right) plus each
+  volatile's countdown (`tick_countdown`, a small shared residual helper).
+- **Destiny Bond**: cleared at the very top of `resolve_move`, before any redirect is even
+  determined — that single line is the entire "lasts until the user's next action" rule. The payoff
+  is one check where a hit's damage is applied: a fainting Destiny-Bond holder takes its
+  still-standing attacker with it.
+- **Foresight / Odor Sleuth / Miracle Eye**: `Pokemon::identify_bypass()` plus
+  `Database::effectiveness_bypassing()`. Needed at **two** independent call sites that both ask the
+  type chart the same question — the immunity gate in `resolve_move` and `damage::calculate_hit`'s
+  own internal effectiveness check — and missing either one leaves a hit correctly announced as
+  landing and then dealing zero damage anyway. (These three moves' evasion-ignoring half was never
+  written in the Python at all; see `docs/python-oddities.md`.)
+- **Substitute**, last and largest: `behind_substitute` computed once per move at the top of the
+  effects loop (SUBSTITUTE present, move doesn't bypass it, attacker isn't Infiltrator — still
+  unreachable, but written to match), then threaded through the damage loop (a fresh per-hit check,
+  which is how a multi-hit move that breaks the sub partway through finishes on the real Pokemon —
+  reproduced, see `docs/python-oddities.md`), fixed damage, and the status/stage dispatch (an
+  opponent-targeted effect is skipped **before its probability draw**, not after). `start_substitute`
+  is bespoke like the other three ExtraStatus branches. Also required: a `bypass_substitute` field on
+  `Move` that had never been read on the Rust side before; a `behind_substitute` field on the
+  ability/item `Calc` context, since the resist berries (already ported) ask it directly; and one
+  side-effect fix once a Pokemon could actually have a substitute up — Intimidate did not check for
+  one.
+
+Nine vacuity checks across these commits (the rolling-hits reset, the Disable gate, the Taunt gate,
+Destiny Bond's retaliation, the `calculate_hit` bypass site, the per-hit substitute soak, the
+status/stage substitute block, and Intimidate-vs-Substitute) each turned somewhere between 105/300
+and 296/300 of a targeted batch red when disabled.
 
 ### 3. The remaining coded moves — ~40
 
