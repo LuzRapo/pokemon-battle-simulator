@@ -2105,6 +2105,231 @@ def test_paradox_boost_fades_silently_when_the_field_ends(tmp_path: Path) -> Non
 
 
 @needs_rust
+def test_toxic_debris_and_thermal_exchange_react_to_being_hit(tmp_path: Path) -> None:
+    """Two `ON_AFTER_HIT` one-liners at the site the whole defender-reaction match block in
+    `hooks::ability_after_hit` already exists for. Toxic Debris scatters a layer of Toxic Spikes on
+    the attacker's side for any physical hit -- deliberately with no fainted guard, unlike every
+    stat-bump reaction beside it in the Python, so a holder that faints on the triggering hit still
+    scatters the layer; Thermal Exchange is the plain `_bind_hit_reaction_boost` shape Stamina and
+    Justified already use, just keyed on Fire instead of Dark. Both moves are always-hit, so this is
+    deterministic.
+
+    Vacuity-checked directly: renaming each ability's own match arm turned its own case into a
+    plain digest mismatch -- this engine's missing `HazardSet`/`StatStageChanged` where Python has
+    one.
+    """
+    attacker = [_mon("Machamp", "A0", Ability.NONE, ["Tackle"])]
+    debris_holder = [_mon("Rhydon", "B0", Ability.TOXIC_DEBRIS, ["Splash"])]
+    scenario, expected = record((attacker, debris_holder), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"Toxic Debris was refused: {theirs}"
+    assert compare(expected, theirs) is None, "Toxic Debris"
+    events = expected[0]["events"]
+    assert any(
+        e["type"] == "HazardSet" and e["side"] == 0 and e["hazard"] == "TOXIC_SPIKES" for e in events
+    ), f"Toxic Debris never scattered a layer\n{events}"
+
+    fire_attacker = [_mon("Machamp", "A0", Ability.NONE, ["Ember"])]
+    thermal_holder = [_mon("Rhydon", "B0", Ability.THERMAL_EXCHANGE, ["Splash"])]
+    scenario, expected = record((fire_attacker, thermal_holder), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"Thermal Exchange was refused: {theirs}"
+    assert compare(expected, theirs) is None, "Thermal Exchange"
+    events = expected[0]["events"]
+    boosts = [e for e in events if e["type"] == "StatStageChanged" and e["source"] == "thermal_exchange"]
+    assert boosts and boosts[0]["stat"] == "ATTACK", f"Thermal Exchange never boosted Attack\n{events}"
+
+
+@needs_rust
+def test_cursed_body_disables_the_attackers_move(tmp_path: Path) -> None:
+    """Cursed Body: landing any hit gives a 30% chance to disable whatever move the attacker just
+    used -- Tackle always hits, so this is a seed sweep on the 30% alone.
+
+    Vacuity-checked directly: renaming `"CURSED_BODY"` in `hooks::ability_after_hit` turned every
+    seed where the disable actually landed into a plain digest mismatch -- this engine's silence
+    where Python's `DisableApplied` already fired.
+    """
+    attacker = [_mon("Machamp", "A0", Ability.NONE, ["Tackle"])]
+    cursed_holder = [_mon("Rhydon", "B0", Ability.CURSED_BODY, ["Splash"])]
+    disabled = 0
+    for seed in range(20):
+        rng = random.Random(42000 + seed)
+        scenario, expected = record((attacker, cursed_holder), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"seed {seed}"
+        if any(e["type"] == "DisableApplied" and e["side"] == 0 for e in expected[0]["events"]):
+            disabled += 1
+    assert disabled > 0, "Cursed Body never once disabled the attacker across 20 seeds"
+
+
+@needs_rust
+def test_sheer_force_boosts_power_and_strips_the_secondary(tmp_path: Path) -> None:
+    """Sheer Force: any move carrying a secondary effect gets 1.3x power, and the secondary itself
+    is traded away entirely -- no draw, no chance for it to land regardless of its own probability.
+    Rock Smash's 50% Defense-drop makes both halves deterministic in one case: a Sheer Force user's
+    Rock Smash always hits harder and the Defense drop never happens, where a plain attacker's
+    sometimes does and never hits as hard.
+
+    Vacuity-checked directly: dropping the `"SHEER_FORCE"` guard from `inline::
+    tune_status_secondary`/`tune_stage_secondary` turned this into a digest mismatch the moment a
+    seed's own draw would have landed the drop; zeroing the 5325 power multiplier in
+    `abilities::handle` turned the boosted `DamageDealt` amount into one on its own.
+    """
+    boosted_a = [_mon("Machamp", "A0", Ability.SHEER_FORCE, ["Rock Smash"])]
+    target_b = [_mon("Rhydon", "B0", Ability.NONE, ["Splash"])]
+    scenario, boosted = record((boosted_a, target_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(boosted, theirs) is None
+    events = boosted[0]["events"]
+    assert not any(e["type"] == "StatStageChanged" for e in events), f"the secondary should be gone\n{events}"
+    boosted_amount = _damage_dealt(events)
+
+    plain_a = [_mon("Machamp", "A0", Ability.NONE, ["Rock Smash"])]
+    scenario, plain = record((plain_a, target_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"control was refused: {theirs}"
+    assert compare(plain, theirs) is None
+    plain_amount = _damage_dealt(plain[0]["events"])
+    assert boosted_amount > plain_amount * 1.2, f"{boosted_amount} was not ~1.3x {plain_amount}"
+
+
+@needs_rust
+def test_solar_power_boosts_special_damage_and_chips_its_holder(tmp_path: Path) -> None:
+    """Solar Power: 1.5x Special damage in sun (`ON_DAMAGE_CALC`), and an eighth-HP chip every turn
+    it stands in that same sun (`ON_RESIDUAL`, at `ResidualOrder.WEATHER` -- the sandstorm chip's
+    own band, not the `WEATHER_ABILITY` band Ice Body and Dry Skin use). Drought's own switch-in
+    sets the sun before either of this engine's own reads of it.
+
+    Vacuity-checked directly: zeroing the 6144 attack multiplier in `abilities::handle` turned the
+    boosted `DamageDealt` into a mismatch on its own; renaming `"SOLAR_POWER"` in
+    `hooks::solar_power_chip` turned the missing `AbilityChipDamage` into one too.
+    """
+    boosted_a = [_mon("Dewgong", "A0", Ability.SOLAR_POWER, ["Ice Beam"])]
+    setter_b = [_mon("Kangaskhan", "B0", Ability.DROUGHT, ["Splash"])]
+    scenario, boosted = record((boosted_a, setter_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(boosted, theirs) is None
+    events = boosted[0]["events"]
+    chips = [e for e in events if e["type"] == "AbilityChipDamage" and e["ability"] == "SOLAR_POWER"]
+    assert chips and chips[0]["amount"] > 0, f"Solar Power never chipped its holder\n{events}"
+    boosted_amount = _damage_dealt(events)
+
+    plain_a = [_mon("Dewgong", "A0", Ability.NONE, ["Ice Beam"])]
+    scenario, plain = record((plain_a, setter_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"control was refused: {theirs}"
+    assert compare(plain, theirs) is None
+    plain_amount = _damage_dealt(plain[0]["events"])
+    assert boosted_amount > plain_amount * 1.2, f"{boosted_amount} was not ~1.5x {plain_amount}"
+
+
+@needs_rust
+def test_wonder_guard_blocks_anything_not_super_effective_including_status_moves(tmp_path: Path) -> None:
+    """Wonder Guard reads the *plain* type chart against the defender's raw types -- not the
+    `effective_bypass`/`battle_types` every other effectiveness site in this engine uses -- and
+    blocks anything under 2x. `ON_BEFORE_MOVE` fires for a defender-facing status move too, so this
+    reproduces a real quirk rather than fixing it: a status move whose type is not super effective
+    against the holder gets blocked here as well, which Wonder Guard does not do in the actual
+    games. Water Gun (neutral against Gengar) and Thunder Wave (also neutral, and a status move)
+    are both blocked; Earthquake (super effective against Poison) still lands.
+
+    Vacuity-checked directly: removing the `"WONDER_GUARD"` arm from `hooks::ability_before_move`
+    turned every one of these three cases into a plain digest mismatch -- a landed `DamageDealt` or
+    `StatusInflicted` here against Python's `DoesNotAffect`.
+    """
+    guard = [_mon("Gengar", "B0", Ability.WONDER_GUARD, ["Splash"])]
+    cases = [("Water Gun", False), ("Earthquake", True), ("Thunder Wave", False)]
+    for move, should_land in cases:
+        attacker = [_mon("Machamp", "A0", Ability.NONE, [move])]
+        scenario, expected = record((attacker, guard), _chooser(random.Random(0)), seed=0, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"{move} was refused: {theirs}"
+        assert compare(expected, theirs) is None, move
+        events = expected[0]["events"]
+        landed = any(e["type"] in ("DamageDealt", "StatusInflicted") for e in events)
+        blocked = any(e["type"] == "DoesNotAffect" for e in events)
+        assert landed == should_land and blocked == (not should_land), f"{move}: {events}"
+
+
+@needs_rust
+def test_wind_rider_cancels_wind_moves_and_boosts_attack_as_justified(tmp_path: Path) -> None:
+    """Wind Rider: a Wind-flagged move aimed at its holder is cancelled outright for a free +1
+    Attack -- Gust always hits, so this is deterministic. The stat-change log line is a real bug in
+    the Python, reproduced rather than fixed per invariant 3: `_bind_wind_rider` copies
+    `_bind_hit_reaction_boost`'s shape by hand and keeps its `source="justified"` string, so a Wind
+    Rider activation reads as Justified's in the log.
+
+    Vacuity-checked directly: removing the `"WIND_RIDER"` arm from `hooks::ability_before_move`
+    turned this into a plain digest mismatch -- a landed `DamageDealt` here against Python's
+    absorbed hit and `StatStageChanged`.
+    """
+    attacker = [_mon("Machamp", "A0", Ability.NONE, ["Gust"])]
+    rider = [_mon("Rhydon", "B0", Ability.WIND_RIDER, ["Splash"])]
+    scenario, expected = record((attacker, rider), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert not any(e["type"] == "DamageDealt" for e in events), events
+    boosts = [e for e in events if e["type"] == "StatStageChanged" and e["source"] == "justified"]
+    assert boosts and boosts[0]["stat"] == "ATTACK", f"Wind Rider's own bug-for-bug log line: {events}"
+
+
+@needs_rust
+def test_liquid_voice_turns_a_sound_move_to_water(tmp_path: Path) -> None:
+    """Liquid Voice: any sound move resolves as Water-type instead of its listed type, checked
+    after the `-ate` abilities and before every by-name override in `power::type_override`. Round
+    (Normal, sound, always-hit, no secondary) is a neutral hit against Dewgong (Water/Ice) as a
+    Normal move -- no `Effectiveness` line at all, since only 2x-or-more and 0.5x-or-less get one --
+    and a resisted one as Water, which is the clearest sign the type actually changed.
+
+    Vacuity-checked directly: removing the `"LIQUID_VOICE"` clause from `power::type_override`
+    turned this into a digest mismatch -- no `Effectiveness` line here where Python's resisted Water
+    hit already logged one.
+    """
+    attacker = [_mon("Machamp", "A0", Ability.LIQUID_VOICE, ["Round"])]
+    target = [_mon("Dewgong", "B0", Ability.NONE, ["Splash"])]
+    scenario, expected = record((attacker, target), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "Effectiveness" and e["level"] == "resisted" for e in events), events
+
+
+@needs_rust
+def test_poison_puppeteer_confuses_whatever_it_poisons(tmp_path: Path) -> None:
+    """Poison Puppeteer: the *inflictor's* ability, not the target's, confuses whatever it just
+    poisoned -- right after `_reflect_synchronize` in the same status-application function. Toxic
+    is 90% accurate, so this is a seed sweep.
+
+    Vacuity-checked directly: removing the `"POISON_PUPPETEER"` check after the Synchronize block
+    in `apply_main_status_from` turned every seed where Toxic actually landed into a plain digest
+    mismatch -- this engine's missing `VolatileInflicted` where Python's confusion already landed
+    alongside the poison.
+    """
+    puppeteer = [_mon("Tauros", "A0", Ability.POISON_PUPPETEER, ["Toxic"])]
+    target = [_mon("Rhydon", "B0", Ability.NONE, ["Splash"])]
+    confused = 0
+    for seed in range(20):
+        rng = random.Random(42100 + seed)
+        scenario, expected = record((puppeteer, target), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"seed {seed}"
+        events = expected[0]["events"]
+        poisoned = any(e["type"] == "StatusInflicted" and e["status"] == "TOXIC" for e in events)
+        confusion = any(e["type"] == "VolatileInflicted" and e["volatile"] == "CONFUSION" for e in events)
+        if poisoned:
+            assert confusion, f"seed {seed}: poisoned without confusion\n{events}"
+            confused += 1
+    assert confused > 0, "Poison Puppeteer never once poisoned (and thus confused) across 20 seeds"
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

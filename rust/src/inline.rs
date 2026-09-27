@@ -21,7 +21,7 @@ use crate::battle::{Pokemon, Status};
 /// move with its own log line — so porting the clause alone would be a Levitate that takes no
 /// damage and never says why. Air Balloon, Punching Glove and Choice Scarf are out for the same
 /// reason: each does more somewhere else.
-pub const PORTED_ABILITIES: [&str; 68] = [
+pub const PORTED_ABILITIES: [&str; 71] = [
     "BATTLE_ARMOR",
     "BIG_PECKS",
     "CHLOROPHYLL",
@@ -47,6 +47,7 @@ pub const PORTED_ABILITIES: [&str; 68] = [
     "LEAF_GUARD",
     "LIMBER",
     "LIQUID_OOZE",
+    "LIQUID_VOICE",
     "LONG_REACH",
     "MAGIC_GUARD",
     "MAGMA_ARMOR",
@@ -57,6 +58,7 @@ pub const PORTED_ABILITIES: [&str; 68] = [
     "NO_GUARD",
     "OVERCOAT",
     "OWN_TEMPO",
+    "POISON_PUPPETEER",
     "PRANKSTER",
     "PRESSURE",
     "PSYCHIC_SURGE",
@@ -69,6 +71,7 @@ pub const PORTED_ABILITIES: [&str; 68] = [
     "SAND_VEIL",
     "SCRAPPY",
     "SERENE_GRACE",
+    "SHEER_FORCE",
     "SHELL_ARMOR",
     "SHIELD_DUST",
     "SIMPLE",
@@ -130,6 +133,11 @@ pub fn tune_status_secondary(
     if !is_secondary {
         return Some(probability);
     }
+    // Sheer Force trades the whole secondary for its own power boost — checked before Shield
+    // Dust's block, matching the Python's own order, though both paths land on the same `None`.
+    if attacker_ability == "SHEER_FORCE" {
+        return None;
+    }
     if !aimed_at_self && defender_ability == "SHIELD_DUST" {
         return None;
     }
@@ -150,6 +158,9 @@ pub fn tune_stage_secondary(
 ) -> Option<f64> {
     if !is_secondary {
         return Some(probability);
+    }
+    if attacker_ability == "SHEER_FORCE" {
+        return None;
     }
     if target == "TARGET" && defender_ability == "SHIELD_DUST" {
         return None;

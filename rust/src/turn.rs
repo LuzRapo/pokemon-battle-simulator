@@ -747,13 +747,25 @@ fn residuals(state: &mut State, db: &Database, tape: &mut Tape, log: &mut Log) -
     // its durations. A sandstorm that expires this turn still chips on the way out only if the
     // tick and the chip are in this order, which is why the field goes first.
     crate::field::tick_field(state, log);
+    // `_apply_residuals` calls `state.bus.emit(ON_RESIDUAL, ...)` once per side, but that emit
+    // reaches *every* handler on the bus, not just the current side's own Pokemon — and Paradox's
+    // own handler never checks `context.actor is pokemon` the way Solar Power's does. So a Quark
+    // Drive on side 1 activates during side 0's own residual emit, priority 9500, before side 0
+    // has taken so much as a weather tick — not during side 1's own turn through this loop, which
+    // is where a side-keyed call here would have put it. Both sides' Paradox abilities are
+    // evaluated in one pass, before either side's weather/item/status chips, to match.
     for side in 0..2 {
         if !state.sides[side].active_pokemon().fainted() {
-            // ResidualOrder, top to bottom: PARADOX (9500, right after the field-duration tick
-            // above), WEATHER (9000), then the weather abilities (8500), the terrain (8400), the
-            // cures and the recovery items, then the status chip at 6000, then everything below it.
             crate::hooks::evaluate_paradox(state, side, log);
+        }
+    }
+    for side in 0..2 {
+        if !state.sides[side].active_pokemon().fainted() {
+            // ResidualOrder, top to bottom (Paradox already done above): WEATHER (9000), then the
+            // weather abilities (8500), the terrain (8400), the cures and the recovery items, then
+            // the status chip at 6000, then everything below it.
             crate::field::weather_residual(state, side, log);
+            crate::hooks::solar_power_chip(state, side, log);
             crate::hooks::residual_before_status(state, side, tape, log)?;
             status_chip(state, side, log);
             crate::hooks::residual_after_status(state, side, tape, log)?;
@@ -1225,7 +1237,7 @@ fn resolve_move(
     // immunity gate below — exactly where the Python emits it, so Volt Absorb still takes Thunder
     // Wave's own miss chance before it gets a say, and a cancelled move still pays its own crash
     // damage (Jump Kick into a Volt Absorb) the same way a Protect or an out-of-reach miss does.
-    if crate::hooks::ability_before_move(state, side, &the_move, log) {
+    if crate::hooks::ability_before_move(state, side, &the_move, db, log) {
         crash_damage(state, side, &the_move, log);
         return Ok(());
     }
@@ -2680,7 +2692,7 @@ fn start_encore(state: &mut State, target_side: usize, log: &mut Log) {
 
 /// `_start_disable`: fails silently with nothing to disable or one already in effect. Logs
 /// `DisableApplied` naming the move it silenced, not the generic `VolatileInflicted`.
-fn start_disable(state: &mut State, target_side: usize, log: &mut Log) {
+pub fn start_disable(state: &mut State, target_side: usize, log: &mut Log) {
     let target = state.sides[target_side].active_pokemon();
     if target.last_move_slot.is_none() || target.disabled_slot.is_some() {
         return;
@@ -2866,6 +2878,16 @@ pub fn apply_main_status_from(
             let inflictor_healthy = state.sides[inflictor_side].active_pokemon().status == Status::None;
             if reflects && inflictor_healthy {
                 apply_main_status_from(state, inflictor_side, status, weather, None, tape, log)?;
+            }
+        }
+    }
+    // Poison Puppeteer: the *inflictor's* ability, not the target's, confuses whatever it just
+    // poisoned. `apply_volatile`'s own "already has it" guard is exactly the Python's own
+    // `ExtraStatus.CONFUSION not in target.volatiles` check, so nothing extra is needed here.
+    if matches!(status, Status::Poison | Status::Toxic) {
+        if let Some(inflictor_side) = inflictor_side {
+            if state.sides[inflictor_side].active_pokemon().ability == "POISON_PUPPETEER" {
+                apply_volatile(state, target_side, "CONFUSION", tape, log)?;
             }
         }
     }

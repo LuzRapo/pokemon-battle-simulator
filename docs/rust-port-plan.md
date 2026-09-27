@@ -17,13 +17,13 @@ this doc; per invariant 2 the batch now belongs on the "done" side.
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 163 | 220 (74%) |
+| abilities | 172 | 220 (78%) |
 | items | 33 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
 The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
 a release build for this update:
-`{"abilities":{"live":220,"ported":163},"items":{"live":193,"ported":33},"moves":{"playable":843,
+`{"abilities":{"live":220,"ported":172},"items":{"live":193,"ported":33},"moves":{"playable":843,
 "refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
 row above. The stale code comment at `rust/src/turn.rs:318` ("220 abilities and 110 items are
 live") has been corrected to 193 for items.
@@ -529,7 +529,50 @@ activation itself was intact. Confirmed with the full validation suite and two d
 3000 status-slice (2956/3000 agreed, 44 refused, the same Future Sight limit, 0 diverged) and 5000
 plain-slice (5000/5000, 0 diverged). 163/220 abilities now.
 
-The remaining 57, grouped and roughly ordered by what unblocks the most:
+**Also done: the nine no-new-hook one-liners.** Sheer Force (`ON_DAMAGE_CALC` 1.3x power plus the
+secondary stripped in `inline::tune_status_secondary`/`tune_stage_secondary`, the same site Serene
+Grace and Shield Dust already use), Solar Power (`ON_DAMAGE_CALC` 1.5x Special in sun, plus its own
+`ON_RESIDUAL` eighth-HP chip at `ResidualOrder.WEATHER` — the sandstorm chip's own band, not the
+`WEATHER_ABILITY` band Ice Body and Dry Skin use), Thermal Exchange and Toxic Debris (`ON_AFTER_HIT`,
+the same defender-reaction match block Stamina/Justified/Weak Armor/Berserk already share — Toxic
+Debris deliberately has no fainted guard, unlike every stat-bump reaction beside it, reproduced as
+written rather than brought in line with its neighbours), Cursed Body (`ON_AFTER_HIT`, a 30% chance
+to disable the attacker via `turn::start_disable`, now `pub`), Wonder Guard and Wind Rider
+(`ON_BEFORE_MOVE`, the hook this doc's own earlier revision hadn't yet noticed both of these
+actually need — Wonder Guard reads the *plain* type chart against the defender's raw types, not
+`effective_bypass`, which means it reproduces a real quirk: a defender-facing status move whose
+type isn't super effective gets blocked here too, not just damaging ones; Wind Rider's own log line
+carries `source="justified"` rather than `"wind_rider"`, a copy-paste slip in the Python reproduced
+rather than fixed), Liquid Voice (`power::type_override`, checked after the `-ate` abilities and
+before every by-name case — no power boost rides along, unlike the `-ate` abilities' own), and
+Poison Puppeteer (`apply_main_status_from`, right after the Synchronize-reflection block — confuses
+whatever its holder just poisoned). `Move` gained a `wind: bool` field it had never needed to read
+before, mirroring `sound`.
+
+This batch also caught and fixed a real ordering bug in the *previous* commit's own `ON_TURN_START`
+work, found by this batch's own 3000-battle status-slice sweep (seed 2559, turn 21): Python's
+`_apply_residuals` calls `state.bus.emit(ON_RESIDUAL, ...)` once per side, but that emit reaches
+*every* handler on the bus, not only the current side's own Pokemon — and Paradox's handler, unlike
+Solar Power's, never checks `context.actor is pokemon`. A Quark Drive on side 1 therefore activates
+during side 0's own residual emit, before side 0 has taken so much as a weather tick, not during
+side 1's own turn through a per-side loop. `residuals()` called `evaluate_paradox` inside the
+existing per-side loop, interleaved with that side's own weather/item/status chips, which put a
+side-1 activation *after* a side-0 item chip where Python puts it before. Fixed by hoisting both
+sides' Paradox evaluation into its own pass, before either side's weather/item/status chips run at
+all — matching the emit-reaches-everyone semantics directly instead of approximating them.
+
+Nine differential tests, one per ability except `test_toxic_debris_and_thermal_exchange_react_to_being_hit`
+(both share the same `ON_AFTER_HIT` site and setup). Vacuity-checked directly: every ability's own
+match arm or check disabled in turn — twelve checks in total, counting Sheer Force's and Solar
+Power's two destinations each — each a plain digest mismatch or a tape divergence depending on
+whether the disabled clause changes what the tape needs (Sheer Force's nullification, Cursed Body's
+draw) or only what a fold computes. The residual-ordering fix was vacuity-checked by reverting to
+the old per-side call and re-running the 3000-battle sweep, which reproduced the exact seed
+2559 divergence before the fix went back in. Confirmed with the full validation suite and two
+5000-battle differential sweeps: status-slice (4908/5000 agreed, 92 refused, the same Future Sight
+limit, 0 diverged) and plain-slice (5000/5000, 0 diverged). 172/220 abilities now.
+
+The remaining 48, grouped and roughly ordered by what unblocks the most:
 
 - **Dry Skin**: the one name left over from the `ON_BEFORE_MOVE` cluster above — its own absorb half
   would be a one-line addition to `hooks::ability_before_move` (`"DRY_SKIN" if move_type ==
@@ -538,10 +581,6 @@ The remaining 57, grouped and roughly ordered by what unblocks the most:
   (`ON_TURN_END`, not built yet — see below) both have to land in the same pass, per invariant 2.
 - **Libero / Protean**: bind `ON_SWITCH_OUT` (restore original type) alongside a stateful
   `ON_BEFORE_MOVE` handler (shift to the used move's type, once per switch-in) — see the note above.
-- **No new hook needed, one-liners at existing sites (~9)**: Sheer Force, Solar Power, Thermal
-  Exchange, Toxic Debris, Wonder Guard, Wind Rider, Liquid Voice, Cursed Body, Poison Puppeteer
-  (Soul Heart, also in this bullet in an earlier revision of this doc, was ported with the
-  `ON_FAINT` batch above — it binds `_bind_ko_boost` like Moxie, not a standalone one-liner).
 - **Ability interaction (9)**: Mold Breaker/Teravolt/Turboblaze (one shared mechanism — an
   attacker-side flag read wherever a target-ability immunity is checked), Neutralizing Gas, Mummy,
   Trace, Imposter, Magician, Pickpocket. Imposter/Trace should reuse the existing Transform/
@@ -670,11 +709,12 @@ hand-mapped signature crystals.
 Sections 1–3 are done. Section 6's first four hooks — `ON_BEFORE_MOVE`, `ON_FAINT`,
 `ON_SWITCH_OUT`, `ON_TURN_START` — are all done and have already unblocked their clusters outright
 (eleven of `ON_BEFORE_MOVE`'s twelve abilities, all three of `ON_FAINT`'s, both of
-`ON_SWITCH_OUT`'s, both of `ON_TURN_START`'s — see section 4). `ON_TURN_END`, the last of the five,
-is the one hook left with nothing in the current ability gap to unlock standalone — it exists for
-Air Balloon's pop, an item, so it makes more sense alongside section 5 than ahead of it. Section 4
-is the largest remaining block at 57 abilities but most of it is one-liners at sites this port
-already has — call it a session from here.
+`ON_SWITCH_OUT`'s, both of `ON_TURN_START`'s — see section 4), and the nine no-new-hook one-liners
+are done too. `ON_TURN_END`, the last of the five hooks, is the one left with nothing in the current
+ability gap to unlock standalone — it exists for Air Balloon's pop, an item, so it makes more sense
+alongside section 5 than ahead of it. Section 4 is the largest remaining block at 48 abilities but
+most of it needs pairing with section 5's items (plates, memories, mega stones) or section 7's
+forme-swap primitive rather than being one-liners in isolation — call it a session from here.
 Section 5 (160 items) is one, mostly following section 4's abilities in to reuse their plumbing
 (Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega stones).
 Section 7 (Z-moves/megas/formes) is a scope question before it's a sizing question — check bot
@@ -685,11 +725,9 @@ The tail is not uniform: absorption abilities and formes are each a small archit
 the butler's revival mechanic has no reference outside this codebase.
 
 **Immediate next step for whoever picks this up**: all four of `ON_BEFORE_MOVE`, `ON_FAINT`,
-`ON_SWITCH_OUT` and `ON_TURN_START` are done, along with everything they unblocked outright (Dry
-Skin, Libero/Protean and Booster Energy held back — see their own notes in section 4). Build the
-last hook, `ON_TURN_END`, in the existing residual pass symmetric to `field::tick_field`/`tick_side`
-— nothing in the current ability gap needs it standalone, so this is the one hook in section 6
-that's cheaper to build once the item work in section 5 gives it something to unlock (Air Balloon's
-pop) than to build speculatively now. With that in mind, the more useful next step is probably to
-start section 5 (items) directly, reusing the plumbing `ON_BEFORE_MOVE` and `ON_SWITCH_OUT` already
-built, rather than building a fifth hook nothing yet needs.
+`ON_SWITCH_OUT` and `ON_TURN_START` are done, along with everything they unblocked outright, and so
+are the nine no-new-hook one-liners (Dry Skin, Libero/Protean and Booster Energy held back — see
+their own notes in section 4). What's left in section 4 needs pairing with items (plates, memories,
+mega stones) or the not-yet-built forme-swap primitive, so the natural next step is section 5
+(items), reusing the `ON_BEFORE_MOVE`/`ON_SWITCH_OUT` plumbing already built, rather than `ON_TURN_END`
+— the one hook in section 6 with nothing to unlock standalone until items catch up to it.

@@ -16,14 +16,14 @@ use crate::battle::{Pokemon, State, Status};
 use crate::data::{Database, Effect, Move};
 use crate::log::{Event, Log};
 use crate::tape::Tape;
-use crate::turn::{apply_main_status_from, apply_stage_changes, Refusal, DEFENDER_FACING};
+use crate::turn::{apply_main_status_from, apply_stage_changes, start_disable, Refusal, DEFENDER_FACING};
 
 /// Abilities implemented here, at `ON_BEFORE_MOVE` — a move that could reach the defender (a
 /// damaging one, or one that targets the opponent directly, exactly the Python's own `damaging or
 /// move.target in _DEFENDER_FACING_TARGETS` gate), before the effectiveness/immunity check. None
 /// of the handlers below draw from the tape — every one of them is a deterministic function of the
 /// defending ability and the move's type or sound flag.
-pub const PORTED_BEFORE_MOVE_ABILITIES: [&str; 11] = [
+pub const PORTED_BEFORE_MOVE_ABILITIES: [&str; 13] = [
     "EARTH_EATER",
     "FLASH_FIRE",
     "LEVITATE",
@@ -35,11 +35,13 @@ pub const PORTED_BEFORE_MOVE_ABILITIES: [&str; 11] = [
     "VOLT_ABSORB",
     "WATER_ABSORB",
     "WELL_BAKED_BODY",
+    "WIND_RIDER",
+    "WONDER_GUARD",
 ];
 
 /// `True` if the move was cancelled here — the caller skips the effectiveness gate and the hit
 /// entirely, the same as a Python handler returning `HandlerResult(cancel=True, ...)`.
-pub fn ability_before_move(state: &mut State, side: usize, the_move: &Move, log: &mut Log) -> bool {
+pub fn ability_before_move(state: &mut State, side: usize, the_move: &Move, db: &Database, log: &mut Log) -> bool {
     let other = 1 - side;
     let damaging = the_move
         .effects
@@ -91,6 +93,29 @@ pub fn ability_before_move(state: &mut State, side: usize, the_move: &Move, log:
             let nickname = state.sides[other].active_pokemon().nickname.clone();
             log.push(Event::DoesNotAffect { side: other as i32, pokemon: nickname });
             true
+        }
+        "WONDER_GUARD" => {
+            // `type_effectiveness(payload["move_type"], pokemon.types)`: the *plain* type chart
+            // against the defender's raw types — not `effective_bypass`/`battle_types`, which is
+            // what every other effectiveness read in this file uses. Matched exactly rather than
+            // corrected: since `ON_BEFORE_MOVE` fires for a defender-facing status move too, a
+            // status move whose type happens not to be super effective gets blocked here as well,
+            // which is not how Wonder Guard behaves in the real games — a quirk of this simplified
+            // read, reproduced per invariant 3, not fixed.
+            let types = state.sides[other].active_pokemon().types.clone();
+            if db.effectiveness(move_type, &types) < 2.0 {
+                let nickname = state.sides[other].active_pokemon().nickname.clone();
+                log.push(Event::DoesNotAffect { side: other as i32, pokemon: nickname });
+                true
+            } else {
+                false
+            }
+        }
+        "WIND_RIDER" if the_move.wind => {
+            // The log line's own `source` says "justified", not "wind_rider" — a copy-paste slip
+            // in the Python (`_bind_wind_rider` borrows `_bind_hit_reaction_boost`'s pattern by
+            // hand and keeps its source string), reproduced rather than corrected per invariant 3.
+            absorb_boost(state, other, "ATTACK", 1, "justified", log)
         }
         _ => false,
     }
@@ -281,9 +306,10 @@ pub fn ability_on_turn_start(state: &mut State, log: &mut Log) {
 }
 
 /// Abilities implemented here, on top of the damage-calc ones.
-pub const PORTED_ABILITIES: [&str; 17] = [
+pub const PORTED_ABILITIES: [&str; 20] = [
     "AFTERMATH",
     "BERSERK",
+    "CURSED_BODY",
     "DAUNTLESS_SHIELD",
     "DOWNLOAD",
     "EFFECT_SPORE",
@@ -297,7 +323,9 @@ pub const PORTED_ABILITIES: [&str; 17] = [
     "ROUGH_SKIN",
     "STAMINA",
     "STATIC",
+    "THERMAL_EXCHANGE",
     "TOXIC_CHAIN",
+    "TOXIC_DEBRIS",
     "WEAK_ARMOR",
 ];
 
@@ -345,6 +373,18 @@ pub fn on_after_hit(
 }
 
 /// Chip damage from an ability, as `AbilityChipDamage`.
+/// Solar Power's own chip, at `ResidualOrder.WEATHER` (9000) — the same band as the sandstorm
+/// chip itself, which is why this is called alongside `field::weather_residual` in `residuals()`
+/// rather than from `residual_before_status` down at `WEATHER_ABILITY` (8500) with Ice Body and
+/// Dry Skin's own weather reactions.
+pub fn solar_power_chip(state: &mut State, side: usize, log: &mut Log) {
+    if state.sides[side].active_pokemon().ability == "SOLAR_POWER"
+        && matches!(effective_weather(state).as_str(), "SUN" | "HARSH_SUN")
+    {
+        chip(state, side, 8, "SOLAR_POWER", log);
+    }
+}
+
 fn chip(state: &mut State, side: usize, divisor: i32, ability: &str, log: &mut Log) {
     if crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon()) {
         return;
@@ -418,6 +458,28 @@ fn ability_after_hit(
             }
             "JUSTIFIED" if !fainted && hit.move_type == "DARK" => {
                 apply_stage_changes(state, side, &[("ATTACK".to_string(), 1)], "justified", log);
+            }
+            "THERMAL_EXCHANGE" if !fainted && hit.move_type == "FIRE" => {
+                apply_stage_changes(state, side, &[("ATTACK".to_string(), 1)], "thermal_exchange", log);
+            }
+            // Toxic Debris: no fainted guard in the Python at all (unlike every stat-bump reaction
+            // above it) — a holder that faints on the very hit that triggers this still scatters
+            // the spikes. Reproduced as written, not brought in line with its neighbours.
+            "TOXIC_DEBRIS" if hit.category == "PHYSICAL" => {
+                let layers = state.sides[other].hazards.get("TOXIC_SPIKES").unwrap_or(0);
+                if layers < 2 {
+                    state.sides[other].hazards.insert("TOXIC_SPIKES".to_string(), layers + 1);
+                    log.push(Event::HazardSet { side: other as i32, hazard: "TOXIC_SPIKES".to_string() });
+                }
+            }
+            "CURSED_BODY" if hit.dealt > 0 && attacker_up => {
+                let attacker = state.sides[other].active_pokemon();
+                if attacker.disabled_slot.is_none()
+                    && attacker.last_move_slot.is_some()
+                    && tape.probability()? < 0.3
+                {
+                    start_disable(state, other, log);
+                }
             }
             "BERSERK" if !fainted => {
                 // Only the hit that crosses the half mark, which is why it needs `dealt` rather
@@ -609,13 +671,14 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
 }
 
 /// Abilities and items implemented at `ON_RESIDUAL`, on top of everything above.
-pub const PORTED_RESIDUAL_ABILITIES: [&str; 8] = [
+pub const PORTED_RESIDUAL_ABILITIES: [&str; 9] = [
     "BAD_DREAMS",
     "HYDRATION",
     "ICE_BODY",
     "POISON_HEAL",
     "RAIN_DISH",
     "SHED_SKIN",
+    "SOLAR_POWER",
     "SPEED_BOOST",
     "AIR_LOCK",
 ];

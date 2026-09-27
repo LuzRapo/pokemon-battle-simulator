@@ -140,6 +140,15 @@ fn first_damage_effect(the_move: &Move) -> Option<&Effect> {
     the_move.effects.iter().find(|e| matches!(e, Effect::DamageEffect { .. }))
 }
 
+/// `any(_is_secondary(e) for e in move.effects)`.
+fn has_secondary_effect(the_move: &Move) -> bool {
+    the_move.effects.iter().any(|e| match e {
+        Effect::InflictStatusEffect { is_secondary, .. } => *is_secondary,
+        Effect::StatStageChangeEffect { is_secondary, .. } => *is_secondary,
+        _ => false,
+    })
+}
+
 /// One ability's contribution. `is_actor` is the Python's `context.actor is pokemon`; with two
 /// active Pokemon the other one is always the defender, so no third case exists.
 fn handle(ability: &str, pokemon: &Pokemon, is_actor: bool, aura_broken: bool, calc: &Calc, payload: &mut Payload) {
@@ -207,6 +216,14 @@ fn handle(ability: &str, pokemon: &Pokemon, is_actor: bool, aura_broken: bool, c
             if let Some(Effect::DamageEffect { recoil_percent: Some(_), .. }) = first_damage_effect(calc.the_move) {
                 payload.power_mods_4096.push(4915);
             }
+        }
+        // The secondary itself is stripped in `inline::tune_status_secondary`/
+        // `tune_stage_secondary`, not here — this is only the power side of the trade.
+        "SHEER_FORCE" if is_actor && has_secondary_effect(calc.the_move) => {
+            payload.power_mods_4096.push(5325)
+        }
+        "SOLAR_POWER" if is_actor && special && matches!(calc.weather, "SUN" | "HARSH_SUN") => {
+            payload.attack_mods_4096.push(6144)
         }
         "PARENTAL_BOND" if is_actor => {
             // A flat 1.25x rather than a real second strike, matching the Python's approximation

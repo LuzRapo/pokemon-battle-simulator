@@ -321,12 +321,17 @@ fn ate_type(ability: &str) -> Option<&'static str> {
 /// `move_type_override`: what this move actually resolves as.
 ///
 /// Checked in the Python's order, which matters — an `-ate` ability claims a Normal move before
-/// any of the by-name cases get a look at it. Liquid Voice is absent; it is another ability.
+/// Liquid Voice gets a look at a sound one, before any of the by-name cases run.
 pub fn type_override(the_move: &Move, attacker: &Pokemon, state: &State) -> Option<String> {
     if the_move.move_type == "NORMAL" {
         if let Some(became) = ate_type(&attacker.ability) {
             return Some(became.to_string());
         }
+    }
+    if attacker.ability == "LIQUID_VOICE" && the_move.sound {
+        // No power boost rides along with this one — `_ate_boost_applies` only ever reads the
+        // four `_NORMAL_TYPE_ABILITIES`, so Liquid Voice is purely a type change.
+        return Some("WATER".to_string());
     }
     let by_name = match the_move.name.as_str() {
         "Weather Ball" => match crate::hooks::effective_weather(state).as_str() {

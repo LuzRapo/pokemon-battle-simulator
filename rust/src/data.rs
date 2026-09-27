@@ -97,6 +97,9 @@ pub struct Move {
     pub pulse: bool,
     #[serde(default)]
     pub sound: bool,
+    /// PS flag `wind`: absorbed by Wind Rider.
+    #[serde(default)]
+    pub wind: bool,
     #[serde(default)]
     pub self_switch: bool,
     #[serde(default)]
