@@ -181,6 +181,10 @@ pub fn ported_coded_moves() -> &'static std::collections::HashSet<&'static str> 
         all.extend(crate::power::PORTED_FAILURES);
         all.extend(crate::power::SCREEN_BREAKERS);
         all.extend(crate::power::PORTED_ORDINARY_DESPITE_BEING_NAMED);
+        // The AST sweep flags most charge moves too — their names sit in `_REACHES_THROUGH`,
+        // `_CHARGE_TURN_BOOSTS` or `_SUN_SKIP_CHARGE` as string literals. Without this they would
+        // be refused by the coded-move gate before the `the_move.charge` check below ever ran.
+        all.extend(crate::power::PORTED_CHARGES);
         all
     })
 }
@@ -284,10 +288,10 @@ pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
     // Everything else reading it is AI policy, not mechanics. A healing move that actually heals
     // carries a `HealEffect`, which arrives here as `Unmodelled` and is refused on its own merits;
     // refusing the flag as well cost the engine all twelve draining moves for nothing.
-    // `force_switch`, `recharges` and `self_destructs` are ported; a pivot and a charge turn are
-    // not. A pivot needs the turn loop to send somebody in mid-turn, and a charge needs the move to
-    // be remembered across one.
-    if the_move.charge {
+    // `force_switch`, `recharges` and `self_destructs` are ported; a pivot is not — it needs the
+    // turn loop to send somebody in mid-turn. All 17 charge moves are ported; an unrecognised one
+    // would mean the database grew an eighteenth without `power::PORTED_CHARGES` learning about it.
+    if the_move.charge && !crate::power::PORTED_CHARGES.contains(&the_move.name.as_str()) {
         return Some(Gap::UserOrFieldEffect);
     }
     // An effect list that is empty is not a gap: the Python has nothing to apply either, so the
@@ -544,6 +548,7 @@ fn withdraw(side: &mut Side, to: usize) -> String {
     outgoing.protect_streak = 0;
     // A Fury Cutter run does not survive its owner leaving the field.
     outgoing.rolling_hits = 0;
+    outgoing.charging_slot = None;
     if outgoing.status == Status::Toxic {
         outgoing.status_turns = 0;
     }
@@ -718,6 +723,18 @@ fn resolve_move(
     log: &mut Log,
 ) -> Result<(), Refusal> {
     let other = 1 - side;
+    // A charge continues the original use whatever slot the recorded action names — a short
+    // moveset pads itself by repeating its first move, so the same move can sit in several slots
+    // and the recorded action can name a different one of them.
+    let releasing_charge = {
+        let actor = state.sides[side].active_pokemon();
+        actor.volatiles.contains_key("CHARGING") && actor.charging_slot.is_some()
+    };
+    let slot = if releasing_charge {
+        state.sides[side].active_pokemon().charging_slot.expect("checked above")
+    } else {
+        slot
+    };
     let chosen = {
         let actor = state.sides[side].active_pokemon();
         move_in_slot(actor, slot, db)?.clone()
@@ -725,7 +742,9 @@ fn resolve_move(
     // An empty slot is Struggle, and Struggle costs nothing — there is nothing left to spend. The
     // Python substitutes here rather than at choice time, so the recorded action still names the
     // move that was picked. Missing this only showed up past turn 60, once the PP had run out.
-    let empty = state.sides[side].active_pokemon().pp.get(crate::battle::SLOT_NAMES[slot]) == Some(&0);
+    // Never true while releasing a charge: PP for the whole two turns was spent on the first one.
+    let empty = !releasing_charge
+        && state.sides[side].active_pokemon().pp.get(crate::battle::SLOT_NAMES[slot]) == Some(&0);
     let the_move = if empty {
         db.move_named("Struggle")
             .ok_or_else(|| Refusal::Unported("the database has no Struggle".into()))?
@@ -747,8 +766,9 @@ fn resolve_move(
     let the_move = the_move;
 
     // Spent before anything resolves, as `_spend_pp` does it: a move that misses still costs its
-    // point, which is why this is here rather than after the hit lands.
-    if !empty {
+    // point, which is why this is here rather than after the hit lands. Releasing a charge spends
+    // nothing — the whole two turns were paid for on the first one.
+    if !empty && !releasing_charge {
         if let Some(left) = state.sides[side].active_mut().pp.get_mut(crate::battle::SLOT_NAMES[slot]) {
             *left = (*left - 1).max(0);
         }
@@ -775,6 +795,25 @@ fn resolve_move(
     // where the counter is incremented, because the run ends whether or not *this* move lands.
     if the_move.name != "Fury Cutter" {
         state.sides[side].active_mut().rolling_hits = 0;
+    }
+
+    // A charge's first turn: the turn-boost (if it has one) applies whether or not the charge is
+    // skipped, then — unless it is skipped — the user commits and the turn ends here. Nothing
+    // after this point in the function is reached: no stall check, no accuracy roll, no draw.
+    if the_move.charge && !releasing_charge {
+        let skip = crate::power::skips_charge_turn(state, side, &the_move, log);
+        if !skip {
+            let attacker = state.sides[side].active_mut();
+            attacker.volatiles.insert("CHARGING".to_string(), 1);
+            attacker.charging_slot = Some(slot);
+            let nickname = attacker.nickname.clone();
+            log.push(Event::ChargingUp { side: side as i32, pokemon: nickname, the_move: the_move.name.clone() });
+            return Ok(());
+        }
+    }
+    if releasing_charge {
+        state.sides[side].active_mut().volatiles.remove("CHARGING");
+        state.sides[side].active_mut().charging_slot = None;
     }
 
     // `_stall_check`, which sits after the move is announced and before anything is rolled for it.
@@ -806,13 +845,17 @@ fn resolve_move(
         return Ok(());
     }
 
-    // The screen breakers, which take the wall down whether or not the hit that follows lands.
-    if crate::power::SCREEN_BREAKERS.contains(&the_move.name.as_str()) {
-        let standing: Vec<String> = state.sides[other].screens.keys().cloned().collect();
-        for screen in standing {
-            state.sides[other].screens.remove(&screen);
-            log.push(Event::ScreenFaded { side: other as i32, screen });
-        }
+    // `_out_of_reach`: a defender mid-Fly/Dig/Phantom-Force is untouchable except by the handful of
+    // moves that reach through. *After* Protect and *before* accuracy — same as the Python — and it
+    // takes no draw either way, which is how an unlisted charge (Solar Beam) leaves its user
+    // visible without costing anything on the tape.
+    if DEFENDER_FACING.contains(&the_move.target.as_str())
+        && crate::power::out_of_reach(state.sides[other].active_pokemon(), &the_move, db)
+    {
+        log.push(Event::MoveMissed);
+        state.sides[side].active_mut().rolling_hits = 0; // `_break_rolling`
+        crash_damage(state, side, &the_move, log);
+        return Ok(());
     }
 
     // Accuracy first, and only when the move has one — `_accuracy_check` returns True without
@@ -869,6 +912,17 @@ fn resolve_move(
         });
         crash_damage(state, side, &the_move, log);
         return Ok(());
+    }
+
+    // The screen breakers, which take the wall down whether or not the hit that follows lands —
+    // but only once accuracy and immunity have both let the move through. *Here*, not earlier: a
+    // screen breaker that misses or is shrugged off as `NoEffect` must not break the screen either.
+    if crate::power::SCREEN_BREAKERS.contains(&the_move.name.as_str()) {
+        let standing: Vec<String> = state.sides[other].screens.keys().cloned().collect();
+        for screen in standing {
+            state.sides[other].screens.remove(&screen);
+            log.push(Event::ScreenFaded { side: other as i32, screen });
+        }
     }
 
     let log_before = log.entries.len();

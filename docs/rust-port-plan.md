@@ -5,17 +5,21 @@ then replace the Python engine.
 
 ## Where it stands
 
-Branch `feature/vectorised-engine`, last commit `95baec9`.
+Branch `feature/vectorised-engine`. Charge/two-turn moves (section 1 below) are done, unlike the
+table below's snapshot before them.
 
 | | done | total |
 |---|---|---|
-| moves | 773 | 843 (92%) |
+| moves | 790 | 843 (94%) |
 | abilities | 127 | 220 (58%) |
 | items | 33 | 110 (30%) |
 | volatiles | 10 | ~18 |
 
-6,000 randomly generated battles agree turn for turn, event for event, draw for draw. ~240k
-turns/s single-threaded against the Python's ~2.2k.
+Several thousand randomly generated battles agree turn for turn, event for event, draw for draw,
+including a pool built specifically to force charging on both the semi-invulnerable and the
+ordinary two-turn moves (`test_charge_moves_actually_charge_and_agree`), and a vacuity check that
+disabling `power::out_of_reach` turns 251/300 of them red. ~240k turns/s single-threaded against
+the Python's ~2.2k.
 
 ## The loop
 
@@ -64,12 +68,13 @@ what is refused.
 
 ## Remaining work
 
-### 1. Charge / two-turn moves — 17 moves *(attempted, reverted, see below)*
+### 1. Charge / two-turn moves — 17 moves — **done**
 
 `Fly, Bounce, Dig, Dive, Sky Drop, Phantom Force, Shadow Force, Solar Beam, Solar Blade,
 Meteor Beam, Electro Shot, Freeze Shock, Geomancy, Ice Burn, Razor Wind, Skull Bash, Sky Attack`
 
-Design that got to 794/800 before being reverted:
+Re-implemented from scratch after the first attempt (794/800) was lost to a rejected-but-already-run
+`git checkout`. Shipped design, differs from the first attempt in one respect noted below:
 
 - `Pokemon.charging_slot: Option<usize>` plus a `CHARGING` volatile.
 - In `resolve_move`, **before the PP spend**: if `CHARGING` is set and `charging_slot` is `Some`,
@@ -79,23 +84,33 @@ Design that got to 794/800 before being reverted:
 - After `MoveUsed`, before the stall check: if `move.charge && !releasing`, apply
   `_CHARGE_TURN_BOOSTS` (Meteor Beam and Electro Shot, +1 SpA, **whether or not the charge is
   skipped**), then skip the turn unless `_SUN_SKIP_CHARGE` applies in sun (Power Herb also skips
-  and is unported). Set `CHARGING`, `charging_slot`, log `ChargingUp`, return.
-- `_out_of_reach`, after the Protect check and before the accuracy roll: a defender mid-Fly/Dig is
-  untouchable except by `_REACHES_THROUGH`. Logs `MoveMissed`, breaks the rolling run, applies crash
-  damage, takes **no** draw. An unlisted charge (Solar Beam) leaves its user visible.
-- `switch_out` clears `charging_slot`.
-- Take the 11 charge names off `PORTED_ORDINARY_DESPITE_BEING_NAMED` and put them in a
-  `PORTED_CHARGES` list — the reachers were only safe *because* charges were refused, and that
-  comment is in `power.rs`.
+  and is unported — a Pokemon holding it is refused upstream, so that branch is dead code for now).
+  Set `CHARGING`, `charging_slot`, log `ChargingUp`, return.
+- `_out_of_reach` (`power::out_of_reach`), after the Protect check and before the accuracy roll: a
+  defender mid-Fly/Dig/Phantom-Force is untouchable except by `_REACHES_THROUGH`. Logs
+  `MoveMissed`, breaks the rolling run, applies crash damage, takes **no** draw. An unlisted charge
+  (Solar Beam) leaves its user visible.
+- `switch_out`/`withdraw` clears `charging_slot`.
+- **Not needed, unlike the first attempt's plan:** the reacher names (Gust, Earthquake, Surf, ...)
+  stay in `PORTED_ORDINARY_DESPITE_BEING_NAMED` untouched. `out_of_reach` is a generic function
+  keyed on the *defender's* charging move, not on the attacker's move being specially tagged, so
+  there was nothing to move out of that list after all.
+- One thing the first attempt's notes didn't mention and this one had to solve: most of the 17
+  charge names are themselves in Python's `coded_moves` AST sweep (they're string literals in
+  `_REACHES_THROUGH`/`_CHARGE_TURN_BOOSTS`/`_SUN_SKIP_CHARGE`), so they were being refused by the
+  `Gap::CodedByName` gate *before* `unsupported`'s `the_move.charge` check ever ran. Fixed by adding
+  `power::PORTED_CHARGES` into `turn::ported_coded_moves()`'s set, same pattern as
+  `PORTED_ORDINARY_DESPITE_BEING_NAMED`.
+- Found and fixed in passing: `SCREEN_BREAKERS` was applied right after the Protect check, before
+  the accuracy roll and the effectiveness/immunity check — so a screen-breaking move that missed, or
+  was shrugged off as `NoEffect`, broke the screen anyway. Python applies it after both (`moves.py`
+  line 279, well after the accuracy check at 248). Moved down; this was a real latent bug, not
+  something charges introduced, just adjacent code the charge work required reading closely.
 
-**Unresolved bug.** `--explain 485` (slice status, switches, abilities, team-size 4, max-turns 100):
-turn 48 charges Bounce and matches; turn 49 releases it and Rust asks the tape for an integer at
-draw 202 where Python has a probability. Python's turn 49 spends 8 draws
-`[0.3348, 0.9839, 0.8150, 0.3309, 97, 0.3963, 0.2779, 0.5668]`; two tie-breaks, then Bounce's
-accuracy/crit/damage/paralysis-secondary, then **two draws that are not accounted for** — Astral
-Barrage logs `NoEffect` and the immunity gate returns before its accuracy roll. Find those two
-draws first; the released Bounce is probably not where the discrepancy is. `TRACE_DRAWS=1` prints
-the tape position at each move.
+Verified: `test_charge_moves_actually_charge_and_agree` forces a pool of all 17 charges plus the
+four reachers used across the multiple `_REACHES_THROUGH` tables (Earthquake, Surf, Gust, Thunder)
+and asserts both that a `ChargingUp` event actually appears and that the traces agree. Vacuity
+check: commenting out the `out_of_reach` call turns 251/300 of a charge-heavy stress batch red.
 
 ### 2. Volatiles — 12 moves
 

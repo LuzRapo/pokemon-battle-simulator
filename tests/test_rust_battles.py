@@ -42,9 +42,10 @@ needs_rust = pytest.mark.skipif(
 PLAIN_SPECIES = ("Rhydon", "Machamp", "Kangaskhan", "Tauros", "Dewgong", "Golem")
 
 
-# The attachments that take a move out of the ported slice: a second use, a forced switch, a charge
-# or recharge turn, a user that blows itself up. Not `healing` — see `unsupported` in turn.rs.
-_UNPORTED_ATTACHMENTS = ("charge",)
+# The attachments that take a move out of the ported slice: a second use, a forced switch, a
+# recharge turn, a user that blows itself up. Not `healing` — see `unsupported` in turn.rs. Not
+# `charge` any more either — all 17 two-turn moves are ported.
+_UNPORTED_ATTACHMENTS: tuple[str, ...] = ()
 
 
 def _attached(move: object) -> bool:
@@ -437,6 +438,50 @@ def test_the_rarer_move_classes_agree_when_the_teams_are_built_for_them(
         seen += sum(entry["type"] == event for turn in expected for entry in turn["events"])
 
     assert seen > 0, f"{event} never happened even with a team built for it"
+
+
+@needs_rust
+def test_charge_moves_actually_charge_and_agree(tmp_path: Path) -> None:
+    """All 17 two-turn moves, forced to actually charge rather than merely being legal.
+
+    A random draw from the full move pool lets a charge sit unused for turns at a time — the
+    generator would happily agree about a battle where nobody ever charged anything. Restricting
+    the pool to charges, the semi-invulnerability exceptions, and one plain attack each makes both
+    the charging turn *and* the release turn certain to appear, on both sides of the reach rule.
+    """
+    charges = [
+        "Fly", "Bounce", "Dig", "Dive", "Sky Drop", "Phantom Force", "Shadow Force", "Solar Beam",
+        "Solar Blade", "Meteor Beam", "Electro Shot", "Freeze Shock", "Geomancy", "Ice Burn",
+        "Razor Wind", "Skull Bash", "Sky Attack",
+    ]
+    reachers = ["Earthquake", "Surf", "Gust", "Thunder"]
+
+    def team(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species=rng.choice(PLAIN_SPECIES),
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(charges), rng.choice(reachers)],
+            )
+            for index in range(3)
+        ]
+
+    charging_turns = 0
+    for seed in range(30):
+        rng = random.Random(21000 + seed)
+        teams = (team(rng), team(rng))
+        scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=60)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        charging_turns += sum(entry["type"] == "ChargingUp" for turn in expected for entry in turn["events"])
+
+    assert charging_turns > 0, "no battle ever reached a charging turn"
 
 
 @needs_rust

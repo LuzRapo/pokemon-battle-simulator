@@ -515,6 +515,88 @@ fn every_other_move_used(attacker: &Pokemon, db: &Database) -> bool {
     })
 }
 
+/// The 17 charge (two-turn) moves: `move.charge` in `models/moves.py`. All of them are ported —
+/// this is the whole set, not a subset — so `unsupported` reads this rather than refusing every
+/// charging move outright.
+pub const PORTED_CHARGES: [&str; 17] = [
+    "Fly",
+    "Bounce",
+    "Dig",
+    "Dive",
+    "Sky Drop",
+    "Phantom Force",
+    "Shadow Force",
+    "Solar Beam",
+    "Solar Blade",
+    "Meteor Beam",
+    "Electro Shot",
+    "Freeze Shock",
+    "Geomancy",
+    "Ice Burn",
+    "Razor Wind",
+    "Skull Bash",
+    "Sky Attack",
+];
+
+/// `_CHARGE_TURN_BOOSTS`: applied on the charging turn itself, whether or not the charge is
+/// skipped — a Power Herb Meteor Beam still gets the Special Attack raise even though it fires the
+/// same turn.
+fn charge_turn_boost(move_name: &str) -> Option<&'static str> {
+    match move_name {
+        "Meteor Beam" | "Electro Shot" => Some("SP_ATTACK"),
+        _ => None,
+    }
+}
+
+/// `_SUN_SKIP_CHARGE`: Solar Beam and Solar Blade fire the same turn in harsh sunlight.
+fn sun_skips_charge(move_name: &str) -> bool {
+    matches!(move_name, "Solar Beam" | "Solar Blade")
+}
+
+/// `_skips_charge_turn`: applies the charge-turn boost unconditionally, then says whether the
+/// charge itself is skipped. Power Herb's skip is not read here — a Pokemon holding it is refused
+/// upstream by `unsupported_pokemon`, since the item is not ported, so this branch cannot yet be
+/// reached; it comes back once the item does.
+pub fn skips_charge_turn(state: &mut crate::battle::State, side: usize, the_move: &Move, log: &mut crate::log::Log) -> bool {
+    if let Some(stat) = charge_turn_boost(&the_move.name) {
+        crate::turn::apply_stage_changes(state, side, &[(stat.to_string(), 1)], "move", log);
+    }
+    sun_skips_charge(&the_move.name) && matches!(crate::hooks::effective_weather(state).as_str(), "SUN" | "HARSH_SUN")
+}
+
+/// `_UP_IN_THE_AIR` and `_REACHES_THROUGH`: which charges are semi-invulnerable, and what still
+/// finds them there. A charge absent from this map is an ordinary two-turn move — its user stands
+/// in plain sight, which is why Solar Beam and the rest are not listed at all.
+fn reaches_through(charging_move: &str) -> Option<&'static [&'static str]> {
+    const UP_IN_THE_AIR: [&str; 7] =
+        ["Gust", "Twister", "Thunder", "Hurricane", "Sky Uppercut", "Smack Down", "Thousand Arrows"];
+    const DIG: [&str; 3] = ["Earthquake", "Magnitude", "Fissure"];
+    const DIVE: [&str; 2] = ["Surf", "Whirlpool"];
+    const NONE: [&str; 0] = [];
+    Some(match charging_move {
+        "Fly" | "Bounce" | "Sky Drop" => &UP_IN_THE_AIR,
+        "Dig" => &DIG,
+        "Dive" => &DIVE,
+        // Vanish outright: nothing reaches a Phantom Force or Shadow Force user, unlike the flying
+        // and burrowing charges above.
+        "Phantom Force" | "Shadow Force" => &NONE,
+        _ => return None,
+    })
+}
+
+/// `_out_of_reach`: whether the defender is mid-charge somewhere this move cannot follow. Takes no
+/// draw either way — the Python returns before its accuracy roll, and this must too.
+pub fn out_of_reach(defender: &Pokemon, the_move: &Move, db: &Database) -> bool {
+    if !defender.volatiles.contains_key("CHARGING") {
+        return false;
+    }
+    let Some(slot) = defender.charging_slot else { return false };
+    let Some(charging_name) = defender.moves.get(slot) else { return false };
+    let Some(charging) = db.move_named(charging_name) else { return false };
+    let Some(reaches) = reaches_through(&charging.name) else { return false };
+    !reaches.contains(&the_move.name.as_str())
+}
+
 /// `_target_is_about_to_attack`: has this side still got a damaging move coming this turn?
 ///
 /// Asked of the database rather than of a set carried on the state — the answer is a property of

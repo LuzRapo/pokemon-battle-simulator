@@ -110,6 +110,10 @@ pub struct Pokemon {
     /// Consecutive stalling moves. Protect-likes fail with odds 1 - 1/3^n, and the counter is
     /// broken by anything else the Pokemon does — including a turn it could not act on.
     pub protect_streak: i32,
+    /// The slot a charge move committed to. `CHARGING` in `volatiles` says a charge is in
+    /// progress; this says which move it is, so the same name repeated across several slots (a
+    /// short moveset padded by repetition) still resolves the one that was actually announced.
+    pub charging_slot: Option<usize>,
 }
 
 pub const STAGE_NAMES: [&str; 7] = [
@@ -235,6 +239,7 @@ impl Pokemon {
             last_hit_taken: 0,
             last_hit_category: None,
             protect_streak: 0,
+            charging_slot: None,
         })
     }
 
