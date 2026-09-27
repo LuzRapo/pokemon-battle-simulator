@@ -64,6 +64,17 @@ pub fn tick_field(state: &mut State, log: &mut Log) {
             }
         }
     }
+    // `for pseudo in list(field.pseudo_weather): ...` — a plain list copy in the Python, since the
+    // dict is mutated (a key deleted) mid-iteration. Collected here for the same reason.
+    let ticking: Vec<String> = state.field.pseudo_weather.keys().cloned().collect();
+    for kind in ticking {
+        let left = state.field.pseudo_weather.get_mut(&kind).expect("just collected from this map");
+        *left -= 1;
+        if *left <= 0 {
+            state.field.pseudo_weather.remove(&kind);
+            log.push(Event::PseudoWeatherEnded { kind });
+        }
+    }
 }
 
 /// `_tick_side_durations`, run per side at the end of its own residual pass.

@@ -113,6 +113,12 @@ pub enum Event {
     TerrainFaded {
         terrain: String,
     },
+    PseudoWeatherStarted {
+        kind: String,
+    },
+    PseudoWeatherEnded {
+        kind: String,
+    },
     ScreenSet {
         side: i32,
         screen: String,

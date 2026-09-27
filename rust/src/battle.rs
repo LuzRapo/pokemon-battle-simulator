@@ -393,6 +393,9 @@ pub struct Field {
     pub weather_turns_left: i32,
     pub terrain: String,
     pub terrain_turns_left: i32,
+    /// Trick Room, Gravity, Magic Room, Wonder Room: kind -> turns left. Several can stand at
+    /// once, unlike weather or terrain, so this is a map rather than a single slot.
+    pub pseudo_weather: BTreeMap<String, i32>,
 }
 
 impl Default for Field {
@@ -402,6 +405,7 @@ impl Default for Field {
             weather_turns_left: 0,
             terrain: "NONE".into(),
             terrain_turns_left: 0,
+            pseudo_weather: BTreeMap::new(),
         }
     }
 }

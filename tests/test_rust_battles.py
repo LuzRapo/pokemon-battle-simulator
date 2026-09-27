@@ -95,7 +95,7 @@ def _status_and_stage_move_names() -> list[str]:
             return True
         if kind == "InflictStatusEffect":
             return getattr(getattr(effect, "status", None), "name", None) in landable
-        if kind in ("FixedDamageEffect", "HealEffect", "WeatherEffect", "TerrainEffect"):
+        if kind in ("FixedDamageEffect", "HealEffect", "WeatherEffect", "TerrainEffect", "PseudoWeatherEffect"):
             return True
         if kind in ("SideConditionEffect", "RemoveHazardsEffect"):
             return True
@@ -941,6 +941,44 @@ def test_a_mega_stone_holder_is_refused_not_played_wrong(tmp_path: Path) -> None
     scenario, _ = record((team, team), _chooser(rng), seed=1, max_turns=4)
     theirs = _rust_trace(scenario, tmp_path)
     assert isinstance(theirs, str) and "GARCHOMPITE" in theirs, theirs
+
+
+@needs_rust
+def test_trick_room_inverts_the_speed_sort(tmp_path: Path) -> None:
+    """The four pseudo-weather rooms. Gravity, Magic Room and Wonder Room have no gameplay effect
+    anywhere in this codebase beyond standing up and ticking down — a deliberate simplification,
+    not a gap in the port — so only Trick Room's speed-sort inversion is asserted on directly.
+
+    Vacuity-checked: disabling the inversion (leaving the field state itself intact) turned
+    177/300 of this exact matchup red.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Dewgong", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Trick Room", "Tackle"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Golem", nickname="B0", level=1, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Tackle", "Trick Room"],
+        )
+    ]
+
+    slow_mon_moved_first = 0
+    for seed in range(40):
+        rng = random.Random(33000 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=30)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            movers = [e["side"] for e in turn["events"] if e["type"] == "MoveUsed"]
+            if movers and movers[0] == 1:
+                slow_mon_moved_first += 1
+
+    assert slow_mon_moved_first > 0, "the level-1 Golem never once moved first"
 
 
 @needs_rust

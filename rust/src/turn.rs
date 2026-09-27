@@ -114,7 +114,10 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
                 priority_of(the_move)?
             }
         };
-        keys.push((category, -priority, -speed, tie_breakers[side], side));
+        // Trick Room inverts the speed sort itself, rather than the speed stat, so a paralysed
+        // Pokemon halved by the status is still slower under Trick Room than one that is not.
+        let speed_key = if state.field.pseudo_weather.contains_key("TRICK_ROOM") { speed } else { -speed };
+        keys.push((category, -priority, speed_key, tie_breakers[side], side));
     }
     keys.sort_by(|a, b| a.partial_cmp(b).expect("no NaNs in a sort key"));
     Ok(keys.into_iter().map(|k| k.4).collect())
@@ -378,7 +381,6 @@ pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
             Effect::CodedEffect { variant } if !PORTED_CODED_KINDS.contains(&variant.as_str()) => {
                 return Some(Gap::CodedByName)
             }
-            Effect::PseudoWeatherEffect { .. } => return Some(Gap::UserOrFieldEffect),
             Effect::Unmodelled => return Some(Gap::NoModelledEffect),
             _ => {}
         }
@@ -1204,8 +1206,12 @@ fn resolve_move(
                 apply_side_condition(state, side, &the_move, variant, *duration_turns, log);
             }
             Effect::RemoveHazardsEffect { style } => remove_hazards(state, side, style, log),
-            Effect::PseudoWeatherEffect { variant, .. } => {
-                return Err(Refusal::Unported(format!("{variant} changes how the whole field works")))
+            Effect::PseudoWeatherEffect { variant, duration_turns } => {
+                // `_apply_field_effect`: no item extends one of these (unlike weather's rocks or
+                // terrain's Terrain Extender), and re-applying one already up just resets its
+                // duration rather than refusing — Trick Room used again simply restarts the clock.
+                state.field.pseudo_weather.insert(variant.clone(), duration_turns.unwrap_or(5));
+                log.push(Event::PseudoWeatherStarted { kind: variant.clone() });
             }
             Effect::CodedEffect { variant } => {
                 if !PORTED_CODED_KINDS.contains(&variant.as_str()) {

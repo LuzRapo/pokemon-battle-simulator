@@ -11,7 +11,7 @@ Section 3 (the remaining coded moves) is most of the way through — 19 of rough
 
 | | done | total |
 |---|---|---|
-| moves | 831 | 843 (99%) |
+| moves | 835 | 843 (99%) |
 | abilities | 127 | 220 (58%) |
 | items | 33 | 193 — see note |
 | volatiles | 18 | 18 — every volatile in the database is ported |
@@ -22,8 +22,9 @@ export had never been able to see, for reasons worth reading in section 3's own 
 are correctly refused now rather than silently wrong, which is why the *ported* item count did not
 move even though total climbed by 83.
 
-The 12 moves still refused are 4 that do something to their user or the field (pseudo-weather
-rooms) and roughly 8 special-cased by name (what's left of section 3, itemised there).
+The 8 moves still refused are all special-cased by name — the last of section 3, itemised there.
+The pseudo-weather rooms are done; the "does something to its user or the field" refusal cause is
+gone entirely.
 
 Several thousand randomly generated battles agree turn for turn, event for event, draw for draw,
 including a pool built specifically to force charging on both the semi-invulnerable and the
@@ -207,13 +208,20 @@ Each needed its Python special case read individually; there was no shortcut for
   name (`"Charizardite X"`) resolved to this engine's own item name once, in Python, rather than
   reimplemented as a second normalisation table in Rust.
 
-**Left — roughly 8 moves:** `Wish`, `Healing Wish`/`Lunar Dance`, `Revival Blessing`, `Shed Tail`
-(all need a `Side`-level pending-effect field this engine does not have yet: `wish_turns`/
-`wish_pending`, `healing_wish_pending`, and `pending_substitute` respectively), `Future Sight`/
-`Doom Desire` (delayed damage — needs `Side.future_sight_turns`/`_attacker`/`_move` and a residual
-landing two turns later), `Transform` (a full stat/moveset/forme copy — the largest single one
-left), and the four pseudo-weather rooms (`Trick Room` also inverts the speed sort at ordering
-time, so it touches `order_actions` too, not just a residual tick).
+**Also done:** the four pseudo-weather rooms (`PseudoWeatherEffect`, a field-level `kind -> turns
+left` map since more than one can stand at once, unlike weather or terrain). Three of the four —
+Gravity, Magic Room, Wonder Room — have no gameplay effect anywhere in the Python beyond standing
+up and ticking down; that is a deliberate simplification already documented, not a gap this port
+introduced. Only Trick Room does anything mechanical (`order_actions`'s speed sort itself inverts,
+not the speed stat — the one file in the whole Python that reads `PseudoWeather` directly).
+Vacuity-checked: disabling the inversion alone, with the field state otherwise untouched, turns
+177/300 of a deliberately slow-vs-fast matchup red.
+
+**Left — 8 moves:** `Wish`, `Healing Wish`/`Lunar Dance`, `Revival Blessing`, `Shed Tail` (all need
+a `Side`-level pending-effect field this engine does not have yet: `wish_turns`/`wish_pending`,
+`healing_wish_pending`, and `pending_substitute` respectively), `Future Sight`/`Doom Desire`
+(delayed damage — needs `Side.future_sight_turns`/`_attacker`/`_move` and a residual landing two
+turns later), and `Transform` (a full stat/moveset/forme copy — the largest single one left).
 
 ### 4. Abilities — 93 left
 
