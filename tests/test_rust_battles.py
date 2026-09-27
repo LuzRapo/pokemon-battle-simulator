@@ -1294,6 +1294,51 @@ def test_quick_draw_occasionally_wins_the_bracket_and_agrees(tmp_path: Path) -> 
 
 
 @needs_rust
+def test_sturdy_survives_an_otherwise_lethal_hit_from_full_hp(tmp_path: Path) -> None:
+    """Sturdy: an OHKO from full HP is clamped to leave exactly one hit point, the same clamp
+    Endure already gets but keyed off full HP rather than a volatile. A level 1 Rhydon has too
+    little HP for anything else to matter, so a level 50 Machamp's Earthquake -- guaranteed to hit
+    and super effective against Ground/Rock -- overkills it every single time regardless of the
+    damage roll, leaving Sturdy as the only thing between it and fainting.
+
+    (Fixed-damage moves -- Fissure, Seismic Toss, Super Fang and the rest -- turned out to bypass
+    both Sturdy and Endure entirely in this codebase: `_apply_fixed_damage` has no `ON_BEFORE_HIT`
+    emit and no `_land_hit` call, unlike an ordinary hit. Not a gap this port introduces, so not
+    fixed here, but worth a moment's suspicion for a first test built around Fissure that agreed
+    across 60 seeds and asserted zero saves -- a mismeasurement of a real effect, not a bug.)
+
+    Vacuity-checked directly: disabling the clamp turned seed 0 into a real divergence -- Python's
+    `SurvivedAtOneHp` where this engine, undisabled, agrees, against a bare `DamageDealt` for 13
+    (a fainting blow) once the clamp was skipped.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=1, ability=Ability.STURDY, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Earthquake"],
+        )
+    ]
+    sturdy_saves = 0
+    for seed in range(20):
+        rng = random.Random(40000 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            for e in turn["events"]:
+                if e["type"] == "SurvivedAtOneHp" and e["cause"] == "sturdy":
+                    sturdy_saves += 1
+    assert sturdy_saves > 0, "Sturdy never once saved the level 1 Rhydon across 20 seeds"
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

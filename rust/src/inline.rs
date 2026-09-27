@@ -21,7 +21,7 @@ use crate::battle::{Pokemon, Status};
 /// move with its own log line — so porting the clause alone would be a Levitate that takes no
 /// damage and never says why. Air Balloon, Punching Glove and Choice Scarf are out for the same
 /// reason: each does more somewhere else.
-pub const PORTED_ABILITIES: [&str; 58] = [
+pub const PORTED_ABILITIES: [&str; 59] = [
     "BATTLE_ARMOR",
     "BIG_PECKS",
     "CHLOROPHYLL",
@@ -70,6 +70,7 @@ pub const PORTED_ABILITIES: [&str; 58] = [
     "SNIPER",
     "SNOW_WARNING",
     "SNOW_CLOAK",
+    "STURDY",
     "SUPER_LUCK",
     "SURGE_SURFER",
     "SWIFT_SWIM",

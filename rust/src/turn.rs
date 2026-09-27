@@ -2377,8 +2377,19 @@ fn apply_damage(
             state.sides[other].active_mut().times_hit += 1;
             continue;
         }
-        // `_land_hit`: Endure clamps the blow to leave exactly one hit point.
+        // `_land_hit`: Endure clamps the blow to leave exactly one hit point. Sturdy is the same
+        // clamp, keyed off full HP rather than a volatile, and (per `ON_BEFORE_HIT` firing ahead
+        // of `_land_hit`) checked first — moot in practice, since a hit Sturdy has already reduced
+        // below the defender's current HP can never also satisfy Endure's own `>= defender.hp`.
         let mut incoming = hit.amount;
+        {
+            let defender = state.sides[other].active_pokemon();
+            if defender.ability == "STURDY" && defender.hp == defender.totals.hp && incoming >= defender.hp {
+                incoming = defender.hp - 1;
+                let nickname = defender.nickname.clone();
+                log.push(Event::SurvivedAtOneHp { side: other as i32, pokemon: nickname, cause: "sturdy".into() });
+            }
+        }
         {
             let defender = state.sides[other].active_pokemon();
             if defender.volatiles.contains_key("ENDURE") && incoming >= defender.hp {

@@ -13,7 +13,7 @@ rather than a stat, is done — see the batch write-up below.
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 134 | 220 (61%) |
+| abilities | 135 | 220 (61%) |
 | items | 33 | 193 — see note |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
@@ -275,7 +275,7 @@ entirely (leaving the `Transformed` log line in place) — a still-Rhydon Pokemo
 from Machamp's copied moveset has nowhere to put it, and the very first of 40 seeds came back a
 refusal rather than a quiet pass.
 
-### 4. Abilities — 86 left
+### 4. Abilities — 85 left
 
 **Done: the turn-order cluster — Prankster, Gale Wings, Triage, Mycelium Might, Surge Surfer,
 Unburden, Quick Draw.** All seven live in `priority.py`, a single self-contained file, and all
@@ -298,9 +298,22 @@ moment its own effect was neutralised. Covered by `test_priority_abilities_reord
 `test_surge_surfer_and_unburden_double_speed_and_agree`, and
 `test_quick_draw_occasionally_wins_the_bracket_and_agrees`.
 
+**Also done: Sturdy.** The same survival clamp Endure already had in `turn::apply_damage`
+(`_land_hit`'s Endure check), keyed off full HP instead of a volatile — `ON_BEFORE_HIT` fires
+ahead of `_land_hit` in the Python, so Sturdy's own clamp is checked first, though the two can
+never actually collide (a hit Sturdy has already reduced can't also satisfy Endure's threshold).
+Found along the way: fixed-damage moves — Fissure, Seismic Toss, Super Fang and the rest —
+bypass *both* Sturdy and Endure in this codebase; `_apply_fixed_damage` has no `ON_BEFORE_HIT`
+emit and no `_land_hit` call, unlike an ordinary hit. Not a gap this port introduces, so left
+alone, but it is exactly why the first version of this test (built around Fissure) agreed across
+60 seeds while asserting zero saves — a real effect being measured in the one place it doesn't
+apply, not a bug. Covered by `test_sturdy_survives_an_otherwise_lethal_hit_from_full_hp`;
+vacuity-checked directly, turning seed 0 red (a fainting `DamageDealt` where Sturdy should have
+clamped it to `SurvivedAtOneHp`) the moment the clamp was disabled.
+
 The remaining clusters, roughly in order of value:
 
-- **Damage/ordering one-liners at sites that already exist**: Sturdy, Shield Dust, Serene Grace,
+- **Damage/ordering one-liners at sites that already exist**: Shield Dust, Serene Grace,
   Skill Link, Steadfast, Scrappy/Mind's Eye, Soundproof, Bulletproof, Pressure, Mold Breaker/
   Teravolt/Turboblaze, Corrosion, Synchronize, Natural Cure, Regenerator.
 - **Type absorption**: Volt Absorb, Water Absorb, Earth Eater, Sap Sipper, Well Baked Body, Flash
