@@ -1903,6 +1903,106 @@ def test_ko_boosting_abilities_dont_fire_from_a_fixed_damage_faint(tmp_path: Pat
     assert not any(e["type"] == "StatStageChanged" for e in events), events
 
 
+def _switch_on_turn(turn_to_switch: int, target_index: int):  # type: ignore[no-untyped-def]
+    """Deterministic: the first available move every turn, except on `turn_to_switch`, where side 0
+    switches to `target_index` -- an explicit `SWITCH_OUT` action, not a chooser hoping to land on
+    one, since `ON_SWITCH_OUT` needs a voluntary switch to fire at all."""
+
+    def choose(state, side_index):  # type: ignore[no-untyped-def]
+        if side_index == 0 and state.turn == turn_to_switch:
+            return Action(action=ActionType.SWITCH_OUT, switch_in=state.sides[0].team[target_index])
+        options = [a for a in legal_actions(state, side_index) if a.action is ActionType.USE_MOVE]
+        return (options or legal_actions(state, side_index))[0]
+
+    return choose
+
+
+@needs_rust
+def test_regenerator_heals_a_third_on_switch_out(tmp_path: Path) -> None:
+    """Regenerator: emitted from `ON_SWITCH_OUT`'s one site (`turn::switch_out`, before any of
+    `withdraw`'s own resets), so it sees the outgoing Pokemon's HP exactly as it stood mid-battle,
+    not reset to anything. Tackle is always-hit and never lethal against a bulky Golem, so the chip
+    to heal back is deterministic.
+
+    Vacuity-checked directly: renaming `"REGENERATOR"` in `hooks::ability_on_switch_out` turned this
+    into a plain digest mismatch -- this engine's own un-healed HP where Python's `AbilityHealed`
+    already restored a third.
+    """
+    team_a = [
+        _mon("Golem", "A0", Ability.REGENERATOR, ["Splash"]),
+        _mon("Rhydon", "A1", Ability.NONE, ["Splash"]),
+    ]
+    team_b = [_mon("Machamp", "B0", Ability.NONE, ["Tackle"])]
+    scenario, expected = record((team_a, team_b), _switch_on_turn(1, 1), seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    switch_turn_events = expected[1]["events"]
+    heals = [e for e in switch_turn_events if e["type"] == "AbilityHealed" and e["ability"] == "REGENERATOR"]
+    assert heals and heals[0]["amount"] > 0, switch_turn_events
+
+
+@needs_rust
+def test_natural_cure_clears_status_on_switch_out(tmp_path: Path) -> None:
+    """Natural Cure: the same `ON_SWITCH_OUT` site, clearing whatever status the outgoing Pokemon
+    is carrying. Thunder Wave is 90% accurate, so this is a seed sweep rather than a single
+    deterministic case.
+
+    Vacuity-checked directly: renaming `"NATURAL_CURE"` in `hooks::ability_on_switch_out` turned
+    every seed where paralysis actually landed into a plain digest mismatch -- this engine's own
+    still-paralyzed status where Python's `StatusCleared` already reset it.
+    """
+    team_a = [
+        _mon("Golem", "A0", Ability.NATURAL_CURE, ["Splash"]),
+        _mon("Rhydon", "A1", Ability.NONE, ["Splash"]),
+    ]
+    team_b = [_mon("Machamp", "B0", Ability.NONE, ["Thunder Wave"])]
+    cured = 0
+    for seed in range(20):
+        scenario, expected = record((team_a, team_b), _switch_on_turn(1, 1), seed=seed, max_turns=2)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"seed {seed}"
+        switch_turn_events = expected[1]["events"]
+        if any(e["type"] == "StatusCleared" and e["clearance"] == "natural_cure" for e in switch_turn_events):
+            cured += 1
+    assert cured > 0, "Natural Cure never once cleared a status across 20 seeds"
+
+
+@needs_rust
+def test_regenerator_and_natural_cure_dont_fire_on_a_fainted_switch(tmp_path: Path) -> None:
+    """`ON_SWITCH_OUT` is not emitted for a fainted switch -- the Python's own comment on the event
+    says so directly ("not emitted for fainted switches"), and `turn::switch_out` guards it the same
+    way. A Regenerator holder that faints and is auto-replaced must not "heal" its own corpse back to
+    positive HP; a level 1 Golem takes Earthquake's overkill just as reliably as a real KO would.
+
+    Vacuity-checked directly: dropping the `!fainted()` guard in `switch_out` before calling
+    `hooks::ability_on_switch_out` turned this into a digest mismatch -- this engine's own healed,
+    still-standing Golem where Python's `Fainted` line is the last thing said about it.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Golem", nickname="A0", level=1, ability=Ability.REGENERATOR, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        _mon("Rhydon", "A1", Ability.NONE, ["Splash"]),
+    ]
+    team_b = [_mon("Machamp", "B0", Ability.NONE, ["Earthquake"])]
+    # Two turns: the faint lands on the first, and the auto-replacement -- the switch this test is
+    # actually about -- is the first thing the second turn resolves, not something the same turn's
+    # own event list ever shows.
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    faint_turn, replacement_turn = expected[0]["events"], expected[1]["events"]
+    assert any(e["type"] == "Fainted" and e["side"] == 0 for e in faint_turn), faint_turn
+    assert any(e["type"] == "Switched" and e["side"] == 0 for e in replacement_turn), replacement_turn
+    assert not any(e["type"] == "AbilityHealed" for e in replacement_turn), replacement_turn
+    a0_digest = expected[1]["state"]["sides"][0]["team"][0]
+    assert a0_digest["hp"] == 0, a0_digest
+
+
 @needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.

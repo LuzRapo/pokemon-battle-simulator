@@ -180,6 +180,23 @@ pub fn ability_on_faint(state: &mut State, attacker_side: usize, log: &mut Log) 
     }
 }
 
+/// Abilities implemented here, at `ON_SWITCH_OUT` — emitted once, from `turn::switch_out`, and only
+/// when the outgoing Pokemon did not faint (a fainted switch is a replacement, not a choice — the
+/// Python's own comment on the event says "not emitted for fainted switches"). Called before any of
+/// `withdraw`'s own resets, so both handlers below see the outgoing Pokemon exactly as it stood the
+/// moment it left: its stat stages, its status, its volatiles all still in place.
+pub const PORTED_ON_SWITCH_OUT_ABILITIES: [&str; 2] = ["NATURAL_CURE", "REGENERATOR"];
+
+pub fn ability_on_switch_out(state: &mut State, side: usize, log: &mut Log) {
+    match state.sides[side].active_pokemon().ability.as_str() {
+        "REGENERATOR" => heal_by(state, side, 3, Healer::Ability("REGENERATOR"), log),
+        "NATURAL_CURE" if state.sides[side].active_pokemon().status != Status::None => {
+            clear_status(state, side, "natural_cure", log);
+        }
+        _ => {}
+    }
+}
+
 /// Abilities implemented here, on top of the damage-calc ones.
 pub const PORTED_ABILITIES: [&str; 17] = [
     "AFTERMATH",

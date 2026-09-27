@@ -324,6 +324,7 @@ pub fn ported_abilities() -> &'static std::collections::HashSet<&'static str> {
         all.extend(crate::hooks::PORTED_ABILITIES);
         all.extend(crate::hooks::PORTED_BEFORE_MOVE_ABILITIES);
         all.extend(crate::hooks::PORTED_ON_FAINT_ABILITIES);
+        all.extend(crate::hooks::PORTED_ON_SWITCH_OUT_ABILITIES);
         all.extend(crate::inline::PORTED_ABILITIES);
         all.extend(crate::hooks::PORTED_RESIDUAL_ABILITIES);
         all.extend(crate::power::PORTED_ATE_ABILITIES);
@@ -505,7 +506,7 @@ pub fn step(
         match &actions[side] {
             Action::Switch { to } => {
                 let sent_out = state.sides[side].team[*to].nickname.clone();
-                let withdrew = switch_out(state, side, *to);
+                let withdrew = switch_out(state, side, *to, &mut log);
                 state.register_active(side);
                 let arriving = state.sides[side].active_mut();
                 arriving.just_switched_in = true;
@@ -672,7 +673,13 @@ fn confusion_allows_acting(state: &mut State, side: usize, tape: &mut Tape, log:
 ///
 /// The rest of `_execute_switch` clears fields this engine does not have yet (choice lock, encore,
 /// charging slot). They arrive with the volatiles milestone; until then there is nothing to clear.
-fn switch_out(state: &mut State, side: usize, to: usize) -> String {
+fn switch_out(state: &mut State, side: usize, to: usize, log: &mut Log) -> String {
+    // `ON_SWITCH_OUT`: the very first thing `_execute_switch` does, and only when the outgoing
+    // Pokemon did not faint — a fainted switch is a replacement, not a choice, and the Python's own
+    // comment on the event says as much ("not emitted for fainted switches").
+    if !state.sides[side].active_pokemon().fainted() {
+        crate::hooks::ability_on_switch_out(state, side, log);
+    }
     // `_release_anyone_it_was_holding`: a wrap ends when whoever was doing the wrapping leaves. In
     // singles the side whose opponent is wrapped is the side holding them, because a wrapped
     // Pokemon is exactly the one that cannot switch — so the one walking out is always the one
@@ -1471,7 +1478,7 @@ fn send_out_replacement(state: &mut State, side: usize, db: &Database, log: &mut
         return;
     };
     let sent_out = state.sides[side].team[to].nickname.clone();
-    let withdrew = switch_out(state, side, to);
+    let withdrew = switch_out(state, side, to, log);
     state.register_active(side);
     let arriving = state.sides[side].active_mut();
     arriving.just_switched_in = true;
@@ -1504,7 +1511,7 @@ fn force_random_switch(
     }
     let chosen = bench[tape.integer(0, bench.len() as i32)? as usize];
     let sent_out = state.sides[side].team[chosen].nickname.clone();
-    let withdrew = switch_out(state, side, chosen);
+    let withdrew = switch_out(state, side, chosen, log);
     state.register_active(side);
     let arriving = state.sides[side].active_mut();
     arriving.just_switched_in = true;

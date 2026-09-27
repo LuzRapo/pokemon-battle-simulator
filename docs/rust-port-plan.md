@@ -17,13 +17,13 @@ this doc; per invariant 2 the batch now belongs on the "done" side.
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 159 | 220 (72%) |
+| abilities | 161 | 220 (73%) |
 | items | 33 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
 The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
 a release build for this update:
-`{"abilities":{"live":220,"ported":159},"items":{"live":193,"ported":33},"moves":{"playable":843,
+`{"abilities":{"live":220,"ported":161},"items":{"live":193,"ported":33},"moves":{"playable":843,
 "refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
 row above. The stale code comment at `rust/src/turn.rs:318` ("220 abilities and 110 items are
 live") has been corrected to 193 for items.
@@ -465,14 +465,41 @@ red immediately. Confirmed with the full validation suite and two differential s
 status-slice (2956/3000 agreed, 44 refused, the same Future Sight limit, 0 diverged) and 5000
 plain-slice (5000/5000, 0 diverged). 159/220 abilities now.
 
-The remaining 61, grouped and roughly ordered by what unblocks the most:
+**Also done: section 6's `ON_SWITCH_OUT` hook, and both abilities it unblocks.** Emitted from one
+site, `turn::switch_out` (called from three places: a voluntary switch, `send_out_replacement`'s
+faint-forced one, and `force_random_switch`'s Whirlwind/Roar/Dragon Tail one), and — this is the
+part worth getting exactly right — *only* when the outgoing Pokemon did not faint. The event's own
+Python comment says so directly ("not emitted for fainted switches"), and `switch_out` guards the
+call the same way, before any of `withdraw`'s own resets run — so a handler sees the outgoing
+Pokemon's HP, status and stages exactly as they stood the moment it left, not zeroed or cleared yet.
+`switch_out` needed a `log` parameter threaded through (it previously returned only a nickname
+string) to have anywhere to put a handler's own log lines. Ported: Regenerator (a third heal,
+`heal_by`'s existing `Healer::Ability` shape — no new helper needed) and Natural Cure (clears
+whatever status is active, guarded on there being one to clear). Libero and Protean bind this same
+event too, but stay unported: both need a second, stateful hook into `ON_BEFORE_MOVE` (capture the
+original type at switch-in, shift to the used move's type once, restore it here) that is its own
+piece of design, not a one-liner riding along.
+
+Covered by `test_regenerator_heals_a_third_on_switch_out`, `test_natural_cure_clears_status_on_switch_out`,
+and — the scope-correctness test this hook's own history argues for — `test_regenerator_and_natural_cure_dont_fire_on_a_fainted_switch`:
+a Regenerator holder KO'd outright must not "heal" its own corpse back to positive HP when the
+auto-replacement switches it out next turn. That third test is not academic — vacuity-checking it by
+dropping the `!fainted()` guard produced exactly that: a still-standing, healed Golem with positive
+HP in the state digest where Python's last word on it was `Fainted`. The other two abilities'
+own match arms were vacuity-checked the same way as every other batch, each a plain digest mismatch.
+Confirmed with the full validation suite and two differential sweeps: 3000 status-slice (2960/3000
+agreed, 40 refused, the same Future Sight limit, 0 diverged) and 5000 plain-slice (5000/5000, 0
+diverged). 161/220 abilities now.
+
+The remaining 59, grouped and roughly ordered by what unblocks the most:
 
 - **Dry Skin**: the one name left over from the `ON_BEFORE_MOVE` cluster above — its own absorb half
   would be a one-line addition to `hooks::ability_before_move` (`"DRY_SKIN" if move_type ==
   "WATER"`, heal-style like Volt Absorb), but the Fire-vulnerability multiplier
   (`ON_DAMAGE_CALC`, a one-liner in `abilities::handle`) and the weather-driven heal/chip
   (`ON_TURN_END`, not built yet — see below) both have to land in the same pass, per invariant 2.
-- **Unblocked by `ON_SWITCH_OUT` (2)**: Regenerator, Natural Cure.
+- **Libero / Protean**: bind `ON_SWITCH_OUT` (restore original type) alongside a stateful
+  `ON_BEFORE_MOVE` handler (shift to the used move's type, once per switch-in) — see the note above.
 - **Unblocked by `ON_TURN_START` (2)**: Protosynthesis, Quark Drive.
 - **No new hook needed, one-liners at existing sites (~10)**: Sheer Force, Solar Power, Thermal
   Exchange, Toxic Debris, Soul Heart, Wonder Guard, Wind Rider, Liquid Voice, Cursed Body, Poison
@@ -558,8 +585,10 @@ Build in this order — each one sized to unlock the next-biggest ability/item c
    Unblocked Moxie, Beast Boost and Soul Heart (a third name this doc's list had missed). Battle
    Bond's post-KO half stays with the Formes cluster, since the forme-swap it triggers needs the
    primitive section 7 hasn't built yet.
-3. **`ON_SWITCH_OUT`** — called from `turn::switch_out` (`turn.rs:673`), symmetric to the existing
-   `on_switch_in`. Unblocks Regenerator, Natural Cure, Zero to Hero.
+3. **`ON_SWITCH_OUT` — done.** Called from `turn::switch_out`, symmetric to the existing
+   `on_switch_in`, and only for a switch that is not a faint replacement. Unblocked Regenerator and
+   Natural Cure — see the write-up in section 4. Zero to Hero stays with the Formes cluster; Libero
+   and Protean need a second, stateful hook into `ON_BEFORE_MOVE` alongside this one.
 4. **`ON_TURN_START`** — called once at the top of the turn, before actions resolve. Unblocks
    Protosynthesis/Quark Drive (and Booster Energy once items catch up).
 5. **`ON_TURN_END`** — called in the existing residual pass, symmetric to `field::tick_field`/
@@ -598,13 +627,13 @@ hand-mapped signature crystals.
 
 ## Rough sizing
 
-Sections 1–3 are done. Section 6's first two hooks, `ON_BEFORE_MOVE` and `ON_FAINT`, are done and
-have already unblocked their clusters (eleven of `ON_BEFORE_MOVE`'s twelve abilities, all three of
-`ON_FAINT`'s — see section 4). The remaining three hooks (`ON_SWITCH_OUT`, `ON_TURN_START`,
-`ON_TURN_END`) are still worth building ahead of resuming section 4 at large, for the same reason
-the first two were: small on their own, each turns a blocked cluster into one-liners. Section 4 is
-the largest remaining block at 61 abilities but most of it is one-liners once the rest of section 6
-lands — call it a session from here.
+Sections 1–3 are done. Section 6's first three hooks — `ON_BEFORE_MOVE`, `ON_FAINT`,
+`ON_SWITCH_OUT` — are done and have already unblocked their clusters outright (eleven of
+`ON_BEFORE_MOVE`'s twelve abilities, all three of `ON_FAINT`'s, both of `ON_SWITCH_OUT`'s — see
+section 4). The remaining two hooks (`ON_TURN_START`, `ON_TURN_END`) are still worth building ahead
+of resuming section 4 at large, for the same reason the first three were: small on their own, each
+turns a blocked cluster into one-liners. Section 4 is the largest remaining block at 59 abilities
+but most of it is one-liners once the rest of section 6 lands — call it a session from here.
 Section 5 (160 items) is one, mostly following section 4's abilities in to reuse their plumbing
 (Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega stones).
 Section 7 (Z-moves/megas/formes) is a scope question before it's a sizing question — check bot
@@ -614,8 +643,8 @@ up.
 The tail is not uniform: absorption abilities and formes are each a small architecture change, and
 the butler's revival mechanic has no reference outside this codebase.
 
-**Immediate next step for whoever picks this up**: `ON_BEFORE_MOVE` and `ON_FAINT` are both done,
-along with everything they unblocked (Dry Skin held back from the first — see its own note in
-section 4). Build the next hook, `ON_SWITCH_OUT`, called from `turn::switch_out` (`turn.rs:673`)
-symmetric to the existing `on_switch_in` — it unblocks Regenerator and Natural Cure, and the same
-"one hook first" logic applies for the same reason it did the last two times.
+**Immediate next step for whoever picks this up**: `ON_BEFORE_MOVE`, `ON_FAINT` and `ON_SWITCH_OUT`
+are all done, along with everything they unblocked outright (Dry Skin and Libero/Protean held back
+— see their own notes in section 4). Build the next hook, `ON_TURN_START`, called once at the top of
+the turn before actions resolve — it unblocks Protosynthesis and Quark Drive, and the same "one hook
+first" logic applies for the same reason it did the last three times.
