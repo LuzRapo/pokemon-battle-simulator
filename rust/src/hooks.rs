@@ -533,6 +533,37 @@ pub fn residual_after_status(state: &mut State, side: usize, tape: &mut Tape, lo
         }
     }
 
+    // LOCKED_MOVE (2000): the countdown started when the rampage or the roll began. On the turn it
+    // reaches zero the lock lifts unconditionally — but only a rampage leaves its user confused on
+    // the way out; Rollout and Ice Ball run their course and stop clean.
+    if let Some(left) = state.sides[side].active_pokemon().volatiles.get("LOCKED_MOVE").copied() {
+        if left - 1 > 0 {
+            state.sides[side].active_mut().volatiles.insert("LOCKED_MOVE".to_string(), left - 1);
+        } else {
+            let active = state.sides[side].active_pokemon();
+            let was_rolling = active
+                .locked_slot
+                .and_then(|slot| active.moves.get(slot))
+                .is_some_and(|name| crate::power::ROLLING_MOVES.contains(&name.as_str()));
+            let already_confused = active.volatiles.contains_key("CONFUSION");
+            let active = state.sides[side].active_mut();
+            active.volatiles.remove("LOCKED_MOVE");
+            active.locked_slot = None;
+            active.rolling_hits = 0;
+            if !was_rolling && !already_confused {
+                let turns = tape.integer(2, 6)?;
+                let active = state.sides[side].active_mut();
+                active.volatiles.insert("CONFUSION".to_string(), turns);
+                let nickname = active.nickname.clone();
+                log.push(Event::VolatileInflicted {
+                    side: side as i32,
+                    pokemon: nickname,
+                    volatile: "CONFUSION".into(),
+                });
+            }
+        }
+    }
+
     // ORB (1500): the orb poisons or burns whoever is carrying it, once there is room to.
     let item = state.sides[side].active_pokemon().item.clone();
     let status = match item.as_str() {

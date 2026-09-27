@@ -196,6 +196,11 @@ const DEFENDER_FACING: [&str; 3] = ["SINGLE_OPPONENT", "ALL_ADJACENT_ENEMIES", "
 ///
 /// These two are most of what volatiles actually are in practice: 32 moves can flinch and 18 can
 /// confuse, against one apiece for Leech Seed, Taunt, Encore and the rest.
+/// Volatiles carried by `InflictStatusEffect` but *not* dispatched through `apply_volatile` —
+/// each has its own bespoke landing rule the Python gives it in `_apply_status` rather than the
+/// generic one, so routing it through the generic path would silently play it wrong.
+pub const PORTED_BESPOKE_VOLATILES: [&str; 1] = ["LOCKED_MOVE"];
+
 pub const PORTED_VOLATILES: [&str; 10] = [
     "FLINCH",
     "CONFUSION",
@@ -304,7 +309,9 @@ pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
                 return Some(Gap::VariablePower)
             }
             Effect::InflictStatusEffect { status, .. }
-                if Status::parse(status).is_none() && !PORTED_VOLATILES.contains(&status.as_str()) =>
+                if Status::parse(status).is_none()
+                    && !PORTED_VOLATILES.contains(&status.as_str())
+                    && !PORTED_BESPOKE_VOLATILES.contains(&status.as_str()) =>
             {
                 return Some(Gap::Volatile)
             }
@@ -549,6 +556,8 @@ fn withdraw(side: &mut Side, to: usize) -> String {
     // A Fury Cutter run does not survive its owner leaving the field.
     outgoing.rolling_hits = 0;
     outgoing.charging_slot = None;
+    outgoing.locked_slot = None;
+    outgoing.last_move_slot = None;
     if outgoing.status == Status::Toxic {
         outgoing.status_turns = 0;
     }
@@ -723,14 +732,20 @@ fn resolve_move(
     log: &mut Log,
 ) -> Result<(), Refusal> {
     let other = 1 - side;
-    // A charge continues the original use whatever slot the recorded action names — a short
-    // moveset pads itself by repeating its first move, so the same move can sit in several slots
-    // and the recorded action can name a different one of them.
+    // A rampage or a charge continues the original use whatever slot the recorded action names —
+    // a short moveset pads itself by repeating its first move, so the same move can sit in several
+    // slots and the recorded action can name a different one of them.
+    let rampaging = {
+        let actor = state.sides[side].active_pokemon();
+        actor.volatiles.contains_key("LOCKED_MOVE") && actor.locked_slot.is_some()
+    };
     let releasing_charge = {
         let actor = state.sides[side].active_pokemon();
         actor.volatiles.contains_key("CHARGING") && actor.charging_slot.is_some()
     };
-    let slot = if releasing_charge {
+    let slot = if rampaging {
+        state.sides[side].active_pokemon().locked_slot.expect("checked above")
+    } else if releasing_charge {
         state.sides[side].active_pokemon().charging_slot.expect("checked above")
     } else {
         slot
@@ -742,8 +757,9 @@ fn resolve_move(
     // An empty slot is Struggle, and Struggle costs nothing — there is nothing left to spend. The
     // Python substitutes here rather than at choice time, so the recorded action still names the
     // move that was picked. Missing this only showed up past turn 60, once the PP had run out.
-    // Never true while releasing a charge: PP for the whole two turns was spent on the first one.
-    let empty = !releasing_charge
+    // Never true mid rampage or while releasing a charge: PP for the whole run was spent up front.
+    let empty = !rampaging
+        && !releasing_charge
         && state.sides[side].active_pokemon().pp.get(crate::battle::SLOT_NAMES[slot]) == Some(&0);
     let the_move = if empty {
         db.move_named("Struggle")
@@ -766,9 +782,9 @@ fn resolve_move(
     let the_move = the_move;
 
     // Spent before anything resolves, as `_spend_pp` does it: a move that misses still costs its
-    // point, which is why this is here rather than after the hit lands. Releasing a charge spends
-    // nothing — the whole two turns were paid for on the first one.
-    if !empty && !releasing_charge {
+    // point, which is why this is here rather than after the hit lands. Rampaging or releasing a
+    // charge spends nothing — the whole run was paid for on its first turn.
+    if !empty && !rampaging && !releasing_charge {
         if let Some(left) = state.sides[side].active_mut().pp.get_mut(crate::battle::SLOT_NAMES[slot]) {
             *left = (*left - 1).max(0);
         }
@@ -790,6 +806,10 @@ fn resolve_move(
         the_move: the_move.name.clone(),
         unleashed_as: None,
     });
+    // Read by Encore, Disable, and a rampage's own `InflictStatusEffect` — always the slot just
+    // used, Struggle included, since the Python assigns this before the Struggle substitution
+    // changes what `move` points at without changing `slot` itself.
+    state.sides[side].active_mut().last_move_slot = Some(slot);
 
     // Any other move ends the run, so the next Fury Cutter starts from base. Set here rather than
     // where the counter is incremented, because the run ends whether or not *this* move lands.
@@ -1601,11 +1621,26 @@ fn apply_status(
     let target_side = if to_self { side } else { 1 - side };
     match Status::parse(status_name) {
         Some(status) => apply_main_status(state, target_side, status, tape, log),
+        None if status_name == "LOCKED_MOVE" => start_rampage(state, target_side, tape),
         None if PORTED_VOLATILES.contains(&status_name) => {
             apply_volatile(state, target_side, status_name, tape, log)
         }
         None => Err(Refusal::Unported(format!("{status_name} is a volatile, which is not ported"))),
     }
+}
+
+/// `elif effect.status is ExtraStatus.LOCKED_MOVE`: no ability/type immunity, no log line, and a
+/// duration draw only on the turn that starts the rampage — a turn that continues one reaches this
+/// with `LOCKED_MOVE` already present and does nothing at all, silently, same as the Python.
+fn start_rampage(state: &mut State, target_side: usize, tape: &mut Tape) -> Result<(), Refusal> {
+    if state.sides[target_side].active_pokemon().volatiles.contains_key("LOCKED_MOVE") {
+        return Ok(());
+    }
+    let turns = tape.integer(2, 4)?;
+    let target = state.sides[target_side].active_mut();
+    target.volatiles.insert("LOCKED_MOVE".to_string(), turns);
+    target.locked_slot = target.last_move_slot;
+    Ok(())
 }
 
 /// `_apply_volatile`, for the two this engine knows.

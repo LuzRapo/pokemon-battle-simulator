@@ -485,6 +485,48 @@ def test_charge_moves_actually_charge_and_agree(tmp_path: Path) -> None:
 
 
 @needs_rust
+def test_rampage_moves_lock_in_and_confuse_themselves_out(tmp_path: Path) -> None:
+    """Outrage and its three relatives: the lock, the free turns, and the confusion on the way out.
+
+    None of `LOCKED_MOVE` taking hold is ever logged — that is the Python's own behaviour, matched
+    on purpose — so what this can actually assert firing is the fatigue confusion at the end of the
+    run, which the residual only reaches once the lock has counted all the way down.
+    """
+    pool = ["Outrage", "Petal Dance", "Raging Fury", "Thrash", "Tackle"]
+
+    def team(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species=rng.choice(PLAIN_SPECIES),
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool), "Tackle"],
+            )
+            for index in range(3)
+        ]
+
+    fatigue = 0
+    for seed in range(30):
+        rng = random.Random(22000 + seed)
+        teams = (team(rng), team(rng))
+        scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=60)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        fatigue += sum(
+            entry["type"] == "VolatileInflicted" and entry["volatile"] == "CONFUSION"
+            for turn in expected
+            for entry in turn["events"]
+        )
+
+    assert fatigue > 0, "no rampage ever ran its course and confused its user"
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

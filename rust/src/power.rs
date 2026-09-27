@@ -515,6 +515,11 @@ fn every_other_move_used(attacker: &Pokemon, db: &Database) -> bool {
     })
 }
 
+/// `ROLLING_MOVES`: still refused as damaging moves (their power is rolled, not listed), but named
+/// here so the rampage residual can tell "my lock just ended, was it a rampage or a roll" without
+/// waiting for either to be ported. A rampage confuses its user on the way out; a roll does not.
+pub const ROLLING_MOVES: [&str; 2] = ["Rollout", "Ice Ball"];
+
 /// The 17 charge (two-turn) moves: `move.charge` in `models/moves.py`. All of them are ported —
 /// this is the whole set, not a subset — so `unsupported` reads this rather than refusing every
 /// charging move outright.

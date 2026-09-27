@@ -114,6 +114,14 @@ pub struct Pokemon {
     /// progress; this says which move it is, so the same name repeated across several slots (a
     /// short moveset padded by repetition) still resolves the one that was actually announced.
     pub charging_slot: Option<usize>,
+    /// The slot a rampage (Outrage and the rest) or a Rollout/Ice Ball run has committed to, the
+    /// same shape as `charging_slot` and for the same reason. `LOCKED_MOVE` in `volatiles` says
+    /// which state it is; this says which move.
+    pub locked_slot: Option<usize>,
+    /// The slot most recently used, whatever it resolved to (Struggle included, since the Python
+    /// records it after the substitution). Encore and Disable both read this to pick their target;
+    /// a rampage sets `locked_slot` from it directly rather than reading it again later.
+    pub last_move_slot: Option<usize>,
 }
 
 pub const STAGE_NAMES: [&str; 7] = [
@@ -240,6 +248,8 @@ impl Pokemon {
             last_hit_category: None,
             protect_streak: 0,
             charging_slot: None,
+            locked_slot: None,
+            last_move_slot: None,
         })
     }
 
