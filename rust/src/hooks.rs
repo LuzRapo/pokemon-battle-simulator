@@ -1,5 +1,5 @@
-//! `ON_SWITCH_IN`, `ON_AFTER_HIT` and `ON_BEFORE_MOVE`: the events where abilities and items *do*
-//! something rather than adjust a number.
+//! `ON_SWITCH_IN`, `ON_AFTER_HIT`, `ON_BEFORE_MOVE` and `ON_FAINT`: the events where abilities and
+//! items *do* something rather than adjust a number.
 //!
 //! Separate from `abilities.rs` because the shape of the problem is different. A damage-calc
 //! handler reads the board and pushes a modifier; these ones deal damage, inflict statuses, move
@@ -136,6 +136,48 @@ fn absorb_boost(state: &mut State, side: usize, stat: &str, amount: i32, source:
         });
     }
     true
+}
+
+/// Abilities implemented here, at `ON_FAINT` — emitted from exactly one place in the Python
+/// (`_apply_damage`, right after the defender's own `Fainted` line, before the Destiny Bond
+/// retaliation check and before recoil/drain), not from every place a Pokemon can reach zero HP.
+/// Residual damage, recoil, confusion and fixed-damage moves never reach it, so a KO from any of
+/// those does not trigger these — matched here by calling this from the same single site, not from
+/// wherever `fainted()` happens to be checked.
+pub const PORTED_ON_FAINT_ABILITIES: [&str; 3] = ["BEAST_BOOST", "MOXIE", "SOUL_HEART"];
+
+/// `attacker_side` is the Pokemon whose hit just fainted its target — `context.actor is pokemon` in
+/// the Python, which is why this reads the *attacker's* ability, not the one that just fainted.
+pub fn ability_on_faint(state: &mut State, attacker_side: usize, log: &mut Log) {
+    if state.sides[attacker_side].active_pokemon().fainted() {
+        return;
+    }
+    match state.sides[attacker_side].active_pokemon().ability.as_str() {
+        "MOXIE" => {
+            absorb_boost(state, attacker_side, "ATTACK", 1, "moxie", log);
+        }
+        "SOUL_HEART" => {
+            absorb_boost(state, attacker_side, "SP_ATTACK", 1, "soul_heart", log);
+        }
+        "BEAST_BOOST" => {
+            let totals = state.sides[attacker_side].active_pokemon().totals;
+            // `max(_BEAST_BOOST_STATS, key=...)`: Python's `max` keeps the first element seen on a
+            // tie, so this has to as well — a plain `Iterator::max_by_key` would keep the last.
+            let candidates =
+                [("ATTACK", totals.attack), ("DEFENCE", totals.defence), ("SP_ATTACK", totals.sp_attack), (
+                    "SP_DEFENCE",
+                    totals.sp_defence,
+                ), ("SPEED", totals.speed)];
+            let mut best = candidates[0];
+            for candidate in &candidates[1..] {
+                if candidate.1 > best.1 {
+                    best = *candidate;
+                }
+            }
+            absorb_boost(state, attacker_side, best.0, 1, "beast_boost", log);
+        }
+        _ => {}
+    }
 }
 
 /// Abilities implemented here, on top of the damage-calc ones.

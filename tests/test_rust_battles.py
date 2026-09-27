@@ -1839,6 +1839,71 @@ def test_levitate_cancels_ground_moves_and_soundproof_blocks_sound(tmp_path: Pat
 
 
 @needs_rust
+def test_moxie_beast_boost_and_soul_heart_boost_after_a_ko(tmp_path: Path) -> None:
+    """Moxie, Beast Boost and Soul Heart all bind `ON_FAINT` -- emitted from exactly one place in
+    the Python (`_apply_damage`, right after the defender's own `Fainted` line, before Destiny
+    Bond's retaliation and before recoil/drain), so each fires only when *this* Pokemon's own
+    ordinary damaging hit is what did the fainting. A level 1 target dies to anything, so the KO
+    itself is deterministic and needs no seed.
+
+    Beast Boost boosts whichever of its five stats is highest, not always Attack -- Golem's Defence
+    (130) outranks its Attack (120), so a Golem is the only way to tell "picks the right stat" apart
+    from "always boosts Attack".
+
+    Vacuity-checked directly: renaming each ability's own arm in `hooks::ability_on_faint` turned
+    its own case into a plain digest mismatch -- this engine's `MoveFailed`-shaped silence (no boost
+    logged) where Python still raises the stat.
+    """
+    weak_target = PokemonSpec(
+        species="Machamp", nickname="B0", level=1, ability=Ability.NONE, item=Item.NONE,
+        nature=Nature.HARDY, moves=["Splash"],
+    )
+    cases = [
+        (Ability.MOXIE, "Tauros", "Tackle", "ATTACK", "moxie"),
+        (Ability.SOUL_HEART, "Tauros", "Tackle", "SP_ATTACK", "soul_heart"),
+        (Ability.BEAST_BOOST, "Golem", "Earthquake", "DEFENCE", "beast_boost"),
+    ]
+    for ability, species, move, stat, source in cases:
+        attacker = [_mon(species, "A0", ability, [move])]
+        scenario, expected = record((attacker, [weak_target]), _chooser(random.Random(0)), seed=0, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"{ability} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"{ability}"
+        events = expected[0]["events"]
+        assert any(e["type"] == "Fainted" and e["side"] == 1 for e in events), f"{ability}: never fainted\n{events}"
+        boosts = [e for e in events if e["type"] == "StatStageChanged" and e["source"] == source]
+        assert boosts and boosts[0]["stat"] == stat, f"{ability}: never boosted {stat} via {source}\n{events}"
+
+
+@needs_rust
+def test_ko_boosting_abilities_dont_fire_from_a_fixed_damage_faint(tmp_path: Path) -> None:
+    """`ON_FAINT` is not "whenever a Pokemon reaches zero HP" -- it is one specific line inside
+    `_apply_damage`, the ordinary variable/listed-power path. `_apply_fixed_damage` (Seismic Toss's
+    own path) has no such emit, so a fixed-damage KO must not raise Moxie's Attack even though the
+    target is just as dead. Same setup as the test above with only the move swapped, which is what
+    makes the missing boost meaningful rather than assumed.
+
+    Vacuity-checked directly: adding a second call to `hooks::ability_on_faint` from
+    `apply_fixed_damage`'s own fainting check -- the natural mistake this hook invites, matching the
+    port plan's own now-corrected claim that it should fire "at every existing `fainted()` check
+    site" -- turned this into a digest mismatch: this engine's own `StatStageChanged` where Python's
+    fixed-damage path has nothing to trigger it.
+    """
+    weak_target = PokemonSpec(
+        species="Machamp", nickname="B0", level=1, ability=Ability.NONE, item=Item.NONE,
+        nature=Nature.HARDY, moves=["Splash"],
+    )
+    attacker = [_mon("Tauros", "A0", Ability.MOXIE, ["Seismic Toss"])]
+    scenario, expected = record((attacker, [weak_target]), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "Fainted" and e["side"] == 1 for e in events), events
+    assert not any(e["type"] == "StatStageChanged" for e in events), events
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

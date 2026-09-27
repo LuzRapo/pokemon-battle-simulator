@@ -17,13 +17,13 @@ this doc; per invariant 2 the batch now belongs on the "done" side.
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 156 | 220 (71%) |
+| abilities | 159 | 220 (72%) |
 | items | 33 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
 The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
 a release build for this update:
-`{"abilities":{"live":220,"ported":156},"items":{"live":193,"ported":33},"moves":{"playable":843,
+`{"abilities":{"live":220,"ported":159},"items":{"live":193,"ported":33},"moves":{"playable":843,
 "refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
 row above. The stale code comment at `rust/src/turn.rs:318` ("220 abilities and 110 items are
 live") has been corrected to 193 for items.
@@ -438,14 +438,40 @@ validation suite and three differential sweeps: 3000 status-slice (2952/3000 agr
 same documented Future Sight limit, 0 diverged), 2000 plain-slice (2000/2000, 0 diverged), and the
 5000-battle plain-slice re-check above. 156/220 abilities now.
 
-The remaining 64, grouped and roughly ordered by what unblocks the most:
+**Also done: section 6's `ON_FAINT` hook, and all three abilities it unblocks.** A fresh read of the
+Python turned up a correction to this doc's own earlier claim (same pattern as Water Bubble,
+Synchronize and Magic Bounce above): `ON_FAINT` is not emitted "at every existing `fainted()` check
+site" — it is emitted from exactly *one* line in the whole Python, inside `_apply_damage`'s ordinary
+variable/listed-power path, right after the defender's own `Fainted` log line and before Destiny
+Bond's retaliation or recoil/drain. Residual damage, recoil, confusion self-hits and fixed-damage
+moves (`_apply_fixed_damage`, Seismic Toss's own path) never reach it, so a KO from any of those must
+not trigger these abilities either. `hooks::ability_on_faint` is called from that one site in
+`apply_damage` and nowhere else. Ported: Moxie (+1 Attack), Beast Boost (+1 to whichever of its five
+stats is highest — not always Attack, and matched to Python's `max()` tie-break, which keeps the
+*first* equal element rather than the last one `Iterator::max_by_key` would), and Soul Heart (+1 Sp.
+Atk) — a third name the doc's own list had missed; it binds the identical `_bind_ko_boost` helper
+Moxie does; As One (Glastrier) and Chilling Neigh use the same helper too but stay with the Formes
+cluster below, since both are locked to a fusion forme this port hasn't built the primitive for yet.
+
+Covered by `test_moxie_beast_boost_and_soul_heart_boost_after_a_ko` and, for the scope correctness
+that is the entire point of this hook, `test_ko_boosting_abilities_dont_fire_from_a_fixed_damage_faint`
+— a Seismic Toss OHKO that must produce no boost at all, run as its own dedicated regression rather
+than left to a sweep to notice by accident. Vacuity-checked directly: each of the three abilities'
+own match arm renamed in turn (three checks, each a plain digest mismatch — this engine's own
+`StatStageChanged` where Python's silence has nothing to compare it to), and, for the scope check
+itself, adding a second call to `ability_on_faint` from `apply_fixed_damage`'s own fainting branch —
+the exact mistake this doc's superseded claim would have produced — which turned the regression test
+red immediately. Confirmed with the full validation suite and two differential sweeps: 3000
+status-slice (2956/3000 agreed, 44 refused, the same Future Sight limit, 0 diverged) and 5000
+plain-slice (5000/5000, 0 diverged). 159/220 abilities now.
+
+The remaining 61, grouped and roughly ordered by what unblocks the most:
 
 - **Dry Skin**: the one name left over from the `ON_BEFORE_MOVE` cluster above — its own absorb half
   would be a one-line addition to `hooks::ability_before_move` (`"DRY_SKIN" if move_type ==
   "WATER"`, heal-style like Volt Absorb), but the Fire-vulnerability multiplier
   (`ON_DAMAGE_CALC`, a one-liner in `abilities::handle`) and the weather-driven heal/chip
   (`ON_TURN_END`, not built yet — see below) both have to land in the same pass, per invariant 2.
-- **Unblocked by `ON_FAINT` (2)**: Moxie, Beast Boost.
 - **Unblocked by `ON_SWITCH_OUT` (2)**: Regenerator, Natural Cure.
 - **Unblocked by `ON_TURN_START` (2)**: Protosynthesis, Quark Drive.
 - **No new hook needed, one-liners at existing sites (~10)**: Sheer Force, Solar Power, Thermal
@@ -527,9 +553,11 @@ Build in this order — each one sized to unlock the next-biggest ability/item c
    at all — a fresh read placed its bounce check at a separate, earlier site in `moves.py` (before
    the Protect check, not alongside the immunity gate), a correction to this doc's own earlier
    claim caught the same way Water Bubble's and Synchronize's were.
-2. **`ON_FAINT`** — called at every existing `fainted()` check site in `turn.rs`/`field.rs`/
-   `damage.rs` (there are several; a single shared call is fine as long as every site calls it).
-   Unblocks Moxie, Beast Boost, Battle Bond's post-KO half.
+2. **`ON_FAINT` — done.** A correction to this doc's own earlier claim: the Python emits it from
+   exactly *one* site, not "every existing `fainted()` check site" — see its write-up in section 4.
+   Unblocked Moxie, Beast Boost and Soul Heart (a third name this doc's list had missed). Battle
+   Bond's post-KO half stays with the Formes cluster, since the forme-swap it triggers needs the
+   primitive section 7 hasn't built yet.
 3. **`ON_SWITCH_OUT`** — called from `turn::switch_out` (`turn.rs:673`), symmetric to the existing
    `on_switch_in`. Unblocks Regenerator, Natural Cure, Zero to Hero.
 4. **`ON_TURN_START`** — called once at the top of the turn, before actions resolve. Unblocks
@@ -570,12 +598,13 @@ hand-mapped signature crystals.
 
 ## Rough sizing
 
-Sections 1–3 are done. Section 6's first hook, `ON_BEFORE_MOVE`, is done and has already unblocked
-its cluster (eleven of its twelve abilities — see section 4). The remaining four hooks
-(`ON_FAINT`, `ON_SWITCH_OUT`, `ON_TURN_START`, `ON_TURN_END`) are still worth building ahead of
-resuming section 4 at large, for the same reason the first one was: small on their own, each turns
-a blocked cluster into one-liners. Section 4 is the largest remaining block at 64 abilities but most
-of it is one-liners once the rest of section 6 lands — call it a session and a half from here.
+Sections 1–3 are done. Section 6's first two hooks, `ON_BEFORE_MOVE` and `ON_FAINT`, are done and
+have already unblocked their clusters (eleven of `ON_BEFORE_MOVE`'s twelve abilities, all three of
+`ON_FAINT`'s — see section 4). The remaining three hooks (`ON_SWITCH_OUT`, `ON_TURN_START`,
+`ON_TURN_END`) are still worth building ahead of resuming section 4 at large, for the same reason
+the first two were: small on their own, each turns a blocked cluster into one-liners. Section 4 is
+the largest remaining block at 61 abilities but most of it is one-liners once the rest of section 6
+lands — call it a session from here.
 Section 5 (160 items) is one, mostly following section 4's abilities in to reuse their plumbing
 (Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega stones).
 Section 7 (Z-moves/megas/formes) is a scope question before it's a sizing question — check bot
@@ -585,7 +614,8 @@ up.
 The tail is not uniform: absorption abilities and formes are each a small architecture change, and
 the butler's revival mechanic has no reference outside this codebase.
 
-**Immediate next step for whoever picks this up**: `ON_BEFORE_MOVE` is done, along with eleven of
-the twelve abilities it unblocked (Dry Skin held back — see its own note in section 4). Build the
-next hook, `ON_FAINT`, which unblocks Moxie and Beast Boost — small, and the same "one hook first"
-logic applies for the same reason it did last time.
+**Immediate next step for whoever picks this up**: `ON_BEFORE_MOVE` and `ON_FAINT` are both done,
+along with everything they unblocked (Dry Skin held back from the first — see its own note in
+section 4). Build the next hook, `ON_SWITCH_OUT`, called from `turn::switch_out` (`turn.rs:673`)
+symmetric to the existing `on_switch_in` — it unblocks Regenerator and Natural Cure, and the same
+"one hook first" logic applies for the same reason it did the last two times.

@@ -323,6 +323,7 @@ pub fn ported_abilities() -> &'static std::collections::HashSet<&'static str> {
         let mut all: std::collections::HashSet<&str> = crate::abilities::PORTED.into_iter().collect();
         all.extend(crate::hooks::PORTED_ABILITIES);
         all.extend(crate::hooks::PORTED_BEFORE_MOVE_ABILITIES);
+        all.extend(crate::hooks::PORTED_ON_FAINT_ABILITIES);
         all.extend(crate::inline::PORTED_ABILITIES);
         all.extend(crate::hooks::PORTED_RESIDUAL_ABILITIES);
         all.extend(crate::power::PORTED_ATE_ABILITIES);
@@ -2515,6 +2516,9 @@ fn apply_damage(
             side: other as i32,
             pokemon: state.sides[other].active_pokemon().nickname.clone(),
         });
+        // `ON_FAINT`: emitted right here and nowhere else, matching the one site the Python emits
+        // it from — before Destiny Bond's retaliation, before recoil/drain.
+        crate::hooks::ability_on_faint(state, side, log);
         // Destiny Bond: the fallen defender takes its attacker down too, unless that attacker is
         // already gone (a Struggle recoil, say, that finished itself off on the very same hit).
         if state.sides[other].active_pokemon().volatiles.contains_key("DESTINY_BOND")
