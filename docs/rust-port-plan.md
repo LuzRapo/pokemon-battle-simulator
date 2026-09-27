@@ -5,17 +5,25 @@ then replace the Python engine.
 
 ## Where it stands
 
-Branch `feature/vectorised-engine`. Sections 1 and 2 below (charges and volatiles) are both done.
+Branch `feature/vectorised-engine`. Sections 1 and 2 (charges and volatiles) are both done.
+Section 3 (the remaining coded moves) is most of the way through — 19 of roughly 26 remaining
+`CodedMoveKind`s are ported; see its own status below for what is left.
 
 | | done | total |
 |---|---|---|
-| moves | 804 | 843 (95%) |
+| moves | 831 | 843 (99%) |
 | abilities | 127 | 220 (58%) |
-| items | 33 | 110 (30%) |
+| items | 33 | 193 — see note |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
-The 39 moves still refused are 4 that do something to their user or the field (pseudo-weather
-rooms) and 35 special-cased by name (the remaining coded moves, section 3).
+The items total jumped from 110 to 193 mid-section: 96 Mega Stones (and Primal orbs, Rusted
+Sword/Shield) turned out to have real behaviour — `_resolve_mega_evolution` — that the coverage
+export had never been able to see, for reasons worth reading in section 3's own notes below. They
+are correctly refused now rather than silently wrong, which is why the *ported* item count did not
+move even though total climbed by 83.
+
+The 12 moves still refused are 4 that do something to their user or the field (pseudo-weather
+rooms) and roughly 8 special-cased by name (what's left of section 3, itemised there).
 
 Several thousand randomly generated battles agree turn for turn, event for event, draw for draw,
 including a pool built specifically to force charging on both the semi-invulnerable and the
@@ -161,15 +169,51 @@ Destiny Bond's retaliation, the `calculate_hit` bypass site, the per-hit substit
 status/stage substitute block, and Intimidate-vs-Substitute) each turned somewhere between 105/300
 and 296/300 of a targeted batch red when disabled.
 
-### 3. The remaining coded moves — ~40
+### 3. The remaining coded moves — most of it done
 
-Each needs its Python special case read individually. The mechanical ones are gone; what is left is
-`Rest`, `Trick`/`Switcheroo`, `Knock Off`'s item removal, `Pain Split`, `Perish Song`, `Haze`,
-`Belly Drum`, `Curse`, `Strength Sap`, `Court Change`, `Tidy Up`, `Wish`, `Healing Wish`,
-`Revival Blessing`, `Transform`, `Role Play`/`Skill Swap`/`Entrainment`/`Simple Beam`/`Worry Seed`
-(ability swapping), `Future Sight`/`Doom Desire` (delayed damage), `Shed Tail`, `Sleep Talk`,
-`Roost`, `King's Shield`, the four `WEATHER_HEAL` moves, the party-cure pair, and the four
-pseudo-weather rooms (`Trick Room` also inverts the speed sort).
+Each needed its Python special case read individually; there was no shortcut for any of them.
+**Done, across three commits:**
+
+- `Sleep Talk` (a real redirect: computed by the caller from the *chosen* slot before any other
+  redirect, `power::sleep_talk_choice` drawing from the padded four-slot moveset — Python pads
+  `known_moves()` identically, so no new state was needed), `Roost` (`Pokemon::battle_types()`,
+  needed at every effectiveness call site a roosted defender could reach — the immunity gate,
+  `calculate_hit`'s own independent check, `is_grounded`, and half a dozen ability/item
+  super-effective reads), `King's Shield` (a pure false positive — Aegislash's forme swap, gated on
+  an unported ability, so nothing behind the name needed porting).
+- Twelve `CodedMoveKind`s dispatched by `apply_coded` on the exported kind name (several moves
+  share one — the four `WEATHER_HEAL` moves, the two `CURE_PARTY` ones): `REST`, `WEATHER_HEAL`,
+  `PAIN_SPLIT`, `STRENGTH_SAP`, `BELLY_DRUM`, `HAZE`, `COURT_CHANGE`, `CURSE`, `TIDY_UP`,
+  `PERISH_SONG`, `CURE_SELF`, `CURE_PARTY`. Curse's target takes a permanent quarter-HP chip every
+  turn (new `ResidualOrder.CURSE` slot, between `SALT_CURE` and `BAD_DREAMS`); Perish Song's
+  four-turn silent countdown ends in a mutual faint rather than a cleared status.
+- Seven more: `KNOCK_OFF_ITEM`, `TRICK`, `SKILL_SWAP`, `ROLE_PLAY`, `ENTRAINMENT`, `WORRY_SEED`,
+  `SIMPLE_BEAM` — the item- and ability-swap family. Needed `Database::is_fused_to` (a Mega Stone,
+  Primal orb, Rusted Sword/Shield or Z-Crystal cannot be knocked off or traded away) and turned up
+  a real, previously-invisible gap in the process, worth its own paragraph:
+
+  **Mega Evolution was never refused, and was never played either.** `_resolve_mega_evolution`
+  auto-Mega-Evolves a Pokemon holding its matching stone before a single move is ordered each turn
+  — it changes the active Pokemon's stats (hence turn order), ability, and is permanent for the
+  rest of the battle. Nothing in this port has ever touched that mechanic, and nothing refused a
+  Pokemon holding a Mega Stone either, because `live_behaviour()`'s coverage sweep can see a literal
+  `Item.GARCHOMPITE` but not `item_from_showdown(species.required_item)` — the runtime lookup
+  `_forme_by_base_and_item()` is actually built from. Ninety-six items were invisible to the sweep
+  this way. Fixed at the export layer: `live_behaviour()` now unions in `formes.mega_stones()`
+  directly (`battle_sim/export_data.py`), and a separate, tiny table
+  (`_forme_by_base_and_move`, exported as `move_gated_formes` — one entry, Mega Rayquaza gated on
+  knowing Dragon Ascent with no item at all) is checked in `unsupported_pokemon` on its own, since
+  it is not an item fact. `Species.fused_item` is a new exported field too — the Showdown display
+  name (`"Charizardite X"`) resolved to this engine's own item name once, in Python, rather than
+  reimplemented as a second normalisation table in Rust.
+
+**Left — roughly 8 moves:** `Wish`, `Healing Wish`/`Lunar Dance`, `Revival Blessing`, `Shed Tail`
+(all need a `Side`-level pending-effect field this engine does not have yet: `wish_turns`/
+`wish_pending`, `healing_wish_pending`, and `pending_substitute` respectively), `Future Sight`/
+`Doom Desire` (delayed damage — needs `Side.future_sight_turns`/`_attacker`/`_move` and a residual
+landing two turns later), `Transform` (a full stat/moveset/forme copy — the largest single one
+left), and the four pseudo-weather rooms (`Trick Room` also inverts the speed sort at ordering
+time, so it touches `order_actions` too, not just a residual tick).
 
 ### 4. Abilities — 93 left
 

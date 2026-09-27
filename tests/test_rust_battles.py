@@ -883,6 +883,67 @@ def test_the_first_batch_of_coded_moves_fire_and_agree(tmp_path: Path) -> None:
 
 
 @needs_rust
+def test_item_and_ability_manipulation_moves_fire_and_agree(tmp_path: Path) -> None:
+    """Knock Off's item removal, Trick, Skill Swap, Entrainment and Worry Seed.
+
+    A mega stone (or Primal orb, Rusted Sword/Shield, or Z-Crystal) held by a Pokemon that could
+    use one is a real, separate regression this batch's own testing turned up: `is_fused_to`
+    refuses to remove or trade one away, but a Rust battle carrying one at all used to be silently
+    wrong regardless — Python auto-Mega-Evolves it before a single move is ordered, a mechanic this
+    port has never touched, and nothing marked the item "live" because the Python builds its
+    forme-by-item table from a runtime `item_from_showdown` lookup the AST sweep that finds live
+    items cannot see through. `live_behaviour()` now unions in `formes.mega_stones()` directly, and
+    a Pokemon whose species+moveset alone would trigger Mega Rayquaza (no item needed) is refused by
+    its own separate check. Vacuity-checked directly: disabling the Z-Crystal half of
+    `is_fused_to` turned 300/300 of a dedicated matchup red.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.LEFTOVERS,
+            nature=Nature.HARDY, moves=["Knock Off", "Trick", "Skill Swap", "Role Play"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.SITRUS_BERRY,
+            nature=Nature.HARDY, moves=["Knock Off", "Trick", "Entrainment", "Worry Seed"],
+        )
+    ]
+
+    seen: Counter[str] = Counter()
+    for seed in range(40):
+        rng = random.Random(31000 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=40)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            for e in turn["events"]:
+                if e["type"] in ("ItemRemoved", "ItemsSwapped", "AbilitiesSwapped", "AbilityChanged"):
+                    seen[e["type"]] += 1
+
+    for wanted in ("ItemRemoved", "ItemsSwapped", "AbilitiesSwapped", "AbilityChanged"):
+        assert seen[wanted] > 0, f"{wanted} never happened across 40 battles: {dict(seen)}"
+
+
+@needs_rust
+def test_a_mega_stone_holder_is_refused_not_played_wrong(tmp_path: Path) -> None:
+    """The regression `test_item_and_ability_manipulation_moves_fire_and_agree` names: a Pokemon
+    holding a Mega Stone must be refused, not silently kept in its base forme all battle."""
+    team = [
+        PokemonSpec(
+            species="Garchomp", nickname="A0", level=50, ability=Ability.NONE, item=Item.GARCHOMPITE,
+            nature=Nature.HARDY, moves=["Tackle"],
+        )
+    ]
+    rng = random.Random(32000)
+    scenario, _ = record((team, team), _chooser(rng), seed=1, max_turns=4)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert isinstance(theirs, str) and "GARCHOMPITE" in theirs, theirs
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

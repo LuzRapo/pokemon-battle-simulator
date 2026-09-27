@@ -26,6 +26,15 @@ pub struct Species {
     /// Eviolite asks this and nothing else does yet.
     #[serde(default)]
     pub fully_evolved: bool,
+    /// The species a forme's mega stone (or Primal orb, or a Rusted Sword/Shield) reaches from —
+    /// `None` for a species that is not a forme reached that way. Read by `is_fused_to`.
+    #[serde(default)]
+    pub base_species: Option<String>,
+    /// The item that *is* this forme rather than something it merely holds — already resolved to
+    /// this engine's own item name by the export, not Showdown's display name. Read by
+    /// `is_fused_to`, which asks it of every forme sharing a base species, not just this one.
+    #[serde(default)]
+    pub fused_item: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -207,9 +216,23 @@ struct RulesFile {
     coded_moves: Vec<String>,
     live_abilities: Vec<String>,
     live_items: Vec<String>,
+    #[serde(default)]
+    move_gated_formes: Vec<MoveGatedForme>,
     types: Vec<String>,
     type_chart: HashMap<String, HashMap<String, f64>>,
     natures: HashMap<String, NatureEffect>,
+}
+
+/// `_forme_by_base_and_move`: a species that Mega Evolves (or Primal Reverts) just by knowing a
+/// particular move, no item at all. One entry in this dex — Mega Rayquaza, gated on Dragon Ascent
+/// — but read from the export rather than hardcoded, since the whole reason it exists as a table
+/// on the Python side is that a hand-kept "it's just Rayquaza" note is exactly the kind of thing
+/// that falls behind the day a second entry is added.
+#[derive(Debug, Deserialize)]
+pub struct MoveGatedForme {
+    pub base_species: String,
+    #[serde(rename = "move")]
+    pub move_name: String,
 }
 
 /// Every table the engine needs, loaded once.
@@ -225,6 +248,7 @@ pub struct Database {
     /// implemented makes a scenario unplayable rather than quietly inert.
     pub live_abilities: std::collections::HashSet<String>,
     pub live_items: std::collections::HashSet<String>,
+    pub move_gated_formes: Vec<MoveGatedForme>,
     pub types: Vec<String>,
     pub type_chart: HashMap<String, HashMap<String, f64>>,
     pub natures: HashMap<String, NatureEffect>,
@@ -247,6 +271,7 @@ impl Database {
             coded_moves: rules.coded_moves.into_iter().collect(),
             live_abilities: rules.live_abilities.into_iter().collect(),
             live_items: rules.live_items.into_iter().collect(),
+            move_gated_formes: rules.move_gated_formes,
             types: rules.types,
             type_chart: rules.type_chart,
             natures: rules.natures,
@@ -266,6 +291,22 @@ impl Database {
         self.species
             .get(name)
             .or_else(|| self.species.get(&Self::normalize_id(name)))
+    }
+
+    /// `formes.is_fused_to`, minus the two special cases (Arceus's plates, Giratina's two names
+    /// for one orb) that never reach here: every item either names is a *live* one, so a Pokemon
+    /// holding it is already refused before this is asked, on either engine. Z-Crystals are
+    /// refused on any holder — checked by name, `_Z`, which covers this dex's real ones and its
+    /// three deliberately invented ones (Absolite Z, Garchompite Z, Lucarionite Z) alike.
+    pub fn is_fused_to(&self, species_name: &str, item: &str) -> bool {
+        if item.ends_with("_Z") {
+            return true;
+        }
+        let Some(entry) = self.species_named(species_name) else { return false };
+        let base = entry.base_species.as_deref().unwrap_or(species_name);
+        self.species
+            .values()
+            .any(|s| s.base_species.as_deref().unwrap_or(s.name.as_str()) == base && s.fused_item.as_deref() == Some(item))
     }
 
     pub fn move_named(&self, name: &str) -> Option<&Move> {

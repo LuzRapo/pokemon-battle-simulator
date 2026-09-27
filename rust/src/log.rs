@@ -68,6 +68,34 @@ pub enum Event {
     AllStatsReset,
     /// Court Change: hazards, screens and Tailwind traded between the two sides.
     CourtChanged,
+    /// Knock Off taking a held item.
+    ItemRemoved {
+        side: i32,
+        pokemon: String,
+        item: String,
+    },
+    /// Trick / Switcheroo, logged once for the attacker even though both items moved.
+    ItemsSwapped {
+        side: i32,
+        pokemon: String,
+    },
+    /// Skill Swap, logged once for the attacker even though both abilities moved.
+    AbilitiesSwapped {
+        side: i32,
+        pokemon: String,
+    },
+    /// Role Play, Entrainment, Worry Seed, Simple Beam: this Pokemon now has a different ability.
+    AbilityChanged {
+        side: i32,
+        pokemon: String,
+        ability: String,
+    },
+    /// An ability that refused to be moved, copied, replaced or taken away.
+    AbilityUnchanged {
+        side: i32,
+        pokemon: String,
+        ability: String,
+    },
     /// The move resolved but nothing came of it — every effect it had was skipped. The Python adds
     /// this by checking whether the log grew, so it is a statement about the log rather than about
     /// the move, and it is ported the same way.

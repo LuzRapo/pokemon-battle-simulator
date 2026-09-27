@@ -165,7 +165,7 @@ fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'
 /// Deliberately short and explicit. That net is why silent wrong answers have been rare; a move
 /// only comes off it once its Python behaviour has been read, ported, and agreed about across a
 /// sweep.
-pub const PORTED_CODED_MOVES: [&str; 4] = [
+pub const PORTED_CODED_MOVES: [&str; 5] = [
     "Struggle",
     // Sleep Talk (the redirect at the top of `resolve_move` plus `power::sleep_talk_choice`) and
     // Roost (the `ROOSTED` volatile set in `apply_heal`) both have real, ported behaviour behind
@@ -177,6 +177,10 @@ pub const PORTED_CODED_MOVES: [&str; 4] = [
     "Sleep Talk",
     "Roost",
     "King's Shield",
+    // Trick's only other mention anywhere is a turn-order special case for the butler's own
+    // ability (eating whatever is about to be Tricked onto him *before* it lands) — Nine Lives is
+    // still refused, so nobody can ever actually take that branch. Ordinary, like King's Shield.
+    "Trick",
 ];
 
 /// Every coded move this engine has learned: Struggle, plus the rules in `power.rs`.
@@ -233,7 +237,7 @@ pub const PORTED_VOLATILES: [&str; 14] = [
 /// `CodedMoveKind` variants `apply_coded` has learned. Named by the exported enum member, which is
 /// what `variant` carries — not by move name, since several moves share a kind (the four
 /// `WEATHER_HEAL` moves, the two `CURE_PARTY` ones).
-pub const PORTED_CODED_KINDS: [&str; 12] = [
+pub const PORTED_CODED_KINDS: [&str; 19] = [
     "REST",
     "WEATHER_HEAL",
     "PAIN_SPLIT",
@@ -246,6 +250,13 @@ pub const PORTED_CODED_KINDS: [&str; 12] = [
     "PERISH_SONG",
     "CURE_SELF",
     "CURE_PARTY",
+    "KNOCK_OFF_ITEM",
+    "TRICK",
+    "SKILL_SWAP",
+    "ROLE_PLAY",
+    "ENTRAINMENT",
+    "WORRY_SEED",
+    "SIMPLE_BEAM",
 ];
 
 /// Everything this engine has implemented, gathered from the modules that implement it so a name
@@ -288,6 +299,18 @@ pub fn unsupported_pokemon(pokemon: &Pokemon, db: &Database) -> Option<String> {
     }
     if db.live_items.contains(&pokemon.item) && !ported_items().contains(pokemon.item.as_str()) {
         return Some(format!("{} is holding {}, which is not ported", pokemon.nickname, pokemon.item));
+    }
+    // `_forme_by_base_and_move`: Mega Rayquaza needs no item at all, just Dragon Ascent in its
+    // moveset — so this cannot be caught by the item check above, live or otherwise. Mega
+    // Evolution itself is still unported, so a Pokemon that would trigger it is refused rather
+    // than quietly staying in its base forme all battle.
+    let key = Database::normalize_id(&pokemon.species_name);
+    if db
+        .move_gated_formes
+        .iter()
+        .any(|g| g.base_species == key && pokemon.moves.iter().any(|m| Database::normalize_id(m) == g.move_name))
+    {
+        return Some(format!("{} would Mega Evolve, which is not ported", pokemon.nickname));
     }
     None
 }
@@ -1188,7 +1211,7 @@ fn resolve_move(
                 if !PORTED_CODED_KINDS.contains(&variant.as_str()) {
                     return Err(Refusal::Unported(format!("{variant} is hand-written in the Python engine")));
                 }
-                apply_coded(state, side, variant, behind_substitute, log)?;
+                apply_coded(state, side, variant, behind_substitute, db, log)?;
             }
             Effect::Unmodelled => return Err(Refusal::Unported(format!("{} has an unmodelled effect", the_move.name))),
         }
@@ -1625,13 +1648,13 @@ fn apply_coded(
     side: usize,
     variant: &str,
     behind_substitute: bool,
+    db: &Database,
     log: &mut Log,
 ) -> Result<(), Refusal> {
     // `_SUB_BLOCKED_KINDS`: a substitute blocks these outright, and silently — no log line, which
     // is how this contributes to the empty-log `MoveFailed` exactly like a blocked status effect
-    // does. Only Pain Split and Strength Sap are reachable today; Knock Off's item removal and
-    // Trick share the set but are not ported yet.
-    const SUB_BLOCKED_KINDS: [&str; 2] = ["PAIN_SPLIT", "STRENGTH_SAP"];
+    // does.
+    const SUB_BLOCKED_KINDS: [&str; 4] = ["PAIN_SPLIT", "STRENGTH_SAP", "KNOCK_OFF_ITEM", "TRICK"];
     if behind_substitute && SUB_BLOCKED_KINDS.contains(&variant) {
         return Ok(());
     }
@@ -1694,9 +1717,137 @@ fn apply_coded(
                 }
             }
         }
+        "KNOCK_OFF_ITEM" => knock_off_item(state, side, db, log),
+        "TRICK" => trick(state, side, db, log),
+        "SKILL_SWAP" => skill_swap(state, side, log),
+        "ROLE_PLAY" => {
+            let ability = state.sides[1 - side].active_pokemon().ability.clone();
+            take_ability(state, side, &ability, log);
+        }
+        "ENTRAINMENT" => {
+            let ability = state.sides[side].active_pokemon().ability.clone();
+            take_ability(state, 1 - side, &ability, log);
+        }
+        "WORRY_SEED" => take_ability(state, 1 - side, "INSOMNIA", log),
+        "SIMPLE_BEAM" => take_ability(state, 1 - side, "SIMPLE", log),
         _ => unreachable!("gated by PORTED_CODED_KINDS"),
     }
     Ok(())
+}
+
+/// `_knock_off_item`: refuses silently (no log — contributes to the empty-log `MoveFailed`) with
+/// nothing to take, a fainted target, or an item welded to what the target *is*.
+fn knock_off_item(state: &mut State, side: usize, db: &Database, log: &mut Log) {
+    let other = 1 - side;
+    let defender = state.sides[other].active_pokemon();
+    if defender.fainted() || defender.item == "NONE" || db.is_fused_to(&defender.species_name, &defender.item) {
+        return;
+    }
+    let removed = defender.item.clone();
+    let defender = state.sides[other].active_mut();
+    defender.last_consumed_item = removed.clone();
+    defender.item = "NONE".to_string();
+    defender.item_consumed = true;
+    let nickname = defender.nickname.clone();
+    log.push(Event::ItemRemoved { side: other as i32, pokemon: nickname, item: removed });
+}
+
+/// `_trick`: a trade needs both halves tradeable, so it refuses outright rather than taking the
+/// one side it can — which is what stops it laundering a fused item off a Pokemon Knock Off
+/// cannot touch either.
+fn trick(state: &mut State, side: usize, db: &Database, log: &mut Log) {
+    let other = 1 - side;
+    let attacker = state.sides[side].active_pokemon();
+    let defender = state.sides[other].active_pokemon();
+    if attacker.item == "NONE" && defender.item == "NONE" {
+        log.push(Event::MoveFailed);
+        return;
+    }
+    if db.is_fused_to(&attacker.species_name, &attacker.item) || db.is_fused_to(&defender.species_name, &defender.item)
+    {
+        log.push(Event::MoveFailed);
+        return;
+    }
+    let (a, b) = state.sides.split_at_mut(1);
+    let (mine, theirs) = if side == 0 { (&mut a[0], &mut b[0]) } else { (&mut b[0], &mut a[0]) };
+    std::mem::swap(&mut mine.active_mut().item, &mut theirs.active_mut().item);
+    let nickname = state.sides[side].active_pokemon().nickname.clone();
+    log.push(Event::ItemsSwapped { side: side as i32, pokemon: nickname });
+}
+
+/// `_skill_swap`. Both sides holding an untouchable ability refuse the whole swap rather than
+/// half of it, same reasoning as Trick.
+fn skill_swap(state: &mut State, side: usize, log: &mut Log) {
+    let other = 1 - side;
+    let attacker_ability = state.sides[side].active_pokemon().ability.clone();
+    let defender_ability = state.sides[other].active_pokemon().ability.clone();
+    if attacker_ability == "NONE" && defender_ability == "NONE" {
+        log.push(Event::MoveFailed);
+        return;
+    }
+    if is_untouchable(&attacker_ability) || is_untouchable(&defender_ability) {
+        log.push(Event::MoveFailed);
+        return;
+    }
+    let (a, b) = state.sides.split_at_mut(1);
+    let (mine, theirs) = if side == 0 { (&mut a[0], &mut b[0]) } else { (&mut b[0], &mut a[0]) };
+    std::mem::swap(&mut mine.active_mut().ability, &mut theirs.active_mut().ability);
+    let nickname = state.sides[side].active_pokemon().nickname.clone();
+    log.push(Event::AbilitiesSwapped { side: side as i32, pokemon: nickname });
+}
+
+/// `UNTOUCHABLE_ABILITIES`: refuses to be moved, copied, replaced or taken away. All thirteen are
+/// still refused outright as abilities in their own right, so this can never actually fire today —
+/// kept anyway so Role Play and friends read the same as the Python and need no revisiting once
+/// one of the thirteen lands.
+fn is_untouchable(ability: &str) -> bool {
+    const UNTOUCHABLE_ABILITIES: [&str; 13] = [
+        "NINE_LIVES",
+        "MULTITYPE",
+        "RKS_SYSTEM",
+        "STANCE_CHANGE",
+        "SCHOOLING",
+        "SHIELDS_DOWN",
+        "DISGUISE",
+        "COMATOSE",
+        "BATTLE_BOND",
+        "POWER_CONSTRUCT",
+        "ZEN_MODE",
+        "ILLUSION",
+        "IMPOSTER",
+    ];
+    UNTOUCHABLE_ABILITIES.contains(&ability)
+}
+
+/// `set_ability`: the one place an ability is rewritten, so the one place that checks whether it
+/// may be. Returns whether it actually changed.
+fn set_ability(state: &mut State, target_side: usize, ability: &str, log: &mut Log) -> bool {
+    let target = state.sides[target_side].active_pokemon();
+    if is_untouchable(&target.ability) {
+        let nickname = target.nickname.clone();
+        let stuck = target.ability.clone();
+        log.push(Event::AbilityUnchanged { side: target_side as i32, pokemon: nickname, ability: stuck });
+        return false;
+    }
+    if is_untouchable(ability) || target.ability == ability {
+        return false;
+    }
+    state.sides[target_side].active_mut().ability = ability.to_string();
+    let nickname = state.sides[target_side].active_pokemon().nickname.clone();
+    log.push(Event::AbilityChanged { side: target_side as i32, pokemon: nickname, ability: ability.to_string() });
+    true
+}
+
+/// `_take_ability`: Role Play, Entrainment, Worry Seed and Simple Beam, all the same operation
+/// pointed in different directions. `set_ability` already announces an untouchable refusal; this
+/// only adds `MoveFailed` on top when neither of the two things it could have said got said.
+fn take_ability(state: &mut State, target_side: usize, ability: &str, log: &mut Log) {
+    if ability != "NONE" && set_ability(state, target_side, ability, log) {
+        return;
+    }
+    if !is_untouchable(&state.sides[target_side].active_pokemon().ability) {
+        log.push(Event::MoveFailed);
+    }
 }
 
 fn rest(state: &mut State, side: usize, log: &mut Log) {

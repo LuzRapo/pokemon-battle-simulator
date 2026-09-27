@@ -74,7 +74,19 @@ def move_json(move: Any) -> dict[str, Any]:
 
 
 def species_json(species: Any) -> dict[str, Any]:
-    return {f.name: _plain(getattr(species, f.name)) for f in fields(species)}
+    from battle_sim.teams import item_from_showdown
+
+    out = {f.name: _plain(getattr(species, f.name)) for f in fields(species)}
+    # `required_item` is Showdown's display name ("Charizardite X"); Rust never needs to parse a
+    # display name to get from one to `Item`, since Python already can. `fused_item` is that lookup
+    # done once, here, as the enum member's own name — the same string every other item field in
+    # this export already uses. `is_fused_to`'s two special cases (Arceus's plates, Giratina's two
+    # names for one orb) are not carried over: every item either of them can name is a *live* one —
+    # it has a real binder — so a Pokemon holding it is refused before `is_fused_to` would ever be
+    # asked, on either engine.
+    item = item_from_showdown(species.required_item) if species.required_item else None
+    out["fused_item"] = item.name if item is not None else None
+    return out
 
 
 # The modules that hold rules. Anything here that names a move by hand is doing something to it
@@ -142,8 +154,17 @@ def live_behaviour() -> tuple[list[str], list[str]]:
     with a sweep of the same rule modules `coded_move_names` reads, for the same reason: a
     hand-maintained list falls behind the code, and a sweep cannot.
     """
+    from battle_sim.formes import mega_stones
+
     abilities = {ability.name for ability in ABILITY_BINDERS} | _named_in_rules("Ability")
-    items = {item.name for item in ITEM_BINDERS} | _named_in_rules("Item")
+    # `mega_stones()` union in on its own: `_forme_by_base_and_item()` builds its table by calling
+    # `item_from_showdown(species.required_item)` at runtime, a data-driven lookup the AST sweep
+    # cannot see through the way it sees a literal `Item.GARCHOMPITE`. Ninety-six items reach a real
+    # mechanic this way -- `_resolve_mega_evolution` swaps species, ability and ends up changing turn
+    # order, all before either engine has looked at a single move -- and none of the sweep's other
+    # tables mention them by name anywhere, so without this union a Rust battle would carry a mega
+    # stone in total silence: never refused, never evolving, just wrong for the rest of the battle.
+    items = {item.name for item in ITEM_BINDERS} | _named_in_rules("Item") | {item.name for item in mega_stones()}
     return sorted(abilities), sorted(items)
 
 
@@ -153,11 +174,17 @@ def rules_json() -> dict[str, Any]:
     Exported for the same reason as the rest — a hand-copied type chart in a second language is a
     transcription error waiting to change one matchup by a factor of two, silently, forever.
     """
+    from battle_sim.formes import _forme_by_base_and_move  # noqa: SLF001 -- the whole point is to export it
+
     abilities, items = live_behaviour()
     return {
         "coded_moves": coded_move_names(),
         "live_abilities": abilities,
         "live_items": items,
+        # Mega Rayquaza needs no item at all — gated on knowing Dragon Ascent instead, the one
+        # entry `_forme_by_base_and_move` has ever needed. Not a `live_items` fact, since nothing
+        # here is an item; a Pokemon matching one of these pairs auto-Mega-Evolves regardless.
+        "move_gated_formes": [{"base_species": base, "move": move} for base, move in _forme_by_base_and_move()],
         "types": [t.name for t in Type],
         "type_chart": {
             attacker.name: {defender.name: TYPE_CHART[attacker].get(defender, 1.0) for defender in Type}
