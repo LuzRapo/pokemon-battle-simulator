@@ -1137,6 +1137,163 @@ def test_transform_copies_the_target_and_reverts_on_switch_out(tmp_path: Path) -
 
 
 @needs_rust
+def test_priority_abilities_reorder_moves_and_agree(tmp_path: Path) -> None:
+    """Prankster, Gale Wings and Triage each add to a move's priority; Mycelium Might instead
+    forces a status move to the back of its own bracket. None of the four touch a stat, so a bug
+    here would show up as the wrong side moving first turn one, not a wrong number -- which is
+    what each matchup is built to expose: the ability-carrying side is far slower by base speed
+    alone, so only the ability can put it first.
+
+    Vacuity-checked directly: disabling `priority_bonus`'s three additions turned the first of 20
+    seeds in the very first matchup into a tape divergence rather than a quiet pass, and disabling
+    the Mycelium Might override on its own did the same to the fourth matchup's first seed.
+    """
+
+    def mon(species: str, nickname: str, ability: Ability, moves: list[str]) -> PokemonSpec:
+        return PokemonSpec(
+            species=species, nickname=nickname, level=50, ability=ability, item=Item.NONE,
+            nature=Nature.HARDY, moves=moves,
+        )
+
+    # (team_a, team_b, which side the ability should put first)
+    matchups = [
+        # Prankster: Growl (status, priority 0) outruns Tauros's Tackle from a Pokemon 70 base
+        # speed points slower.
+        ([mon("Rhydon", "A0", Ability.PRANKSTER, ["Growl"])], [mon("Tauros", "B0", Ability.NONE, ["Tackle"])], 0),
+        # Gale Wings: Peck at full HP gets the same +1 -- true on turn one only, since taking a hit
+        # spends the "full HP" condition, which is exactly why only turn one is asserted on.
+        ([mon("Rhydon", "A0", Ability.GALE_WINGS, ["Peck"])], [mon("Tauros", "B0", Ability.NONE, ["Tackle"])], 0),
+        # Triage: Drain Punch's +3 is the largest of the three, and unconditional.
+        ([mon("Rhydon", "A0", Ability.TRIAGE, ["Drain Punch"])], [mon("Tauros", "B0", Ability.NONE, ["Tackle"])], 0),
+        # Mycelium Might: the reverse direction. Tauros is the faster side by 70 base speed points,
+        # but its own status move sorts *last* in the bracket, so Rhydon's ordinary Growl goes
+        # first despite being far slower.
+        ([mon("Tauros", "A0", Ability.MYCELIUM_MIGHT, ["Growl"])], [mon("Rhydon", "B0", Ability.NONE, ["Growl"])], 1),
+    ]
+
+    for index, (team_a, team_b, favoured_side) in enumerate(matchups):
+        favoured_side_moved_first = 0
+        for seed in range(20):
+            rng = random.Random(38000 + index * 100 + seed)
+            scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=5)
+            theirs = _rust_trace(scenario, tmp_path)
+            assert not isinstance(theirs, str), f"matchup {index} seed {seed} was refused: {theirs}"
+            divergence = compare(expected, theirs)
+            assert divergence is None, f"matchup {index} seed {seed}\n{divergence}"
+            movers = [e["side"] for e in expected[0]["events"] if e["type"] == "MoveUsed"]
+            if movers and movers[0] == favoured_side:
+                favoured_side_moved_first += 1
+        assert favoured_side_moved_first > 0, f"matchup {index} never once put side {favoured_side} first"
+
+
+@needs_rust
+def test_surge_surfer_and_unburden_double_speed_and_agree(tmp_path: Path) -> None:
+    """The two abilities in `effective_speed` that key off something other than status, weather or
+    an item currently held: Surge Surfer off Electric Terrain, Unburden off having *just* lost an
+    item. Each matchup is built so the ability-carrying side is slower until its condition kicks
+    in, and faster once it does.
+
+    Vacuity-checked directly: disabling both doublers turned the first of 20 seeds red on turn one
+    -- Kangaskhan moved first instead of Machamp, a tape divergence rather than a quiet pass.
+    """
+    # Surge Surfer: Machamp (55 speed) starts behind Kangaskhan (90), but Electric Surge sets the
+    # terrain the instant both leads switch in -- before turn zero is even ordered -- so Machamp's
+    # doubled 110 already outruns Kangaskhan on the very first turn.
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.SURGE_SURFER, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Tackle"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Kangaskhan", nickname="B0", level=50, ability=Ability.ELECTRIC_SURGE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Tackle"],
+        )
+    ]
+    surge_surfer_moved_first = 0
+    for seed in range(20):
+        rng = random.Random(39000 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=3)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        movers = [e["side"] for e in expected[0]["events"] if e["type"] == "MoveUsed"]
+        if movers and movers[0] == 0:
+            surge_surfer_moved_first += 1
+    assert surge_surfer_moved_first > 0, "Machamp never once outran Kangaskhan under Electric Terrain"
+
+    # Unburden: Rhydon (40 speed) starts behind Machamp (55) and holding Leftovers. Machamp's Knock
+    # Off lands turn one (it is faster), and from turn two on Rhydon's doubled 80 outruns it.
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.UNBURDEN, item=Item.LEFTOVERS,
+            nature=Nature.HARDY, moves=["Tackle"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Knock Off"],
+        )
+    ]
+    unburden_moved_first_after_the_knock_off = 0
+    for seed in range(20):
+        rng = random.Random(39500 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=4)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected[1:]:
+            movers = [e["side"] for e in turn["events"] if e["type"] == "MoveUsed"]
+            if movers and movers[0] == 0:
+                unburden_moved_first_after_the_knock_off += 1
+    assert unburden_moved_first_after_the_knock_off > 0, "Rhydon never once outran Machamp after being knocked off"
+
+
+@needs_rust
+def test_quick_draw_occasionally_wins_the_bracket_and_agrees(tmp_path: Path) -> None:
+    """Quick Draw: a 30% chance, drawn fresh every move, to go first within the priority bracket
+    regardless of speed. Rhydon (40 speed) is far slower than Tauros (110), so any turn it moves
+    first is the ability, not the stat -- and since the draw is unconditional (Quick Claw and
+    Custap Berry share the same function in the Python, ahead of and behind this branch), a
+    scenario carrying neither still owes the tape exactly one probability per Quick Draw user per
+    move, agreement or not.
+
+    Vacuity-checked directly: keeping the draw but discarding its result turned seed 0 red on turn
+    two -- the first turn happened to roll the 70% miss on both sides of a coincidence, the second
+    did not.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.QUICK_DRAW, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Tackle"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Tauros", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Tackle"],
+        )
+    ]
+    rhydon_moved_first = 0
+    for seed in range(60):
+        rng = random.Random(39900 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=5)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            movers = [e["side"] for e in turn["events"] if e["type"] == "MoveUsed"]
+            if movers and movers[0] == 0:
+                rhydon_moved_first += 1
+    assert rhydon_moved_first > 0, "Quick Draw never once won the bracket across 60 seeds x 5 turns"
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

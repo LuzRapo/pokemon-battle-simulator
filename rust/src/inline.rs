@@ -21,7 +21,7 @@ use crate::battle::{Pokemon, Status};
 /// move with its own log line — so porting the clause alone would be a Levitate that takes no
 /// damage and never says why. Air Balloon, Punching Glove and Choice Scarf are out for the same
 /// reason: each does more somewhere else.
-pub const PORTED_ABILITIES: [&str; 51] = [
+pub const PORTED_ABILITIES: [&str; 58] = [
     "BATTLE_ARMOR",
     "BIG_PECKS",
     "CHLOROPHYLL",
@@ -35,6 +35,7 @@ pub const PORTED_ABILITIES: [&str; 51] = [
     "DROUGHT",
     "ELECTRIC_SURGE",
     "FULL_METAL_BODY",
+    "GALE_WINGS",
     "GRASSY_SURGE",
     "HUSTLE",
     "HYPER_CUTTER",
@@ -50,11 +51,14 @@ pub const PORTED_ABILITIES: [&str; 51] = [
     "MAGMA_ARMOR",
     "MERCILESS",
     "MISTY_SURGE",
+    "MYCELIUM_MIGHT",
     "NO_GUARD",
     "OVERCOAT",
     "OWN_TEMPO",
+    "PRANKSTER",
     "PSYCHIC_SURGE",
     "PURIFYING_SALT",
+    "QUICK_DRAW",
     "QUICK_FEET",
     "ROCK_HEAD",
     "SAND_RUSH",
@@ -67,8 +71,11 @@ pub const PORTED_ABILITIES: [&str; 51] = [
     "SNOW_WARNING",
     "SNOW_CLOAK",
     "SUPER_LUCK",
+    "SURGE_SURFER",
     "SWIFT_SWIM",
     "TANGLED_FEET",
+    "TRIAGE",
+    "UNBURDEN",
     "VICTORY_STAR",
     "VITAL_SPIRIT",
     "WATER_VEIL",
@@ -77,6 +84,24 @@ pub const PORTED_ABILITIES: [&str; 51] = [
 
 /// Items implemented at their inline sites.
 pub const PORTED_ITEMS: [&str; 3] = ["PROTECTIVE_PADS", "SCOPE_LENS", "WIDE_LENS"];
+
+/// `_priority_modifiers`: Prankster bumps a status move, Gale Wings a full-HP Flying move, Triage
+/// a healing move — each by a fixed amount, folded together the way the Python adds them rather
+/// than short-circuiting (a Pokemon can only hold one ability, so at most one of these ever fires,
+/// but the addition is what the source does and costs nothing to keep).
+pub fn priority_bonus(ability: &str, move_type: &str, category: &str, healing: bool, at_full_hp: bool) -> i32 {
+    let mut bonus = 0;
+    if ability == "PRANKSTER" && category == "STATUS" {
+        bonus += 1;
+    }
+    if ability == "GALE_WINGS" && move_type == "FLYING" && at_full_hp {
+        bonus += 1;
+    }
+    if ability == "TRIAGE" && healing {
+        bonus += 3;
+    }
+    bonus
+}
 
 /// `_WEATHER_SPEED_DOUBLERS`: the ability, and the weather it runs in.
 pub fn doubles_speed_in(ability: &str, weather: &str) -> bool {

@@ -95,11 +95,12 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
     // Drawn for both sides before anything resolves, in side order — the Python builds this dict
     // by comprehension over `actions`, which is insertion-ordered 0 then 1.
     let tie_breakers = [tape.probability()?, tape.probability()?];
-    let mut keys: Vec<(i32, i32, i32, f64, usize)> = Vec::new();
+    let mut keys: Vec<(i32, i32, i32, i32, f64, usize)> = Vec::new();
     for side in 0..2 {
         let actor = state.sides[side].active_pokemon();
         let speed = effective_speed(actor, &state.sides[side], &state.field);
         let mut category = category_of(&actions[side]);
+        let mut in_bracket_jump = 0;
         let priority = match &actions[side] {
             Action::Switch { .. } => 0,
             Action::Move { slot } => {
@@ -111,16 +112,45 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
                 if the_move.name == "Pursuit" && matches!(actions[1 - side], Action::Switch { .. }) {
                     category = category_of(&Action::Switch { to: 0 }) - 1;
                 }
-                priority_of(the_move)?
+                let at_full_hp = actor.hp == actor.totals.hp;
+                let bonus = crate::inline::priority_bonus(
+                    &actor.ability,
+                    &the_move.move_type,
+                    &the_move.category,
+                    the_move.healing,
+                    at_full_hp,
+                );
+                // `_bracket_jump`: Quick Draw's chance to move first within the bracket. Drawn
+                // unconditionally, same as the Python — Mycelium Might overrides the result below
+                // rather than skipping the draw, so the tape still owes this a probability on
+                // every move a Mycelium Might Pokemon makes, status or not. Quick Claw and Custap
+                // Berry are the item half of the same function; both are still-unported items, so
+                // any Pokemon holding one is refused before this runs and never reaches here.
+                in_bracket_jump = -bracket_jump(actor, tape)?;
+                if actor.ability == "MYCELIUM_MIGHT" && the_move.category == "STATUS" {
+                    in_bracket_jump = 1; // status moves go last within their bracket
+                }
+                priority_of(the_move)? + bonus
             }
         };
         // Trick Room inverts the speed sort itself, rather than the speed stat, so a paralysed
         // Pokemon halved by the status is still slower under Trick Room than one that is not.
         let speed_key = if state.field.pseudo_weather.contains_key("TRICK_ROOM") { speed } else { -speed };
-        keys.push((category, -priority, speed_key, tie_breakers[side], side));
+        keys.push((category, -priority, in_bracket_jump, speed_key, tie_breakers[side], side));
     }
     keys.sort_by(|a, b| a.partial_cmp(b).expect("no NaNs in a sort key"));
-    Ok(keys.into_iter().map(|k| k.4).collect())
+    Ok(keys.into_iter().map(|k| k.5).collect())
+}
+
+/// `_bracket_jump`'s Quick Draw branch: a 30% chance to move first within the priority bracket.
+/// Quick Claw rolls first in the Python and Custap Berry is checked last, but both are items no
+/// Pokemon in a playable scenario can be holding — either one is still-unported, live behaviour
+/// that `unsupported_pokemon` refuses before a battle starts — so this is the whole function.
+fn bracket_jump(actor: &Pokemon, tape: &mut Tape) -> Result<i32, Refusal> {
+    if actor.ability == "QUICK_DRAW" && tape.probability()? < 0.3 {
+        return Ok(1);
+    }
+    Ok(0)
 }
 
 /// `priority.effective_speed`, as much of it as is ported.
@@ -139,6 +169,12 @@ pub fn effective_speed(pokemon: &Pokemon, side: &Side, field: &crate::battle::Fi
         speed = speed * 3 / 2;
     }
     if crate::inline::doubles_speed_in(&pokemon.ability, &field.weather) {
+        speed *= 2;
+    }
+    if pokemon.ability == "SURGE_SURFER" && field.terrain == "ELECTRIC" {
+        speed *= 2; // the weather doublers' terrain cousin, and the whole of Alolan Raichu's identity
+    }
+    if pokemon.ability == "UNBURDEN" && pokemon.item == "NONE" && pokemon.item_consumed {
         speed *= 2;
     }
     if side.tailwind_turns > 0 {

@@ -7,12 +7,13 @@ then replace the Python engine.
 
 Branch `feature/vectorised-engine`. Sections 1, 2 and 3 (charges, volatiles, and the remaining
 coded moves) are all done — every `CodedMoveKind` is ported, and with it every move in the
-database.
+database. Section 4 (abilities) is underway: its first cluster, the seven that change turn order
+rather than a stat, is done — see the batch write-up below.
 
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 127 | 220 (58%) |
+| abilities | 134 | 220 (61%) |
 | items | 33 | 193 — see note |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
@@ -274,14 +275,34 @@ entirely (leaving the `Transformed` log line in place) — a still-Rhydon Pokemo
 from Machamp's copied moveset has nowhere to put it, and the very first of 40 seeds came back a
 refusal rather than a quiet pass.
 
-### 4. Abilities — 93 left
+### 4. Abilities — 86 left
 
-The clusters, roughly in order of value:
+**Done: the turn-order cluster — Prankster, Gale Wings, Triage, Mycelium Might, Surge Surfer,
+Unburden, Quick Draw.** All seven live in `priority.py`, a single self-contained file, and all
+seven landed at the two sites that already existed for this purpose: `inline::priority_bonus`
+(Prankster/Gale Wings/Triage — each adds a fixed amount to a move's priority, folded together
+rather than short-circuited since a Pokemon can only hold one ability but the Python adds all
+three anyway), `turn::order_actions`'s sort key (Mycelium Might, which overrides the bracket-jump
+component to 1 for the Pokemon's own status moves — sorting them last within their bracket rather
+than changing the priority number itself), and `turn::effective_speed` (Surge Surfer's Electric
+Terrain doubler, Unburden's post-consumption doubler). Quick Draw is the one genuinely new piece:
+`_bracket_jump`, a 30% chance to move first within the bracket that this port had never touched —
+Quick Claw and Custap Berry are the item two-thirds of that same Python function, left unwired
+since both are still-unported *items*, whose live-item gate already refuses any Pokemon holding
+one before turn one, so the two never reach this code in a playable scenario. The draw itself is
+unconditional in the Python (taken and then discarded whenever Mycelium Might overrides the
+result), which is exactly the kind of tape-order subtlety this project's own invariants exist to
+catch — and every one of the seven was vacuity-checked individually, each turning at least one of
+20-60 seeds red (several as an outright tape divergence rather than a quiet digest mismatch) the
+moment its own effect was neutralised. Covered by `test_priority_abilities_reorder_moves_and_agree`,
+`test_surge_surfer_and_unburden_double_speed_and_agree`, and
+`test_quick_draw_occasionally_wins_the_bracket_and_agrees`.
+
+The remaining clusters, roughly in order of value:
 
 - **Damage/ordering one-liners at sites that already exist**: Sturdy, Shield Dust, Serene Grace,
-  Skill Link, Steadfast, Scrappy/Minds Eye, Soundproof, Bulletproof, Unburden, Surge Surfer,
-  Prankster, Gale Wings, Quick Draw, Mycelium Might, Triage, Pressure, Mold Breaker/Teravolt/
-  Turboblaze, Corrosion, Synchronize, Natural Cure, Regenerator.
+  Skill Link, Steadfast, Scrappy/Mind's Eye, Soundproof, Bulletproof, Pressure, Mold Breaker/
+  Teravolt/Turboblaze, Corrosion, Synchronize, Natural Cure, Regenerator.
 - **Type absorption**: Volt Absorb, Water Absorb, Earth Eater, Sap Sipper, Well Baked Body, Flash
   Fire, Motor Drive, Lightning Rod, Storm Drain, Wind Rider, Dry Skin, Wonder Guard, Good as Gold.
   These cancel a move at `ON_BEFORE_MOVE` — a hook this engine does not have yet.
