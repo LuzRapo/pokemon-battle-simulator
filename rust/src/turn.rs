@@ -15,11 +15,11 @@
 //! volatiles, no residuals. Anything outside that raises `Unsupported` rather than guessing, so a
 //! scenario that wanders out of the ported subset fails loudly instead of diverging quietly.
 
-use crate::battle::{Pokemon, Side, State, Status};
+use crate::battle::{FormSnapshot, Pokemon, Side, State, Status};
 use crate::abilities::{apply_damage_calc, Calc};
 use crate::damage::{calculate_hit, Payload, Rolls};
 use crate::hooks::{on_after_hit, on_switch_in, Hit};
-use crate::data::{Database, Effect, Move};
+use crate::data::{BaseStats, Database, Effect, Move};
 use crate::log::{Event, Log};
 use crate::tape::Tape;
 
@@ -247,7 +247,7 @@ pub const PORTED_VOLATILES: [&str; 14] = [
 /// `CodedMoveKind` variants `apply_coded` has learned. Named by the exported enum member, which is
 /// what `variant` carries — not by move name, since several moves share a kind (the four
 /// `WEATHER_HEAL` moves, the two `CURE_PARTY` ones).
-pub const PORTED_CODED_KINDS: [&str; 24] = [
+pub const PORTED_CODED_KINDS: [&str; 25] = [
     "REST",
     "WEATHER_HEAL",
     "PAIN_SPLIT",
@@ -272,6 +272,7 @@ pub const PORTED_CODED_KINDS: [&str; 24] = [
     "REVIVAL_BLESSING",
     "SHED_TAIL",
     "FUTURE_SIGHT",
+    "TRANSFORM",
 ];
 
 /// Everything this engine has implemented, gathered from the modules that implement it so a name
@@ -643,6 +644,7 @@ fn switch_out(state: &mut State, side: usize, to: usize) -> String {
 }
 
 fn withdraw(side: &mut Side, to: usize) -> String {
+    let departing_index = side.active;
     let outgoing = side.active_mut();
     for value in outgoing.stages.values_mut() {
         *value = 0;
@@ -661,6 +663,21 @@ fn withdraw(side: &mut Side, to: usize) -> String {
     }
     let withdrew = outgoing.nickname.clone();
     side.active = to;
+    // `restore_form`: a no-op for the near-totality of Pokemon that never transformed. Stat
+    // stages are deliberately not part of the snapshot — the loop just above already zeroes them
+    // on every switch-out, transformed or not, matching the Python's own separate reset.
+    if let Some(snapshot) = side.transforms.remove(&departing_index) {
+        let outgoing = &mut side.team[departing_index];
+        outgoing.base_stats = snapshot.base_stats;
+        outgoing.nature = snapshot.nature;
+        outgoing.ivs = snapshot.ivs;
+        outgoing.evs = snapshot.evs;
+        outgoing.types = snapshot.types;
+        outgoing.ability = snapshot.ability;
+        outgoing.moves = snapshot.moves;
+        outgoing.pp = snapshot.pp;
+        outgoing.recompute_totals();
+    }
     withdrew
 }
 
@@ -1878,9 +1895,75 @@ fn apply_coded(
             state.sides[other].future_sight_turns = 3;
             log.push(Event::FutureAttackQueued { side: side as i32, pokemon: nickname, the_move: the_move.name.clone() });
         }
+        "TRANSFORM" => transform(state, side, log),
         _ => unreachable!("gated by PORTED_CODED_KINDS"),
     }
     Ok(())
+}
+
+const TRANSFORM_PP: i32 = 5;
+
+/// `transform_into`: copies base stats (HP's excepted), nature, EVs, IVs, types, ability, moves
+/// (5 PP each) and stat stages off the target, snapshotting the attacker's own form first so a
+/// later switch-out can give it back. Refuses — `MoveFailed`, not a refusal in the differential
+/// sense — against a fainted target or a Pokemon already on either side of a transformation,
+/// exactly as `id(attacker) in state.transforms or id(defender) in state.transforms` does; `side`/
+/// `team_index` is this engine's stable identity in place of the Python's object identity, the
+/// same substitution `future_sight_attacker` already makes.
+fn transform(state: &mut State, side: usize, log: &mut Log) {
+    let other = 1 - side;
+    let attacker_index = state.sides[side].active;
+    let defender_index = state.sides[other].active;
+    let defender = state.sides[other].active_pokemon();
+    if defender.fainted()
+        || state.sides[side].transforms.contains_key(&attacker_index)
+        || state.sides[other].transforms.contains_key(&defender_index)
+    {
+        log.push(Event::MoveFailed);
+        return;
+    }
+    let defender_base_stats = defender.base_stats;
+    let defender_nature = defender.nature.clone();
+    let defender_ivs = defender.ivs;
+    let defender_evs = defender.evs;
+    let defender_types = defender.types.clone();
+    let defender_ability = defender.ability.clone();
+    let defender_moves = defender.moves.clone();
+    let defender_stages = defender.stages.clone();
+    let into = defender.nickname.clone();
+
+    let attacker = state.sides[side].active_pokemon();
+    let snapshot = FormSnapshot {
+        base_stats: attacker.base_stats,
+        nature: attacker.nature.clone(),
+        ivs: attacker.ivs,
+        evs: attacker.evs,
+        types: attacker.types.clone(),
+        ability: attacker.ability.clone(),
+        moves: attacker.moves.clone(),
+        pp: attacker.pp.clone(),
+    };
+    let own_hp_base = attacker.base_stats.hp;
+    let nickname = attacker.nickname.clone();
+    state.sides[side].transforms.insert(attacker_index, snapshot);
+
+    let attacker = state.sides[side].active_mut();
+    attacker.base_stats = BaseStats { hp: own_hp_base, ..defender_base_stats };
+    attacker.nature = defender_nature;
+    attacker.ivs = defender_ivs;
+    attacker.evs = defender_evs;
+    attacker.types = defender_types;
+    attacker.ability = defender_ability;
+    attacker.moves = defender_moves;
+    attacker.pp = attacker
+        .moves
+        .iter()
+        .enumerate()
+        .map(|(i, _)| (crate::battle::SLOT_NAMES[i].to_string(), TRANSFORM_PP))
+        .collect();
+    attacker.stages = defender_stages;
+    attacker.recompute_totals();
+    log.push(Event::Transformed { side: side as i32, pokemon: nickname, into });
 }
 
 /// `_knock_off_item`: refuses silently (no log — contributes to the empty-log `MoveFailed`) with

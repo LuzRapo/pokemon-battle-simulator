@@ -5,13 +5,13 @@ then replace the Python engine.
 
 ## Where it stands
 
-Branch `feature/vectorised-engine`. Sections 1 and 2 (charges and volatiles) are both done.
-Section 3 (the remaining coded moves) is essentially done — every `CodedMoveKind` is ported;
-`Transform` is the only move left in the whole database.
+Branch `feature/vectorised-engine`. Sections 1, 2 and 3 (charges, volatiles, and the remaining
+coded moves) are all done — every `CodedMoveKind` is ported, and with it every move in the
+database.
 
 | | done | total |
 |---|---|---|
-| moves | 842 | 843 (99.9%) |
+| moves | 843 | 843 (100%) |
 | abilities | 127 | 220 (58%) |
 | items | 33 | 193 — see note |
 | volatiles | 18 | 18 — every volatile in the database is ported |
@@ -22,19 +22,21 @@ export had never been able to see, for reasons worth reading in section 3's own 
 are correctly refused now rather than silently wrong, which is why the *ported* item count did not
 move even though total climbed by 83.
 
-`Transform` is the only move still refused, and it is special-cased by name — the last of section
-3, itemised there. The pseudo-weather rooms are done; the "does something to its user or the field"
-refusal cause is gone entirely. Wish, Healing Wish/Lunar Dance, Revival Blessing, Shed Tail, and
-Future Sight/Doom Desire are all done too — see the batch write-up below for the two real bugs that
-batch turned up (an immediate-switch gap and a log-ordering gap, both fixed).
+Every refusal cause `--coverage` used to report — coded-by-name, no modelled effect, does something
+to its user or the field, variable power, an unported volatile — is gone. `Transform`, the last
+move in the database, closed out section 3: see its own write-up below. Wish, Healing Wish/Lunar
+Dance, Revival Blessing, Shed Tail, and Future Sight/Doom Desire were done just before it — see the
+batch write-up below for the two real bugs that batch turned up (an immediate-switch gap and a
+log-ordering gap, both fixed).
 
 Several thousand randomly generated battles agree turn for turn, event for event, draw for draw,
 including a pool built specifically to force charging on both the semi-invulnerable and the
 ordinary two-turn moves (`test_charge_moves_actually_charge_and_agree`), and a vacuity check that
 disabling `power::out_of_reach` turns 251/300 of them red. ~240k turns/s single-threaded against
-the Python's ~2.2k. The latest full sweep of this batch: 3000 status-slice battles with switching
-enabled, 2964/3000 agreed, 36 refused (all the same documented Future Sight scope limit below),
-0 diverged; a 2000-battle plain-slice sweep came back 2000/2000 agreed, 0 diverged.
+the Python's ~2.2k. The latest full sweep, run with Transform in the pool: 3000 status-slice
+battles with switching enabled, 2971/3000 agreed, 29 refused (all the same documented Future Sight
+scope limit below), 0 diverged; a 2000-battle plain-slice sweep came back 2000/2000 agreed, 0
+diverged.
 
 ## The loop
 
@@ -253,11 +255,24 @@ by inspection:
   equal speed, never recast afterward) rather than relying on random play to hold still for the
   five turns both durations need to align.
 
-**Left — 1 move: `Transform`.** A full stat/moveset/forme copy keyed by stable `(side, team_index)`
-identity — needs new `Pokemon` fields this engine doesn't store post-construction yet (base stats,
-nature, EVs, IVs — currently only the derived `totals: StatTotals` survives), a snapshot/restore
-mechanic, a moveset+PP overwrite capped at 5 PP each, a stat_stages copy, and a
-`refresh_stats()`-equivalent recompute callable after construction. The largest single move left.
+**Also done: `Transform`, the last move in the database.** `Pokemon` gained the fields it had never
+needed to keep past construction before this — `base_stats`, `nature`, `ivs`, `evs` — alongside the
+`totals: StatTotals` folded from them, plus a `recompute_totals` method standing in for
+`refresh_stats`. `Side` gained `transforms: BTreeMap<usize, FormSnapshot>`, keyed by team index
+(the same stable-identity substitution `future_sight_attacker` already made for the Python's
+`id(pokemon)`): a snapshot of everything Transform overwrites — base stats, nature, EVs, IVs,
+types, ability, moves, PP — taken before the copy and popped back by `withdraw` on that Pokemon's
+next switch-out. Stat stages are deliberately *not* in the snapshot: `withdraw` already zeroes them
+on every switch-out, transformed or not, matching the Python's own separate reset rather than
+Transform's own restore. HP's base stat is the one field Transform never touches, copied through
+from the attacker's own `base_stats` rather than the target's, exactly as `BaseStats(HP=attacker...,
+ATTACK=defender..., ...)` does. Refuses (`MoveFailed`) against a fainted target or a Pokemon already
+on either side of a transformation, matching `id(attacker) in state.transforms or id(defender) in
+state.transforms` with the same identity substitution. Covered by
+`test_transform_copies_the_target_and_reverts_on_switch_out`; vacuity-checked by skipping the copy
+entirely (leaving the `Transformed` log line in place) — a still-Rhydon Pokemon holding a move name
+from Machamp's copied moveset has nowhere to put it, and the very first of 40 seeds came back a
+refusal rather than a quiet pass.
 
 ### 4. Abilities — 93 left
 

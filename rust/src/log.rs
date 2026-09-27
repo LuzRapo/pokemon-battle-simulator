@@ -141,6 +141,12 @@ pub enum Event {
         #[serde(rename = "move")]
         the_move: String,
     },
+    /// Transform: `pokemon` is still the attacker's own nickname, `into` names whoever it copied.
+    Transformed {
+        side: i32,
+        pokemon: String,
+        into: String,
+    },
     ScreenSet {
         side: i32,
         screen: String,

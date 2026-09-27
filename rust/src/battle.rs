@@ -5,7 +5,7 @@
 //! is because Rust convention demands it (`hp` for `live_stats.HP`), never because the meaning
 //! differs — the digest in `battle_sim/differential.py` is the list of things that must agree.
 
-use crate::data::{Database, Species};
+use crate::data::{BaseStats, Database, NatureEffect, Species};
 use crate::stats::{totals, with_stage, Spread, StatTotals};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -129,6 +129,14 @@ pub struct Pokemon {
     pub species_name: String,
     pub level: i32,
     pub types: Vec<Option<String>>,
+    /// The inputs `totals` was folded from. Kept around, rather than discarded once `totals` is
+    /// computed, only for Transform's sake: it borrows another Pokemon's base stats, nature, EVs
+    /// and IVs wholesale (HP's base stat excepted) and has to be able to give its own back on
+    /// switch-out.
+    pub base_stats: BaseStats,
+    pub nature: NatureEffect,
+    pub ivs: Spread,
+    pub evs: Spread,
     pub totals: StatTotals,
     pub hp: i32,
     pub status: Status,
@@ -186,6 +194,21 @@ pub struct Pokemon {
     pub encored_slot: Option<usize>,
     /// The slot Disable has silenced, while `DISABLE` is in `volatiles`.
     pub disabled_slot: Option<usize>,
+}
+
+/// A pre-Transform form, restored on switch-out. Mirrors `models.pokemon.FormSnapshot` exactly —
+/// everything Transform overwrites, and nothing it doesn't (the Pokemon's own HP base stat is
+/// deliberately excluded there and here, since Transform never touches it).
+#[derive(Debug, Clone)]
+pub struct FormSnapshot {
+    pub base_stats: BaseStats,
+    pub nature: NatureEffect,
+    pub ivs: Spread,
+    pub evs: Spread,
+    pub types: Vec<Option<String>>,
+    pub ability: String,
+    pub moves: Vec<String>,
+    pub pp: BTreeMap<String, i32>,
 }
 
 pub const STAGE_NAMES: [&str; 7] = [
@@ -253,13 +276,9 @@ impl Pokemon {
             .natures
             .get(&spec.nature)
             .ok_or_else(|| format!("unknown nature {:?}", spec.nature))?;
-        let stat_totals = totals(
-            &species.base_stats,
-            &spec.individual_values.into(),
-            &spec.effort_values.into(),
-            spec.level,
-            nature,
-        );
+        let ivs: Spread = spec.individual_values.into();
+        let evs: Spread = spec.effort_values.into();
+        let stat_totals = totals(&species.base_stats, &ivs, &evs, spec.level, nature);
         // Four slots, always. `build_pokemon` pads a short set by repeating the *first* move
         // rather than leaving the slot empty, so a two-move Pokemon really does carry four moves
         // and four PP counters — which is what the digest compares, and how this was found.
@@ -283,6 +302,10 @@ impl Pokemon {
             species_name: species.name.clone(),
             level: spec.level,
             types: species.types.clone(),
+            base_stats: species.base_stats,
+            nature: nature.clone(),
+            ivs,
+            evs,
             totals: stat_totals,
             hp: stat_totals.hp,
             status: Status::None,
@@ -321,6 +344,15 @@ impl Pokemon {
 
     pub fn fainted(&self) -> bool {
         self.hp <= 0
+    }
+
+    /// `refresh_stats`, folded straight through rather than just invalidating a cache: Transform
+    /// and its restore are the only two callers, both of which just replaced `base_stats`/`nature`/
+    /// `ivs`/`evs` and need `totals` to reflect it immediately, not lazily on next read. `hp` (the
+    /// current wound, not the cap) is deliberately left alone — Transform never heals or clamps it,
+    /// same as the Python.
+    pub fn recompute_totals(&mut self) {
+        self.totals = totals(&self.base_stats, &self.ivs, &self.evs, self.level, &self.nature);
     }
 
     /// `Pokemon.battle_types`: what this Pokemon counts as right now, which is not always what it
@@ -417,6 +449,11 @@ pub struct Side {
     pub future_sight_turns: i32,
     pub future_sight_attacker: Option<(usize, usize)>,
     pub future_sight_move: Option<String>,
+    /// Transform: team index -> the form it had before. Keyed by index rather than by the Python's
+    /// `id(pokemon)` because index is this engine's own stable identity for a team slot — the same
+    /// scheme `future_sight_attacker` already uses. Popped and restored on that Pokemon's next
+    /// switch-out; a no-op for every Pokemon that never transformed, which is nearly all of them.
+    pub transforms: BTreeMap<usize, FormSnapshot>,
 }
 
 impl Side {
@@ -436,6 +473,7 @@ impl Side {
             future_sight_turns: 0,
             future_sight_attacker: None,
             future_sight_move: None,
+            transforms: BTreeMap::new(),
         }
     }
 

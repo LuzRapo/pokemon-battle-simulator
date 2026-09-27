@@ -252,32 +252,14 @@ def test_status_and_stat_stages_agree_too(seed: int, tmp_path: Path) -> None:
     assert divergence is None, f"seed {seed}\n{divergence}"
 
 
-@needs_rust
-def test_a_move_it_has_not_learned_is_refused_rather_than_guessed(tmp_path: Path) -> None:
-    """The failure mode this project cannot afford is a quiet wrong answer. Everything unported has
-    to come back as a refusal, loudly, with the reason.
-
-    The move is chosen rather than named, for the same reason the ability is: this test was written
-    against Leech Seed and started failing the day Leech Seed landed.
-    """
-    unported = _some_coded_move_this_engine_has_not_learned()
-    rng = random.Random(99)
-    team = [
-        PokemonSpec(
-            species="Rhydon",
-            nickname="P0",
-            level=50,
-            ability=Ability.NONE,
-            item=Item.NONE,
-            nature=Nature.HARDY,
-            moves=[unported, "Earthquake"],
-        )
-    ]
-    scenario, _ = record((team, team), _chooser(rng), seed=1, max_turns=4)
-
-    theirs = _rust_trace(scenario, tmp_path)
-
-    assert isinstance(theirs, str) and unported in theirs, theirs
+# `test_a_move_it_has_not_learned_is_refused_rather_than_guessed` lived here, built around
+# `_some_coded_move_this_engine_has_not_learned()`. It was rewritten twice as the gap it depended
+# on moved — an unported volatile, then a move refused by name, then a move refused by
+# `CodedMoveKind` — and retired outright when Transform closed that last gap: `--coverage` reports
+# 843/843 moves playable, so there is no longer a move-shaped way to build this scenario. The same
+# invariant (an unported *anything* comes back as a loud refusal, never a quiet wrong answer) is
+# still exercised, now the only way left to exercise it: by ability and by item, in
+# `test_live_abilities_and_items_are_refused_rather_than_ignored` below.
 
 
 @needs_rust
@@ -352,27 +334,6 @@ def test_the_ported_volatiles_actually_land_in_the_swept_battles() -> None:
 
     for wanted in ("FLINCH", "CONFUSION", "PROTECT", "flinch", "confused", "self_hit"):
         assert seen[wanted] > 0, f"{wanted} never happened across 120 battles: {dict(seen)}"
-
-
-def _some_coded_move_this_engine_has_not_learned() -> str:
-    """Some move the Python special-cases that the engine has not ported yet.
-
-    Named rather than hardcoded, same reasoning as `_still_unported`: a hardcoded example goes
-    stale the moment it lands. This has already been rewritten twice for exactly that reason — it
-    used to derive from an unported *volatile* (Leech Seed, then a rotating cast of others, until
-    Substitute was the last one), then from a move refused by *name* (until Doom Desire and Future
-    Sight were the last two of those). What's left is refused by `CodedMoveKind` instead — a move's
-    behaviour can be special-cased without its name ever appearing as a literal anywhere — so this
-    derives from that gap now, and will need rewriting again the day nothing does.
-    """
-    known_kinds = set(PORTED["coded_kinds"])
-    for move in sorted(get_all_moves().values(), key=lambda m: m.name):
-        for effect in move.effects:
-            if type(effect).__name__ == "CodedEffect":
-                kind = getattr(getattr(effect, "kind", None), "name", None)
-                if kind is not None and kind not in known_kinds:
-                    return move.name
-    raise AssertionError("every CodedMoveKind is ported; this test needs rewriting")
 
 
 def _inflicts(effect: object, volatile: str) -> bool:
@@ -1125,6 +1086,54 @@ def test_shed_tail_forces_an_immediate_switch(tmp_path: Path) -> None:
                     immediate_switches += 1
 
     assert immediate_switches > 0, "Shed Tail never once forced a same-turn switch"
+
+
+@needs_rust
+def test_transform_copies_the_target_and_reverts_on_switch_out(tmp_path: Path) -> None:
+    """The last move in the database: base stats (HP's excepted), nature/EVs/IVs, types, ability,
+    moveset (5 PP each) and stat stages all copied off the target, restored on switch-out. Rhydon
+    and Machamp differ in every one of those, so a divergence in any of them shows up either in the
+    next hit's damage (stats), in which named actions even remain legal (moveset), or in the digest
+    directly (types, ability, pp, stages) -- and the restore is exercised by switching the
+    transformed side out and back in in the same sweep. Vacuity-checked directly: skipping the copy
+    (leaving the `Transformed` log line in place) turned the very first of 40 seeds red with a
+    replay refusal, not a quiet pass -- a still-Rhydon Pokemon holding a name from Machamp's
+    moveset has nowhere to put it.
+    """
+    pool_a = ["Transform", "Tackle"]
+    pool_b = ["Karate Chop", "Rock Slide", "Bulk Up", "Tackle"]
+
+    def team(rng: random.Random, pool: list[str]) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species=species, nickname=f"P{index}", level=50, ability=Ability.NONE, item=Item.NONE,
+                nature=Nature.HARDY, moves=[rng.choice(pool), rng.choice(pool)],
+            )
+            for index, species in enumerate(["Rhydon", "Rhydon"])
+        ]
+
+    seen: Counter[str] = Counter()
+    for seed in range(40):
+        rng = random.Random(37000 + seed)
+        team_a = team(rng, pool_a)
+        team_b = [
+            PokemonSpec(
+                species="Machamp", nickname=f"P{index}", level=50, ability=Ability.NONE, item=Item.NONE,
+                nature=Nature.HARDY, moves=[rng.choice(pool_b), rng.choice(pool_b)],
+            )
+            for index in range(2)
+        ]
+        scenario, expected = record((team_a, team_b), _switching_chooser(rng), seed=seed, max_turns=60)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            for e in turn["events"]:
+                if e["type"] in ("Transformed", "MoveFailed"):
+                    seen[e["type"]] += 1
+
+    assert seen["Transformed"] > 0, "Transform never once landed across 40 battles"
 
 
 @needs_rust
