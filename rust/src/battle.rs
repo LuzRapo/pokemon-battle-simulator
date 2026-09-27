@@ -263,6 +263,25 @@ impl Pokemon {
         self.hp <= 0
     }
 
+    /// `immunity_bypass`: Foresight/Odor Sleuth's `IDENTIFIED` lets a Normal or Fighting move
+    /// through a Ghost type; Miracle Eye's `MIRACLE_EYE` does the same for a Psychic move against
+    /// Dark. Only the named type's own 0x is affected — a Ghost/Flying target identified on Ghost
+    /// alone still resists a Flying-weak move exactly as much as it did before. Shared between the
+    /// immunity gate in `turn::resolve_move` and `damage::calculate_hit`'s own effectiveness check,
+    /// which independently recomputes the same multiplier for the damage formula — missing either
+    /// site left an identified Ghost immune to the hit that should have landed on it.
+    pub fn identify_bypass(&self) -> Vec<&'static str> {
+        let mut bypass = Vec::new();
+        let has_type = |t: &str| self.types.iter().flatten().any(|d| d == t);
+        if has_type("GHOST") && self.volatiles.contains_key("IDENTIFIED") {
+            bypass.push("GHOST");
+        }
+        if has_type("DARK") && self.volatiles.contains_key("MIRACLE_EYE") {
+            bypass.push("DARK");
+        }
+        bypass
+    }
+
     pub fn stage(&self, name: &str) -> i32 {
         self.stages.get(name).copied().unwrap_or(0)
     }

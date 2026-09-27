@@ -152,6 +152,19 @@ source, not the berry's. Cosmetic, but it makes the log ambiguous.
 what `apply_damage` returned. A Pokémon at 3 HP taking 30 recoil is reported as having taken 30.
 Compare `_bind_rough_skin`, which logs the dealt amount. Inconsistent between the two.
 
+### Foresight, Odor Sleuth and Miracle Eye don't ignore evasion
+
+In the games these three do two things: let a Normal or Fighting move (Psychic, for Miracle Eye)
+bypass a Ghost's (Dark's) immunity, and ignore the target's evasion stat for accuracy. Only the
+first is modelled — `IDENTIFIED`/`MIRACLE_EYE` are read in exactly one place,
+`maths/damage.py:immunity_bypass`, and nowhere in the accuracy calculation. A Double Team'd,
+identified Ghost is exactly as hard to hit as before it was identified.
+
+Porting only the bypass isn't a choice made *for* this entry — it's what "reproduce the Python" is:
+the accuracy half was never written, so a faithful port has to leave it unwritten too. Recorded here
+because it's the kind of gap a Rust author porting from the *games* rather than from this codebase
+would silently "fix", which would be its own divergence.
+
 ### Fury Cutter's run is broken by *any* other move, including a failed one
 
 `engine/moves.py:193` resets `rolling_hits` for any move that is not in `ESCALATING_MOVES`, and it

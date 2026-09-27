@@ -653,6 +653,60 @@ def test_destiny_bond_takes_its_attacker_down_too(tmp_path: Path) -> None:
 
 
 @needs_rust
+def test_identify_bypasses_a_ghost_or_dark_immunity(tmp_path: Path) -> None:
+    """Foresight/Odor Sleuth and Miracle Eye actually let their moves land, not just resolve.
+
+    A real regression, not a hypothetical one: the immunity gate in `resolve_move` and the type
+    multiplier `damage::calculate_hit` computes for the formula are two separate calls into the
+    type chart, and fixing only the first left an identified Sableye immune to Tackle for damage
+    purposes while the gate had already let it through -- 265/300 of this exact batch diverged
+    (`MoveFailed` where Python dealt damage) before both call sites read the bypass. Sableye is
+    Dark/Ghost, so the same battle exercises both moves' bypass at once.
+    """
+
+    def team_a(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species="Machamp",
+                nickname="A0",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(["Foresight", "Miracle Eye"]), "Tackle", "Psychic"],
+            )
+        ]
+
+    def team_b(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species="Sableye",
+                nickname="B0",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=["Tackle"],
+            )
+        ]
+
+    landed = 0
+    for seed in range(30):
+        rng = random.Random(26000 + seed)
+        teams = (team_a(rng), team_b(rng))
+        scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=30)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        landed += sum(
+            1 for turn in expected for e in turn["events"] if e["type"] == "DamageDealt" and e["side"] == 1
+        )
+
+    assert landed > 0, "an identified Sableye never actually took damage from the bypassed type"
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

@@ -273,15 +273,23 @@ impl Database {
 
     /// One attacking type against one or two defending types, multiplied out.
     pub fn effectiveness(&self, attacking: &str, defending: &[Option<String>]) -> f64 {
+        self.effectiveness_bypassing(attacking, defending, &[])
+    }
+
+    /// `type_effectiveness`'s `immunity_bypass`: a defending type named here has its 0x immunity
+    /// treated as 1x — Foresight/Odor Sleuth's Ghost, Miracle Eye's Dark — and nothing else about
+    /// it changes, so a Ghost/Flying target bypassed only on Ghost still halves a Flying-weak move.
+    pub fn effectiveness_bypassing(&self, attacking: &str, defending: &[Option<String>], bypass: &[&str]) -> f64 {
         defending
             .iter()
             .flatten()
             .map(|d| {
-                self.type_chart
-                    .get(attacking)
-                    .and_then(|row| row.get(d))
-                    .copied()
-                    .unwrap_or(1.0)
+                let raw = self.type_chart.get(attacking).and_then(|row| row.get(d)).copied().unwrap_or(1.0);
+                if raw == 0.0 && bypass.contains(&d.as_str()) {
+                    1.0
+                } else {
+                    raw
+                }
             })
             .product()
     }

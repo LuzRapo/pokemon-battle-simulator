@@ -201,7 +201,7 @@ const DEFENDER_FACING: [&str; 3] = ["SINGLE_OPPONENT", "ALL_ADJACENT_ENEMIES", "
 /// generic one, so routing it through the generic path would silently play it wrong.
 pub const PORTED_BESPOKE_VOLATILES: [&str; 3] = ["LOCKED_MOVE", "ENCORE", "DISABLE"];
 
-pub const PORTED_VOLATILES: [&str; 12] = [
+pub const PORTED_VOLATILES: [&str; 14] = [
     "FLINCH",
     "CONFUSION",
     "PROTECT",
@@ -214,6 +214,8 @@ pub const PORTED_VOLATILES: [&str; 12] = [
     "YAWN",
     "TAUNT",
     "DESTINY_BOND",
+    "IDENTIFIED",
+    "MIRACLE_EYE",
 ];
 
 /// Everything this engine has implemented, gathered from the modules that implement it so a name
@@ -651,6 +653,7 @@ fn tick_countdown(state: &mut State, side: usize, volatile: &str, clearance: &st
     true
 }
 
+
 fn status_chip(state: &mut State, side: usize, log: &mut Log) {
     let active = state.sides[side].active_pokemon();
     if crate::inline::ignores_indirect_damage(active) {
@@ -991,7 +994,7 @@ fn resolve_move(
         1.0
     } else {
         let defender = state.sides[other].active_pokemon();
-        let natural = db.effectiveness(&the_move.move_type, &defender.types);
+        let natural = db.effectiveness_bypassing(&the_move.move_type, &defender.types, &defender.identify_bypass());
         crate::power::effectiveness_override(&the_move.name, defender, natural, db)
     };
     // The immunity gate is for *damaging* moves only, exactly as the Python writes it. Charge is
@@ -1427,7 +1430,8 @@ fn apply_fixed_damage(
 ) {
     let other = 1 - side;
     let defender_types = state.sides[other].active_pokemon().types.clone();
-    if db.effectiveness(&the_move.move_type, &defender_types) == 0.0 {
+    let bypass = state.sides[other].active_pokemon().identify_bypass();
+    if db.effectiveness_bypassing(&the_move.move_type, &defender_types, &bypass) == 0.0 {
         log.push(Event::NoEffect {
             side: other as i32,
             pokemon: state.sides[other].active_pokemon().nickname.clone(),
