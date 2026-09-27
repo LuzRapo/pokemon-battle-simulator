@@ -494,6 +494,12 @@ pub fn residual_after_status(state: &mut State, side: usize, tape: &mut Tape, lo
         chip_named(state, side, if brittle { 4 } else { 8 }, "salt_cure", log);
     }
 
+    // CURSE (4700): a permanent quarter-HP chip on the Ghost's target, with no countdown at all —
+    // it only ever ends when its victim faints or switches out.
+    if state.sides[side].active_pokemon().volatiles.contains_key("CURSE") && !guarded {
+        chip_named(state, side, 4, "curse", log);
+    }
+
     // BAD_DREAMS (4500): the foe's sleep, not this Pokemon's.
     if ability == "BAD_DREAMS" {
         let foe = state.sides[other].active_pokemon();

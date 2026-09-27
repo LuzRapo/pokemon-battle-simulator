@@ -137,6 +137,7 @@ fn main() {
                 "abilities": sorted(pokemon_engine::turn::ported_abilities()),
                 "items": sorted(pokemon_engine::turn::ported_items()),
                 "coded_moves": sorted(pokemon_engine::turn::ported_coded_moves()),
+                "coded_kinds": pokemon_engine::turn::PORTED_CODED_KINDS.as_slice(),
                 "volatiles": pokemon_engine::turn::PORTED_VOLATILES
                     .iter()
                     .chain(pokemon_engine::turn::PORTED_BESPOKE_VOLATILES.iter())

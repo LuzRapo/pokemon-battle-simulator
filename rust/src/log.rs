@@ -64,6 +64,10 @@ pub enum Event {
     },
     /// Substitute used at a quarter max HP or below: no fields at all, matching the Python.
     SubstituteTooWeak,
+    /// Haze: every stat stage on the field, both sides, wiped at once.
+    AllStatsReset,
+    /// Court Change: hazards, screens and Tailwind traded between the two sides.
+    CourtChanged,
     /// The move resolved but nothing came of it — every effect it had was skipped. The Python adds
     /// this by checking whether the log grew, so it is a statement about the log rather than about
     /// the move, and it is ported the same way.

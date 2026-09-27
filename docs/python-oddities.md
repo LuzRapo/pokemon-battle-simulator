@@ -152,6 +152,11 @@ source, not the berry's. Cosmetic, but it makes the log ambiguous.
 what `apply_damage` returned. A Pokémon at 3 HP taking 30 recoil is reported as having taken 30.
 Compare `_bind_rough_skin`, which logs the dealt amount. Inconsistent between the two.
 
+`_pain_split` is the same inconsistency a third time: it logs `amount=delta`, the healing it asked
+for, not what `apply_healing` actually returned once capped at the lower Pokémon's own max HP.
+`_strength_sap`, right next to it in the same file, logs the real returned amount instead — so the
+inconsistency is not even consistent with itself move to move.
+
 ### Foresight, Odor Sleuth and Miracle Eye don't ignore evasion
 
 In the games these three do two things: let a Normal or Fighting move (Psychic, for Miracle Eye)

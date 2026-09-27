@@ -99,6 +99,8 @@ def _status_and_stage_move_names() -> list[str]:
             return True
         if kind in ("SideConditionEffect", "RemoveHazardsEffect"):
             return True
+        if kind == "CodedEffect":
+            return getattr(getattr(effect, "kind", None), "name", None) in PORTED["coded_kinds"]
         # A coded move the engine has learned may carry no listed power at all — its formula
         # supplies one — so the plain-damage test is waived for those.
         return kind == "DamageEffect" and (_plain_damage(effect) or move.name in PORTED["coded_moves"])
@@ -120,7 +122,7 @@ def _ported() -> dict[str, list[str]]:
     engine — which is exactly how the coded-move list went stale and let Last Resort through.
     """
     if not BINARY.exists():
-        return {"abilities": [], "items": [], "coded_moves": []}
+        return {"abilities": [], "items": [], "coded_moves": [], "coded_kinds": []}
     out = subprocess.run([str(BINARY), "--ported"], capture_output=True, text=True, check=True).stdout
     listed: dict[str, list[str]] = json.loads(out)
     return listed
@@ -825,6 +827,59 @@ def test_roost_grounds_its_user_for_the_rest_of_the_turn(tmp_path: Path) -> None
 
     assert landed > 0, "Earthquake never once landed on a roosted Gyarados"
     assert immune > 0, "Earthquake was never once blocked by an un-roosted Gyarados's Flying type"
+
+
+@needs_rust
+def test_the_first_batch_of_coded_moves_fire_and_agree(tmp_path: Path) -> None:
+    """Rest, Haze, Court Change, Perish Song and Curse's Ghost half: five of the twelve
+    `CodedMoveKind`s this port has learned, chosen because each asserts on a distinct log entry
+    rather than merely on agreement -- a green run over a battle where none of them actually fired
+    would say nothing. Pain Split, Strength Sap, Belly Drum, Tidy Up and the cure moves are exercised
+    by this same pool but not asserted on individually here.
+
+    Perish Song's residual (a silent four-turn countdown to a mutual faint) is vacuity-checked on
+    its own: disabling it turned 300/300 of a Perish-Song-only matchup red. So is Curse's per-turn
+    chip, at 300/300 red against a dedicated Gengar-vs-Machamp matchup.
+    """
+    pool = [
+        "Rest", "Moonlight", "Pain Split", "Strength Sap", "Belly Drum", "Haze", "Court Change",
+        "Curse", "Tidy Up", "Perish Song", "Heal Bell", "Take Heart", "Tackle", "Substitute", "Screech",
+    ]
+
+    def team(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species=rng.choice(PLAIN_SPECIES),
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool), rng.choice(pool)],
+            )
+            for index in range(4)
+        ]
+
+    seen: Counter[str] = Counter()
+    for seed in range(40):
+        rng = random.Random(30000 + seed)
+        teams = (team(rng), team(rng))
+        scenario, expected = record(teams, _switching_chooser(rng), seed=seed, max_turns=100)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            for e in turn["events"]:
+                if e["type"] in ("AllStatsReset", "CourtChanged"):
+                    seen[e["type"]] += 1
+                if e["type"] == "VolatileInflicted" and e.get("volatile") == "PERISH":
+                    seen["PERISH"] += 1
+                if e["type"] == "StatusInflicted" and e.get("status") == "SLEEP":
+                    seen["Rest"] += 1
+
+    for wanted in ("AllStatsReset", "CourtChanged", "PERISH", "Rest"):
+        assert seen[wanted] > 0, f"{wanted} never happened across 40 battles: {dict(seen)}"
 
 
 @needs_rust

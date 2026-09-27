@@ -230,6 +230,24 @@ pub const PORTED_VOLATILES: [&str; 14] = [
     "MIRACLE_EYE",
 ];
 
+/// `CodedMoveKind` variants `apply_coded` has learned. Named by the exported enum member, which is
+/// what `variant` carries — not by move name, since several moves share a kind (the four
+/// `WEATHER_HEAL` moves, the two `CURE_PARTY` ones).
+pub const PORTED_CODED_KINDS: [&str; 12] = [
+    "REST",
+    "WEATHER_HEAL",
+    "PAIN_SPLIT",
+    "STRENGTH_SAP",
+    "BELLY_DRUM",
+    "HAZE",
+    "COURT_CHANGE",
+    "CURSE",
+    "TIDY_UP",
+    "PERISH_SONG",
+    "CURE_SELF",
+    "CURE_PARTY",
+];
+
 /// Everything this engine has implemented, gathered from the modules that implement it so a name
 /// cannot be claimed in one place and missing from the other.
 ///
@@ -334,7 +352,9 @@ pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
             // Caught here as well as at use time. A refusal that only happens when the move is
             // actually reached is still a refusal — but it makes the coverage number a promise
             // rather than a measurement, and this report is supposed to be the honest one.
-            Effect::CodedEffect { .. } => return Some(Gap::CodedByName),
+            Effect::CodedEffect { variant } if !PORTED_CODED_KINDS.contains(&variant.as_str()) => {
+                return Some(Gap::CodedByName)
+            }
             Effect::PseudoWeatherEffect { .. } => return Some(Gap::UserOrFieldEffect),
             Effect::Unmodelled => return Some(Gap::NoModelledEffect),
             _ => {}
@@ -637,6 +657,21 @@ fn residuals(state: &mut State, tape: &mut Tape, log: &mut Log) -> Result<(), Re
             // that just fainted to a chip above. Each of these lasts exactly the turn it started.
             for gone in ["FLINCH", "PROTECT", "ENDURE", "ROOSTED"] {
                 state.sides[side].active_mut().volatiles.remove(gone);
+            }
+            // Perish Song's own countdown, separate from `_tick_countdown` because it faints its
+            // victim rather than merely clearing a status — three more turns of shared silence,
+            // then the fourth turn's tick is the one that takes it down.
+            if let Some(left) = state.sides[side].active_pokemon().volatiles.get("PERISH").copied() {
+                if left - 1 > 0 {
+                    state.sides[side].active_mut().volatiles.insert("PERISH".to_string(), left - 1);
+                } else {
+                    let active = state.sides[side].active_mut();
+                    active.volatiles.remove("PERISH");
+                    let all_of_it = active.hp;
+                    active.take_damage(all_of_it);
+                    let nickname = active.nickname.clone();
+                    log.push(Event::Fainted { side: side as i32, pokemon: nickname });
+                }
             }
             // `_tick_countdown`: Taunt, Encore and Disable each count down here, and Encore/Disable
             // also release the slot they were pinning the moment the count reaches zero.
@@ -1150,7 +1185,10 @@ fn resolve_move(
                 return Err(Refusal::Unported(format!("{variant} changes how the whole field works")))
             }
             Effect::CodedEffect { variant } => {
-                return Err(Refusal::Unported(format!("{variant} is hand-written in the Python engine")))
+                if !PORTED_CODED_KINDS.contains(&variant.as_str()) {
+                    return Err(Refusal::Unported(format!("{variant} is hand-written in the Python engine")));
+                }
+                apply_coded(state, side, variant, behind_substitute, log)?;
             }
             Effect::Unmodelled => return Err(Refusal::Unported(format!("{} has an unmodelled effect", the_move.name))),
         }
@@ -1560,8 +1598,9 @@ fn apply_fixed_damage(
     }
 }
 
-/// `_apply_heal`. Roost's half of this — dropping the bird's Flying type for the turn — belongs to
-/// Roost, which is still refused for being special-cased by name.
+/// `_apply_heal`. Roost's half of this — dropping the bird's Flying type for the turn — is folded
+/// in here directly rather than given its own dispatch, since a `HealEffect` is all Roost's data
+/// carries; nothing marks it as special ahead of time.
 fn apply_heal(state: &mut State, side: usize, fraction: f64, move_name: &str, log: &mut Log) {
     let pokemon = state.sides[side].active_mut();
     let amount = std::cmp::max(1, (pokemon.totals.hp as f64 * fraction) as i32);
@@ -1577,6 +1616,197 @@ fn apply_heal(state: &mut State, side: usize, fraction: f64, move_name: &str, lo
     if move_name == "Roost" {
         state.sides[side].active_mut().volatiles.insert("ROOSTED".to_string(), 1);
     }
+}
+
+/// `_apply_coded`, for the `CodedMoveKind`s this engine has learned. Dispatched by `variant`, the
+/// exported enum member name, since several moves share a kind (the four `WEATHER_HEAL` moves).
+fn apply_coded(
+    state: &mut State,
+    side: usize,
+    variant: &str,
+    behind_substitute: bool,
+    log: &mut Log,
+) -> Result<(), Refusal> {
+    // `_SUB_BLOCKED_KINDS`: a substitute blocks these outright, and silently — no log line, which
+    // is how this contributes to the empty-log `MoveFailed` exactly like a blocked status effect
+    // does. Only Pain Split and Strength Sap are reachable today; Knock Off's item removal and
+    // Trick share the set but are not ported yet.
+    const SUB_BLOCKED_KINDS: [&str; 2] = ["PAIN_SPLIT", "STRENGTH_SAP"];
+    if behind_substitute && SUB_BLOCKED_KINDS.contains(&variant) {
+        return Ok(());
+    }
+    match variant {
+        "REST" => rest(state, side, log),
+        "WEATHER_HEAL" => weather_heal(state, side, log),
+        "PAIN_SPLIT" => pain_split(state, side, log),
+        "STRENGTH_SAP" => strength_sap(state, side, log),
+        "BELLY_DRUM" => belly_drum(state, side, log),
+        "HAZE" => {
+            for s in 0..2 {
+                for value in state.sides[s].active_mut().stages.values_mut() {
+                    *value = 0;
+                }
+            }
+            log.push(Event::AllStatsReset);
+        }
+        "COURT_CHANGE" => {
+            let (a, b) = state.sides.split_at_mut(1);
+            std::mem::swap(&mut a[0].hazards, &mut b[0].hazards);
+            std::mem::swap(&mut a[0].screens, &mut b[0].screens);
+            std::mem::swap(&mut a[0].tailwind_turns, &mut b[0].tailwind_turns);
+            log.push(Event::CourtChanged);
+        }
+        "CURSE" => curse(state, side, log),
+        "TIDY_UP" => {
+            for s in 0..2 {
+                clear_hazards(state, s, log);
+                state.sides[s].active_mut().volatiles.remove("SUBSTITUTE");
+            }
+        }
+        "PERISH_SONG" => {
+            for s in 0..2 {
+                let active = state.sides[s].active_pokemon();
+                if !active.fainted() && !active.volatiles.contains_key("PERISH") {
+                    state.sides[s].active_mut().volatiles.insert("PERISH".to_string(), 4);
+                    let nickname = state.sides[s].active_pokemon().nickname.clone();
+                    log.push(Event::VolatileInflicted { side: s as i32, pokemon: nickname, volatile: "PERISH".into() });
+                }
+            }
+        }
+        "CURE_SELF" => {
+            let attacker = state.sides[side].active_pokemon();
+            if attacker.status != Status::None {
+                let attacker = state.sides[side].active_mut();
+                attacker.status = Status::None;
+                attacker.status_turns = 0;
+                let nickname = attacker.nickname.clone();
+                log.push(Event::StatusCleared { side: side as i32, pokemon: nickname, clearance: "refreshed".into() });
+            }
+        }
+        "CURE_PARTY" => {
+            for i in 0..state.sides[side].team.len() {
+                let member = &mut state.sides[side].team[i];
+                if member.status != Status::None {
+                    member.status = Status::None;
+                    member.status_turns = 0;
+                    let nickname = member.nickname.clone();
+                    log.push(Event::StatusCleared { side: side as i32, pokemon: nickname, clearance: "refreshed".into() });
+                }
+            }
+        }
+        _ => unreachable!("gated by PORTED_CODED_KINDS"),
+    }
+    Ok(())
+}
+
+fn rest(state: &mut State, side: usize, log: &mut Log) {
+    let attacker = state.sides[side].active_pokemon();
+    if attacker.hp == attacker.totals.hp {
+        log.push(Event::MoveFailed);
+        return;
+    }
+    let attacker = state.sides[side].active_mut();
+    attacker.status = Status::Sleep;
+    attacker.status_turns = 3; // two full turns asleep
+    let before = attacker.hp;
+    attacker.hp = attacker.totals.hp;
+    let healed = attacker.hp - before;
+    let nickname = attacker.nickname.clone();
+    log.push(Event::StatusInflicted { side: side as i32, pokemon: nickname.clone(), status: "SLEEP".into() });
+    log.push(Event::Healed { side: side as i32, pokemon: nickname, amount: healed });
+}
+
+fn weather_heal(state: &mut State, side: usize, log: &mut Log) {
+    let weather = crate::hooks::effective_weather(state);
+    let (numerator, denominator) = match weather.as_str() {
+        "SUN" | "HARSH_SUN" => (2, 3),
+        "NONE" => (1, 2),
+        _ => (1, 4),
+    };
+    let attacker = state.sides[side].active_mut();
+    let amount = std::cmp::max(1, attacker.totals.hp * numerator / denominator);
+    let before = attacker.hp;
+    attacker.hp = std::cmp::min(attacker.totals.hp, attacker.hp + amount);
+    let healed = attacker.hp - before;
+    if healed > 0 {
+        let nickname = attacker.nickname.clone();
+        log.push(Event::Healed { side: side as i32, pokemon: nickname, amount: healed });
+    }
+}
+
+/// `_pain_split`. Logs the amount it *asked* healing for, not what `apply_healing` actually
+/// returned, exactly the same inconsistency as recoil's — see docs/python-oddities.md.
+fn pain_split(state: &mut State, side: usize, log: &mut Log) {
+    let other = 1 - side;
+    let average = (state.sides[side].active_pokemon().hp + state.sides[other].active_pokemon().hp) / 2;
+    for s in [side, other] {
+        let pokemon = state.sides[s].active_mut();
+        let delta = average - pokemon.hp;
+        if delta > 0 {
+            pokemon.hp = std::cmp::min(pokemon.totals.hp, pokemon.hp + delta);
+            let nickname = pokemon.nickname.clone();
+            log.push(Event::Healed { side: s as i32, pokemon: nickname, amount: delta });
+        } else {
+            pokemon.take_damage(-delta);
+        }
+    }
+}
+
+fn strength_sap(state: &mut State, side: usize, log: &mut Log) {
+    let other = 1 - side;
+    if state.sides[other].active_pokemon().stage("ATTACK") <= -6 {
+        log.push(Event::MoveFailed);
+        return;
+    }
+    let sapped = std::cmp::max(1, state.sides[other].active_pokemon().effective("ATTACK"));
+    let attacker = state.sides[side].active_mut();
+    let before = attacker.hp;
+    attacker.hp = std::cmp::min(attacker.totals.hp, attacker.hp + sapped);
+    let healed = attacker.hp - before;
+    if healed > 0 {
+        let nickname = attacker.nickname.clone();
+        log.push(Event::Healed { side: side as i32, pokemon: nickname, amount: healed });
+    }
+    apply_stage_changes_from(state, other, &[("ATTACK".to_string(), -1)], "move", true, log);
+}
+
+fn belly_drum(state: &mut State, side: usize, log: &mut Log) {
+    let attacker = state.sides[side].active_pokemon();
+    let cost = attacker.totals.hp / 2;
+    if cost >= attacker.hp || attacker.stage("ATTACK") >= 6 {
+        log.push(Event::MoveFailed);
+        return;
+    }
+    state.sides[side].active_mut().take_damage(cost);
+    apply_stage_changes(state, side, &[("ATTACK".to_string(), 12)], "move", log);
+}
+
+/// `_curse`: a Ghost curses its target at half its own health; anything else boosts itself.
+/// `attacker.types` on purpose, not `battle_types` — Curse cannot be used the same turn its own
+/// user roosted, so the two can never actually disagree here, and the Python asks the plain field.
+fn curse(state: &mut State, side: usize, log: &mut Log) {
+    let other = 1 - side;
+    let attacker_is_ghost = state.sides[side].active_pokemon().types.iter().flatten().any(|t| t == "GHOST");
+    if attacker_is_ghost {
+        let defender = state.sides[other].active_pokemon();
+        if defender.volatiles.contains_key("CURSE") || defender.fainted() {
+            log.push(Event::MoveFailed);
+            return;
+        }
+        let cost = state.sides[side].active_pokemon().totals.hp / 2;
+        state.sides[side].active_mut().take_damage(cost);
+        state.sides[other].active_mut().volatiles.insert("CURSE".to_string(), 1);
+        let nickname = state.sides[other].active_pokemon().nickname.clone();
+        log.push(Event::VolatileInflicted { side: other as i32, pokemon: nickname, volatile: "CURSE".into() });
+        return;
+    }
+    apply_stage_changes(
+        state,
+        side,
+        &[("ATTACK".to_string(), 1), ("DEFENCE".to_string(), 1), ("SPEED".to_string(), -1)],
+        "move",
+        log,
+    );
 }
 
 // Eight arguments, for the same reason `calculate_hit` takes eight: this reads against the
