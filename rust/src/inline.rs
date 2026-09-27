@@ -21,7 +21,7 @@ use crate::battle::{Pokemon, Status};
 /// move with its own log line — so porting the clause alone would be a Levitate that takes no
 /// damage and never says why. Air Balloon, Punching Glove and Choice Scarf are out for the same
 /// reason: each does more somewhere else.
-pub const PORTED_ABILITIES: [&str; 59] = [
+pub const PORTED_ABILITIES: [&str; 68] = [
     "BATTLE_ARMOR",
     "BIG_PECKS",
     "CHLOROPHYLL",
@@ -30,6 +30,7 @@ pub const PORTED_ABILITIES: [&str; 59] = [
     "COMPETITIVE",
     "CONTRARY",
     "COMPOUND_EYES",
+    "CORROSION",
     "DEFIANT",
     "DRIZZLE",
     "DROUGHT",
@@ -50,12 +51,14 @@ pub const PORTED_ABILITIES: [&str; 59] = [
     "MAGIC_GUARD",
     "MAGMA_ARMOR",
     "MERCILESS",
+    "MINDS_EYE",
     "MISTY_SURGE",
     "MYCELIUM_MIGHT",
     "NO_GUARD",
     "OVERCOAT",
     "OWN_TEMPO",
     "PRANKSTER",
+    "PRESSURE",
     "PSYCHIC_SURGE",
     "PURIFYING_SALT",
     "QUICK_DRAW",
@@ -64,16 +67,22 @@ pub const PORTED_ABILITIES: [&str; 59] = [
     "SAND_RUSH",
     "SAND_STREAM",
     "SAND_VEIL",
+    "SCRAPPY",
+    "SERENE_GRACE",
     "SHELL_ARMOR",
+    "SHIELD_DUST",
     "SIMPLE",
+    "SKILL_LINK",
     "SLUSH_RUSH",
     "SNIPER",
     "SNOW_WARNING",
     "SNOW_CLOAK",
+    "STEADFAST",
     "STURDY",
     "SUPER_LUCK",
     "SURGE_SURFER",
     "SWIFT_SWIM",
+    "SYNCHRONIZE",
     "TANGLED_FEET",
     "TRIAGE",
     "UNBURDEN",
@@ -102,6 +111,53 @@ pub fn priority_bonus(ability: &str, move_type: &str, category: &str, healing: b
         bonus += 3;
     }
     bonus
+}
+
+/// `_tuned_status_secondary`: a *secondary* status effect (one riding a damaging move, not a pure
+/// status move) is blocked outright by Shield Dust on the defender — no probability draw at all —
+/// unless it targets the move's own user, or doubled by Serene Grace on the attacker. `None` means
+/// skip the draw entirely; `Some` carries the probability actually to be drawn. A non-secondary
+/// effect is returned unchanged either way. Sheer Force's own nullification is the attacker's own
+/// unported ability and Covert Cloak the defender's own unported item, so neither reaches here —
+/// any holder of either is refused before turn one.
+pub fn tune_status_secondary(
+    is_secondary: bool,
+    probability: f64,
+    aimed_at_self: bool,
+    attacker_ability: &str,
+    defender_ability: &str,
+) -> Option<f64> {
+    if !is_secondary {
+        return Some(probability);
+    }
+    if !aimed_at_self && defender_ability == "SHIELD_DUST" {
+        return None;
+    }
+    if attacker_ability == "SERENE_GRACE" {
+        return Some((probability * 2.0).min(1.0));
+    }
+    Some(probability)
+}
+
+/// `_tuned_stage_secondary`: the same idea for a secondary stat-stage effect, which carries its
+/// own `target` ("SELF" or "TARGET") rather than the status effect's `to_self` flag.
+pub fn tune_stage_secondary(
+    is_secondary: bool,
+    probability: f64,
+    target: &str,
+    attacker_ability: &str,
+    defender_ability: &str,
+) -> Option<f64> {
+    if !is_secondary {
+        return Some(probability);
+    }
+    if target == "TARGET" && defender_ability == "SHIELD_DUST" {
+        return None;
+    }
+    if attacker_ability == "SERENE_GRACE" {
+        return Some((probability * 2.0).min(1.0));
+    }
+    Some(probability)
 }
 
 /// `_WEATHER_SPEED_DOUBLERS`: the ability, and the weather it runs in.

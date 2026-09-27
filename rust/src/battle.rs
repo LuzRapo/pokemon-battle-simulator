@@ -393,6 +393,23 @@ impl Pokemon {
         bypass
     }
 
+    /// `move_effectiveness`'s Scrappy/Mind's Eye clause, unioned onto `identify_bypass` the same
+    /// way the Python ORs a Ghost bypass into `immunity_bypass(defender)` — attacker-side rather
+    /// than defender-side, so it cannot live in `identify_bypass` itself, but it lands in the same
+    /// bypass set at all three sites that read one: the immunity gate in `resolve_move`, the
+    /// residual landing site for Future Sight/Doom Desire, and `calculate_hit`'s own independent
+    /// recomputation. `_apply_fixed_damage`'s own gate is deliberately not one of the three: the
+    /// Python's fixed-damage path calls the bare `immunity_bypass(defender)`, attacker never
+    /// passed, so a Ground/Ghost hit by Seismic Toss from a Scrappy Pokemon is immune regardless.
+    pub fn effective_bypass(&self, attacker_ability: &str, move_type: &str) -> Vec<&'static str> {
+        let mut bypass = self.identify_bypass();
+        let scrappy = matches!(attacker_ability, "SCRAPPY" | "MINDS_EYE") && matches!(move_type, "NORMAL" | "FIGHTING");
+        if scrappy && self.types.iter().flatten().any(|t| t == "GHOST") && !bypass.contains(&"GHOST") {
+            bypass.push("GHOST");
+        }
+        bypass
+    }
+
     pub fn stage(&self, name: &str) -> i32 {
         self.stages.get(name).copied().unwrap_or(0)
     }

@@ -22,11 +22,11 @@ import pytest
 from battle_sim.database.loader import get_all_moves
 from battle_sim.differential import Scenario, compare, record
 from battle_sim.engine import legal_actions
-from battle_sim.models.actions import ActionType
+from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.moves import MoveSlot
 from battle_sim.models.spec import PokemonSpec
 from battle_sim.models.stats import EVs, IVs
-from battle_sim.utils import Ability, Item, Nature
+from battle_sim.utils import Ability, Item, Nature, Target
 
 RUST = Path(__file__).resolve().parent.parent / "rust"
 BINARY = RUST / "target" / "release" / "replay"
@@ -1336,6 +1336,229 @@ def test_sturdy_survives_an_otherwise_lethal_hit_from_full_hp(tmp_path: Path) ->
                 if e["type"] == "SurvivedAtOneHp" and e["cause"] == "sturdy":
                     sturdy_saves += 1
     assert sturdy_saves > 0, "Sturdy never once saved the level 1 Rhydon across 20 seeds"
+
+
+def _mon(species: str, nickname: str, ability: Ability, moves: list[str]) -> PokemonSpec:
+    return PokemonSpec(
+        species=species, nickname=nickname, level=50, ability=ability, item=Item.NONE,
+        nature=Nature.HARDY, moves=moves,
+    )
+
+
+@needs_rust
+def test_serene_grace_and_shield_dust_tune_secondary_chances(tmp_path: Path) -> None:
+    """Rock Smash's Defense-drop secondary is a flat 50% -- Serene Grace on the attacker doubles it
+    to a guaranteed drop, and Shield Dust on the defender blocks it outright, no draw at all. Both
+    land at the same `tune_stage_secondary` gate, ahead of the substitute check, so a single
+    always-hitting move with a coin-flip secondary turns each ability into a deterministic
+    assertion rather than a seed sweep.
+
+    Vacuity-checked directly: skipping the tuning (calling `apply_stages` with the raw 50%
+    probability instead) turned every one of 10 seeds in the Serene Grace matchup into a tape
+    divergence -- Python's guaranteed drop against this engine's coin flip -- and turned the
+    Shield Dust matchup's drop-blocking into a divergence the same way once the block was removed.
+    """
+    boosted = [_mon("Rhydon", "A0", Ability.SERENE_GRACE, ["Rock Smash"])]
+    plain_target = [_mon("Tauros", "B0", Ability.NONE, ["Splash"])]
+    for seed in range(10):
+        rng = random.Random(41000 + seed)
+        scenario, expected = record((boosted, plain_target), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        drops = [e for e in expected[0]["events"] if e["type"] == "StatStageChanged" and e["stat"] == "DEFENCE"]
+        assert drops, f"seed {seed}: Serene Grace never doubled Rock Smash's drop to a guaranteed one"
+
+    dusted_target = [_mon("Tauros", "B0", Ability.SHIELD_DUST, ["Splash"])]
+    for seed in range(10):
+        rng = random.Random(41100 + seed)
+        scenario, expected = record((boosted, dusted_target), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        drops = [e for e in expected[0]["events"] if e["type"] == "StatStageChanged" and e["stat"] == "DEFENCE"]
+        assert not drops, f"seed {seed}: Shield Dust failed to block Rock Smash's secondary"
+
+
+@needs_rust
+def test_skill_link_always_rolls_max_hits_and_agrees(tmp_path: Path) -> None:
+    """Skill Link: Bullet Seed's 2-5 hit range always lands at the top, drawn from the tape not at
+    all -- the same shape as Loaded Dice's still-unported roll. Bullet Seed always hits, so the hit
+    count is the only thing a seed could vary, and Skill Link removes even that.
+
+    Vacuity-checked directly: falling through to the ordinary tape draw turned seed 0 into a tape
+    divergence -- Python's unconditional 5 against a rolled 2, since Skill Link takes no draw at
+    all in the Python and this engine, undisabled, doesn't either.
+    """
+    team_a = [_mon("Rhydon", "A0", Ability.SKILL_LINK, ["Bullet Seed"])]
+    team_b = [_mon("Tauros", "B0", Ability.NONE, ["Splash"])]
+    for seed in range(10):
+        rng = random.Random(41200 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        summary = next(e for e in expected[0]["events"] if e["type"] == "MultiHitSummary")
+        assert summary["hits"] == 5, f"seed {seed}: Skill Link rolled {summary['hits']} hits instead of 5"
+
+
+@needs_rust
+def test_scrappy_and_minds_eye_hit_ghosts_with_normal_and_fighting(tmp_path: Path) -> None:
+    """Scrappy and Mind's Eye: a Normal or Fighting move from either ability bypasses a Ghost
+    type's usual immunity to both. Gengar is pure enough (Ghost/Poison) that a landed Tackle is
+    unambiguous, and Tackle always hits, so there is nothing for a seed to vary -- the control case
+    (no ability) is the same matchup asserting the opposite, so the effect is measured, not assumed.
+
+    Vacuity-checked directly: dropping the Ghost union from `effective_bypass` turned every one of
+    10 seeds in both ability matchups into a tape divergence -- this engine's NoEffect against
+    Python's landed hit.
+    """
+    target = [_mon("Gengar", "B0", Ability.NONE, ["Splash"])]
+    for ability in (Ability.SCRAPPY, Ability.MINDS_EYE):
+        team_a = [_mon("Rhydon", "A0", ability, ["Tackle"])]
+        for seed in range(10):
+            rng = random.Random(41300 + seed)
+            scenario, expected = record((team_a, target), _chooser(rng), seed=seed, max_turns=1)
+            theirs = _rust_trace(scenario, tmp_path)
+            assert not isinstance(theirs, str), f"{ability} seed {seed} was refused: {theirs}"
+            divergence = compare(expected, theirs)
+            assert divergence is None, f"{ability} seed {seed}\n{divergence}"
+            events = expected[0]["events"]
+            assert any(e["type"] == "DamageDealt" for e in events), f"{ability} seed {seed}: Tackle never landed"
+            assert not any(e["type"] == "NoEffect" for e in events), f"{ability} seed {seed}: Tackle was refused"
+
+    # Control: the same matchup with no ability at all is the immunity the other two bypass.
+    plain_team_a = [_mon("Rhydon", "A0", Ability.NONE, ["Tackle"])]
+    scenario, expected = record((plain_team_a, target), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"control was refused: {theirs}"
+    divergence = compare(expected, theirs)
+    assert divergence is None, f"control\n{divergence}"
+    events = expected[0]["events"]
+    assert any(e["type"] == "NoEffect" for e in events), "control: Tackle should have no effect on Gengar"
+
+
+def _round_robin_chooser():
+    """Cycles a Pokemon through its four move slots in order, side by side independently.
+
+    A moveset shorter than four moves is padded by repeating the first one into every empty slot
+    (see the charge-move redirect notes elsewhere in this file), and each padded slot carries its
+    *own* PP pool rather than sharing one -- a random chooser mostly just rotates between four full
+    pools instead of ever emptying one. Round-robining deliberately, in a fixed order, empties all
+    four in lockstep instead, which is the only way to force Struggle on a demand.
+    """
+    slots = [MoveSlot.FIRST, MoveSlot.SECOND, MoveSlot.THIRD, MoveSlot.FOURTH]
+    counters = {0: 0, 1: 0}
+
+    def choose(state, side_index):  # type: ignore[no-untyped-def]
+        slot = slots[counters[side_index] % 4]
+        counters[side_index] += 1
+        return Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=slot)
+
+    return choose
+
+
+@needs_rust
+def test_pressure_doubles_the_pp_cost_of_a_move_that_faces_it(tmp_path: Path) -> None:
+    """Pressure: a move that faces its holder spends 2 PP instead of 1. Cross Chop's 5 PP, spent
+    round-robin across the four padded copies of it Rhydon's one-move set carries, reaches 0 in
+    all four after 3 rounds (12 turns: 5, 3, 1 -> 0) under Pressure rather than 5 rounds (20 turns:
+    5, 4, 3, 2, 1 -> 0), so the 13th turn is forced into Struggle. Gengar is Ghost/Poison, immune
+    to Fighting, so it takes no damage across the run and the immunity gate short-circuits before
+    any accuracy roll -- the whole scenario is deterministic, no seed needed.
+
+    Vacuity-checked directly: dropping the cost back to a flat 1 turned turn 13 into a divergence
+    -- this engine kept swinging Cross Chop a turn after Python's Pressure-aware engine, at 5 uses
+    per slot instead of 3, had forced Struggle nowhere near yet.
+    """
+    team_a = [_mon("Rhydon", "A0", Ability.NONE, ["Cross Chop"])]
+    team_b = [_mon("Gengar", "B0", Ability.PRESSURE, ["Splash"])]
+    scenario, expected = record((team_a, team_b), _round_robin_chooser(), seed=0, max_turns=13)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    divergence = compare(expected, theirs)
+    assert divergence is None, f"{divergence}"
+    moves_used = [e["move"] for turn in expected for e in turn["events"] if e["type"] == "MoveUsed" and e["side"] == 0]
+    assert moves_used == ["Cross Chop"] * 12 + ["Struggle"], moves_used
+
+
+@needs_rust
+def test_steadfast_gains_speed_from_flinching(tmp_path: Path) -> None:
+    """Steadfast: any flinch, not just an ability's own retaliation, raises its holder's Speed by
+    one stage the instant the flinch volatile lands. Fake Out is a guaranteed hit with a guaranteed
+    flinch, so every seed sees exactly one.
+
+    Vacuity-checked directly: removing the stage-change call at the flinch site turned seed 0 into
+    a plain digest mismatch -- Python's SPEED +1 that this engine, disabled, never sent.
+    """
+    team_a = [_mon("Rhydon", "A0", Ability.NONE, ["Fake Out"])]
+    team_b = [_mon("Tauros", "B0", Ability.STEADFAST, ["Splash"])]
+    for seed in range(10):
+        rng = random.Random(41500 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        boosts = [e for e in expected[0]["events"] if e["type"] == "StatStageChanged" and e["source"] == "steadfast"]
+        assert boosts, f"seed {seed}: Steadfast never raised Speed after flinching"
+
+
+@needs_rust
+def test_synchronize_mirrors_a_status_back_onto_its_inflictor(tmp_path: Path) -> None:
+    """Synchronize: a burn/paralysis/poison/toxic landing on its holder reflects straight back onto
+    whoever inflicted it, but only when the inflictor isn't already statused, and without
+    re-triggering anything on the way back (the reflected copy is applied with no inflictor of its
+    own). Thunder Wave is the simplest single-target status to force, at 90% accuracy, so this is a
+    seed sweep rather than a single deterministic case.
+
+    Vacuity-checked directly: dropping the reflect call left seed 0's attacker unstatused where
+    Python's inflictor also ends up paralysed -- a plain digest mismatch, not a refusal.
+    """
+    team_a = [_mon("Tauros", "A0", Ability.NONE, ["Thunder Wave"])]
+    team_b = [_mon("Machamp", "B0", Ability.SYNCHRONIZE, ["Splash"])]
+    reflected = 0
+    for seed in range(20):
+        rng = random.Random(41600 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        statuses = [e for e in expected[0]["events"] if e["type"] == "StatusInflicted"]
+        if {e["side"] for e in statuses} == {0, 1}:
+            reflected += 1
+    assert reflected > 0, "Synchronize never once reflected paralysis back onto its inflictor across 20 seeds"
+
+
+@needs_rust
+def test_corrosion_lets_a_poison_status_through_a_steel_type(tmp_path: Path) -> None:
+    """Corrosion: the *inflictor's* ability, not the target's, is what lets Toxic poison a Steel
+    type that would otherwise be flatly immune -- the only exception `_STATUS_TYPE_IMMUNITY` has.
+    Steelix (Steel/Ground) has no poison-immunity clause of its own beyond the Steel half, so a
+    landed Toxic here is unambiguously Corrosion's doing. Toxic is 90% accurate, so this is a seed
+    sweep.
+
+    Vacuity-checked directly: keeping the type-immunity check unconditional turned seed 0's Toxic
+    into a silent no-op where Python's Corrosion-aware engine lands it -- a digest mismatch on the
+    first status draw.
+    """
+    team_a = [_mon("Tauros", "A0", Ability.CORROSION, ["Toxic"])]
+    team_b = [_mon("Steelix", "B0", Ability.NONE, ["Splash"])]
+    poisoned = 0
+    for seed in range(20):
+        rng = random.Random(41700 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        if any(e["type"] == "StatusInflicted" and e["status"] == "TOXIC" for e in expected[0]["events"]):
+            poisoned += 1
+    assert poisoned > 0, "Corrosion never once poisoned the Steel type across 20 seeds"
 
 
 @needs_rust

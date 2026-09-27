@@ -315,7 +315,7 @@ pub const PORTED_CODED_KINDS: [&str; 25] = [
 /// cannot be claimed in one place and missing from the other.
 ///
 /// A Pokemon carrying live behaviour absent from these is refused, not played with part of its
-/// rules missing. 220 abilities and 110 items are live in the Python; these say how far along the
+/// rules missing. 220 abilities and 193 items are live in the Python; these say how far along the
 /// port is, and a name joins one only once it has been agreed across a sweep.
 pub fn ported_abilities() -> &'static std::collections::HashSet<&'static str> {
     static ONCE: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
@@ -1020,8 +1020,17 @@ fn resolve_move(
     // point, which is why this is here rather than after the hit lands. Rampaging or releasing a
     // charge spends nothing — the whole run was paid for on its first turn.
     if !empty && !rampaging && !releasing_charge {
+        // Pressure doubles the cost of a move that faces its holder — not a move it merely
+        // stands beside, which is what `DEFENDER_FACING` already tells apart everywhere else.
+        let cost = if state.sides[other].active_pokemon().ability == "PRESSURE"
+            && DEFENDER_FACING.contains(&the_move.target.as_str())
+        {
+            2
+        } else {
+            1
+        };
         if let Some(left) = state.sides[side].active_mut().pp.get_mut(crate::battle::SLOT_NAMES[slot]) {
-            *left = (*left - 1).max(0);
+            *left = (*left - cost).max(0);
         }
     }
     // Taunt: after PP is spent, before the move is announced. A status move turned aside here still
@@ -1194,9 +1203,10 @@ fn resolve_move(
     let effectiveness = if the_move.typeless {
         1.0
     } else {
+        let attacker_ability = state.sides[side].active_pokemon().ability.clone();
         let defender = state.sides[other].active_pokemon();
-        let natural =
-            db.effectiveness_bypassing(&the_move.move_type, &defender.battle_types(), &defender.identify_bypass());
+        let bypass = defender.effective_bypass(&attacker_ability, &the_move.move_type);
+        let natural = db.effectiveness_bypassing(&the_move.move_type, &defender.battle_types(), &bypass);
         crate::power::effectiveness_override(&the_move.name, defender, natural, db)
     };
     // The immunity gate is for *damaging* moves only, exactly as the Python writes it. Charge is
@@ -1263,26 +1273,53 @@ fn resolve_move(
                 // Effectiveness is logged inside, because the hit-count roll comes before it.
                 apply_damage(state, side, &the_move, &listed_type, effectiveness, behind_substitute, db, tape, log)?;
             }
-            Effect::InflictStatusEffect { status, probability, to_self, .. } => {
+            Effect::InflictStatusEffect { status, probability, to_self, is_secondary } => {
                 // `_apply_status_routed`: the *move* targeting its user is enough, whatever the
                 // effect says. Endure's effect is not marked `to_self` and it is plainly not
                 // something you do to somebody else. A substitute blocks a status effect aimed at
                 // its owner completely — not even the probability draw happens, exactly as the
                 // Python's `elif not behind_substitute` skips the whole call.
                 let at_self = *to_self || the_move.target == "SELF";
-                if !at_self && behind_substitute {
-                    // no draw
-                } else {
-                    apply_status(state, side, status, *probability, at_self, tape, log)?;
+                // `_tuned_status_secondary` runs first, unconditionally, ahead of the substitute
+                // check — a Shield Dust block skips the draw even behind a substitute, since the
+                // Python nullifies the effect object itself before `_apply_status_routed` (which
+                // is where the substitute check lives) is ever called.
+                let attacker_ability = state.sides[side].active_pokemon().ability.clone();
+                let defender_ability = state.sides[other].active_pokemon().ability.clone();
+                let tuned = crate::inline::tune_status_secondary(
+                    *is_secondary,
+                    *probability,
+                    at_self,
+                    &attacker_ability,
+                    &defender_ability,
+                );
+                if let Some(tuned) = tuned {
+                    if !at_self && behind_substitute {
+                        // no draw
+                    } else {
+                        apply_status(state, side, status, tuned, at_self, tape, log)?;
+                    }
                 }
             }
-            Effect::StatStageChangeEffect { stages, probability, target, .. } => {
+            Effect::StatStageChangeEffect { stages, probability, target, is_secondary } => {
                 // Same rule as the status case: a substitute blocks a stage drop aimed at its
-                // owner before the probability draw, not after.
-                if target != "SELF" && behind_substitute {
-                    // no draw
-                } else {
-                    apply_stages(state, side, stages, *probability, target, tape, log)?;
+                // owner before the probability draw, not after — and `_tuned_stage_secondary`
+                // still runs ahead of both, for the same reason.
+                let attacker_ability = state.sides[side].active_pokemon().ability.clone();
+                let defender_ability = state.sides[other].active_pokemon().ability.clone();
+                let tuned = crate::inline::tune_stage_secondary(
+                    *is_secondary,
+                    *probability,
+                    target,
+                    &attacker_ability,
+                    &defender_ability,
+                );
+                if let Some(tuned) = tuned {
+                    if target != "SELF" && behind_substitute {
+                        // no draw
+                    } else {
+                        apply_stages(state, side, stages, tuned, target, tape, log)?;
+                    }
                 }
             }
             Effect::FixedDamageEffect { amount_formula, set_amount } => {
@@ -1594,7 +1631,7 @@ fn collect_damage_payload(
 /// Taken *before* the effectiveness line is logged and before any crit or damage roll, which is
 /// where the Python takes it. A fixed count — Double Kick's two, Triple Axel's three — costs no
 /// draw at all. Skill Link and Loaded Dice change the answer and are both still refused.
-fn planned_hits(the_move: &Move, tape: &mut Tape) -> Result<(bool, i32), Refusal> {
+fn planned_hits(the_move: &Move, attacker_ability: &str, tape: &mut Tape) -> Result<(bool, i32), Refusal> {
     let span = the_move.effects.iter().find_map(|e| match e {
         Effect::DamageEffect { multi_hit, .. } => multi_hit.as_ref(),
         _ => None,
@@ -1603,6 +1640,11 @@ fn planned_hits(the_move: &Move, tape: &mut Tape) -> Result<(bool, i32), Refusal
     let (low, high) = (span[0], span[1]);
     if low == high {
         return Ok((true, low));
+    }
+    // Skill Link: always the top of the range, and — like Loaded Dice's own special-cased roll,
+    // an item still unported — drawn from the tape not at all rather than drawn and discarded.
+    if attacker_ability == "SKILL_LINK" {
+        return Ok((true, high));
     }
     Ok((true, tape.integer(low, high + 1)?))
 }
@@ -2258,9 +2300,10 @@ fn resolve_future_sight(state: &mut State, side: usize, db: &Database, tape: &mu
     let behind_substitute = state.sides[side].active_pokemon().volatiles.contains_key("SUBSTITUTE")
         && !the_move.bypass_substitute
         && state.sides[attacker_side].active_pokemon().ability != "INFILTRATOR";
+    let attacker_ability = state.sides[attacker_side].active_pokemon().ability.clone();
     let defender = state.sides[side].active_pokemon();
-    let effectiveness =
-        db.effectiveness_bypassing(&the_move.move_type, &defender.battle_types(), &defender.identify_bypass());
+    let bypass = defender.effective_bypass(&attacker_ability, &the_move.move_type);
+    let effectiveness = db.effectiveness_bypassing(&the_move.move_type, &defender.battle_types(), &bypass);
     let nickname = defender.nickname.clone();
     log.push(Event::FutureAttackLands { side: side as i32, pokemon: nickname, the_move: the_move.name.clone() });
     // `_stopped_before_any_hit`: normally asked by the caller before `_apply_damage` is even
@@ -2288,7 +2331,8 @@ fn apply_damage(
     log: &mut Log,
 ) -> Result<(), Refusal> {
     let other = 1 - side;
-    let (is_multi_hit, planned) = planned_hits(the_move, tape)?;
+    let attacker_ability = state.sides[side].active_pokemon().ability.clone();
+    let (is_multi_hit, planned) = planned_hits(the_move, &attacker_ability, tape)?;
     log.effectiveness(effectiveness);
     // Once for the whole move, after the hit count and the effectiveness line — which is where
     // the Python builds `hit_payload_base`. Only Magnitude notices, because only Magnitude draws.
@@ -2548,8 +2592,11 @@ fn apply_status(
         return Ok(());
     }
     let target_side = if to_self { side } else { 1 - side };
+    // `_apply_status_routed`: only the opponent-facing branch ever names an inflictor — a status
+    // move never reflects Synchronize off its own user.
+    let inflictor_side = if to_self { None } else { Some(side) };
     match Status::parse(status_name) {
-        Some(status) => apply_main_status(state, target_side, status, tape, log),
+        Some(status) => apply_main_status(state, target_side, status, inflictor_side, tape, log),
         None if status_name == "LOCKED_MOVE" => start_rampage(state, target_side, tape),
         None if status_name == "ENCORE" => {
             start_encore(state, target_side, log);
@@ -2684,6 +2731,9 @@ fn apply_volatile(
         pokemon: nickname,
         volatile: volatile.to_string(),
     });
+    if volatile == "FLINCH" && state.sides[target_side].active_pokemon().ability == "STEADFAST" {
+        apply_stage_changes_from(state, target_side, &[("SPEED".to_string(), 1)], "steadfast", false, log);
+    }
     Ok(())
 }
 
@@ -2697,38 +2747,48 @@ pub fn apply_main_status(
     state: &mut State,
     target_side: usize,
     status: Status,
+    inflictor_side: Option<usize>,
     tape: &mut Tape,
     log: &mut Log,
 ) -> Result<(), Refusal> {
     // A move knows what the weather is; an ability or a held orb does not.
     let weather = state.field.weather.clone();
-    apply_main_status_from(state, target_side, status, Some(&weather), tape, log)
+    apply_main_status_from(state, target_side, status, Some(&weather), inflictor_side, tape, log)
 }
 
-/// The same, told whether the caller knows the weather.
+/// The same, told whether the caller knows the weather and who (if anyone) is inflicting it.
 ///
 /// `weather: None` is not a shortcut — it is the Python's own behaviour. Only the move path passes
 /// `field` to `_apply_main_status`; the contact abilities and the Toxic and Flame Orbs all call it
 /// without one, and `_ability_immune_to_status` reads `field is not None` before it will let Leaf
 /// Guard block anything. So a Toxic Orb poisons its holder in blazing sun and a Leaf Guard cannot
 /// stop it, while Sleep Powder in the same sun fails.
+///
+/// `inflictor_side` is the same story one level further: only an ordinary status move passes one
+/// at all (`Some(side)`, the attacker — never a target's own self-inflicted status, which is why
+/// `apply_status` only sets it `if !to_self`). A contact ability's own retaliation status
+/// (Static, Effect Spore, Poison Touch...) passes `None` in the Python too, which is why a
+/// Synchronize holder paralysed by touching a Static Pokemon does not reflect it back, and why
+/// Poison Touch cannot poison a Steel type through Corrosion — this engine has no reason to
+/// behave differently, so every call site but the ordinary move path stays `None`.
 pub fn apply_main_status_from(
     state: &mut State,
     target_side: usize,
     status: Status,
     weather: Option<&str>,
+    inflictor_side: Option<usize>,
     tape: &mut Tape,
     log: &mut Log,
 ) -> Result<(), Refusal> {
+    let corrosive = inflictor_side.is_some_and(|s| state.sides[s].active_pokemon().ability == "CORROSION");
     {
         let target = state.sides[target_side].active_pokemon();
-        // Type immunity is silent in the Python. Corrosion would let a Poison type poison a Steel
-        // one and is not ported, so the table is read straight.
-        if target
-            .types
-            .iter()
-            .flatten()
-            .any(|t| status.immune_types().contains(&t.as_str()))
+        // Type immunity is silent in the Python. Corrosion lets a poison-family status through a
+        // Poison or Steel type's own immunity — the only clause `_STATUS_TYPE_IMMUNITY` has for
+        // either status — everything else stays exactly as immune as it always was.
+        let poison_family = matches!(status, Status::Poison | Status::Toxic);
+        if !(poison_family && corrosive)
+            && target.types.iter().flatten().any(|t| status.immune_types().contains(&t.as_str()))
         {
             return Ok(());
         }
@@ -2764,6 +2824,18 @@ pub fn apply_main_status_from(
         pokemon: nickname,
         status: status.name().to_string(),
     });
+    // `_reflect_synchronize`: the newly-statused Pokemon's own Synchronize, not the inflictor's,
+    // mirrors a burn/paralysis/poison/toxic straight back — only if the inflictor is not already
+    // statused, and without letting the reflection re-trigger anything (`inflictor_side: None`).
+    if matches!(status, Status::Burn | Status::Paralysis | Status::Poison | Status::Toxic) {
+        if let Some(inflictor_side) = inflictor_side {
+            let reflects = state.sides[target_side].active_pokemon().ability == "SYNCHRONIZE";
+            let inflictor_healthy = state.sides[inflictor_side].active_pokemon().status == Status::None;
+            if reflects && inflictor_healthy {
+                apply_main_status_from(state, inflictor_side, status, weather, None, tape, log)?;
+            }
+        }
+    }
     Ok(())
 }
 

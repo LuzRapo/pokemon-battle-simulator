@@ -7,21 +7,35 @@ then replace the Python engine.
 
 Branch `feature/vectorised-engine`. Sections 1, 2 and 3 (charges, volatiles, and the remaining
 coded moves) are all done — every `CodedMoveKind` is ported, and with it every move in the
-database. Section 4 (abilities) is underway: its first cluster, the seven that change turn order
-rather than a stat, is done — see the batch write-up below.
+database. Section 4 (abilities) is underway: the turn-order cluster (seven abilities), Sturdy, and
+a nine-ability one-liner batch (Skill Link, Serene Grace, Shield Dust, Scrappy, Mind's Eye,
+Synchronize, Pressure, Steadfast, Corrosion) are in the tree and now verified — see the batch
+write-up below. Its dedicated tests, individual vacuity checks (all nine, each confirmed to turn
+red on its own), and a confirming differential sweep have all been run since the last update to
+this doc; per invariant 2 the batch now belongs on the "done" side.
 
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 135 | 220 (61%) |
-| items | 33 | 193 — see note |
+| abilities | 144 | 220 (65%) |
+| items | 33 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
+
+The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
+a release build for this update:
+`{"abilities":{"live":220,"ported":144},"items":{"live":193,"ported":33},"moves":{"playable":843,
+"refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
+row above. The stale code comment at `rust/src/turn.rs:318` ("220 abilities and 110 items are
+live") has been corrected to 193 for items.
 
 The items total jumped from 110 to 193 mid-section: 96 Mega Stones (and Primal orbs, Rusted
 Sword/Shield) turned out to have real behaviour — `_resolve_mega_evolution` — that the coverage
 export had never been able to see, for reasons worth reading in section 3's own notes below. They
 are correctly refused now rather than silently wrong, which is why the *ported* item count did not
-move even though total climbed by 83.
+move even though total climbed by 83. (An earlier revision of this doc had the items row and
+section 5's header disagree with each other — 33/193 in the table but "77 left" in the section
+header, which would only be consistent with a different total. The table above is the one to trust;
+section 5 below has been corrected to match it.)
 
 Every refusal cause `--coverage` used to report — coded-by-name, no modelled effect, does something
 to its user or the field, variable power, an unported volatile — is gone. `Transform`, the last
@@ -275,7 +289,7 @@ entirely (leaving the `Transformed` log line in place) — a still-Rhydon Pokemo
 from Machamp's copied moveset has nowhere to put it, and the very first of 40 seeds came back a
 refusal rather than a quiet pass.
 
-### 4. Abilities — 85 left
+### 4. Abilities — 76 left
 
 **Done: the turn-order cluster — Prankster, Gale Wings, Triage, Mycelium Might, Surge Surfer,
 Unburden, Quick Draw.** All seven live in `priority.py`, a single self-contained file, and all
@@ -311,42 +325,177 @@ apply, not a bug. Covered by `test_sturdy_survives_an_otherwise_lethal_hit_from_
 vacuity-checked directly, turning seed 0 red (a fainting `DamageDealt` where Sturdy should have
 clamped it to `SurvivedAtOneHp`) the moment the clamp was disabled.
 
-The remaining clusters, roughly in order of value:
+**Also done: Skill Link, Serene Grace, Shield Dust, Scrappy, Mind's Eye, Synchronize, Pressure,
+Steadfast, Corrosion.** Nine one-liners at sites that already existed, verified against a fresh
+read of `moves.py`/`status_apply.py`/`damage.py` rather than the earlier memory-written summary
+(which had mis-described Synchronize as a switch-in status copy — it isn't; see below):
 
-- **Damage/ordering one-liners at sites that already exist**: Shield Dust, Serene Grace,
-  Skill Link, Steadfast, Scrappy/Mind's Eye, Soundproof, Bulletproof, Pressure, Mold Breaker/
-  Teravolt/Turboblaze, Corrosion, Synchronize, Natural Cure, Regenerator.
-- **Type absorption**: Volt Absorb, Water Absorb, Earth Eater, Sap Sipper, Well Baked Body, Flash
-  Fire, Motor Drive, Lightning Rod, Storm Drain, Wind Rider, Dry Skin, Wonder Guard, Good as Gold.
-  These cancel a move at `ON_BEFORE_MOVE` — a hook this engine does not have yet.
-- **Trapping**: Arena Trap, Shadow Tag, Magnet Pull (affects `legal_actions`, not `step`).
-- **Ability swapping / copying**: Trace, Imposter, Mummy, Power of Alchemy-likes, Neutralizing Gas.
-- **Formes**: Stance Change, Zen Mode, Schooling, Shields Down, Power Construct, Zero to Hero,
-  Tera Shift, Disguise, Multitype/RKS System, Battle Bond, Libero/Protean.
-- **Paradox**: Protosynthesis, Quark Drive, Booster Energy, Hadron Engine, Orichalcum Pulse.
-- **Forced switches**: Emergency Exit, Wimp Out.
-- **The butler**: Nine Lives, and the last-stand machinery in `damage_apply`. Bespoke to this bot.
+- **Skill Link** (`turn::planned_hits`): a multi-hit move always rolls the top of its range,
+  drawn from the tape not at all — the same shape `_planned_hits` gives it in the Python.
+- **Serene Grace / Shield Dust** (`inline::tune_status_secondary`/`tune_stage_secondary`, called
+  from `resolve_move` ahead of the substitute check): Serene Grace doubles a secondary status or
+  stage effect's probability, Shield Dust blocks one aimed at its holder outright, no draw at all
+  — both ahead of, and independent of, whether the move is behind a substitute.
+- **Scrappy / Mind's Eye** (`Pokemon::effective_bypass`, unioned into `identify_bypass` at all
+  three sites that read a bypass set: the immunity gate in `resolve_move`, `calculate_hit`'s own
+  effectiveness check, and `resolve_future_sight`): a Normal or Fighting move from either ability
+  bypasses a Ghost type's usual immunity to both.
+- **Pressure** (`resolve_move`'s PP-spend block): a move that faces its holder — `DEFENDER_FACING`,
+  the same set Protect already used — spends 2 PP instead of 1.
+- **Steadfast** (`turn::apply_volatile`, the instant a `FLINCH` volatile is inserted): raises its
+  holder's Speed by one stage on any flinch, not just a contact ability's own retaliation.
+- **Synchronize** (`apply_main_status_from`, after the status is logged): a burn/paralysis/
+  poison/toxic landing on its holder reflects straight back onto whoever inflicted it — only if
+  the inflictor isn't already statused, and without an inflictor of its own on the way back, so
+  the reflection can't re-trigger anything (including a second Synchronize).
+- **Corrosion** (`apply_main_status_from`'s type-immunity check): the *inflictor's* ability, not
+  the target's, lets a poison-family status through a Poison or Steel type's own immunity — the
+  only clause the Python's status/type-immunity table has for either status.
 
-### 5. Items — 77 left
+Each of the nine now has its own differential test in `test_rust_battles.py`
+(`test_skill_link_always_rolls_max_hits_and_agrees`,
+`test_serene_grace_and_shield_dust_tune_secondary_chances`,
+`test_scrappy_and_minds_eye_hit_ghosts_with_normal_and_fighting`,
+`test_pressure_doubles_the_pp_cost_of_a_move_that_faces_it`,
+`test_steadfast_gains_speed_from_flinching`,
+`test_synchronize_mirrors_a_status_back_onto_its_inflictor`,
+`test_corrosion_lets_a_poison_status_through_a_steel_type`), most of them deterministic (a
+guaranteed-hit move with a probability forced to 0 or 1, so there is nothing for a seed to vary)
+rather than a seed sweep. The Pressure test turned up a harness quirk worth remembering: a
+Pokemon's moveset is padded to four slots by repeating its first move when it has fewer, and each
+padded slot carries its *own* PP pool — a random chooser mostly rotates between four full pools
+instead of ever emptying one, so forcing Struggle for real needs a round-robin chooser that
+empties all four in lockstep (`_round_robin_chooser` in the test file).
 
-Focus Sash, Life Orb, Heavy-Duty Boots, the Choice trio (need `choice_locked_move`), the plates and
-memories (type boosters *and* Judgment/Multi-Attack's type selector — both halves), the weather and
-terrain rocks, Power Herb, Light Clay, Terrain Extender, Loaded Dice, White Herb, Mental Herb,
-Mirror Herb, Clear Amulet, Covert Cloak, Eject Button/Pack, Red Card, Shed Shell, Quick Claw,
-Custap Berry, the cure berries, Leppa, Air Balloon, Punching Glove, Adrenaline Orb, the seeds,
-Griseous Orb/Core, Ultranecrozium Z.
+Vacuity-checked individually — each ability's own code path disabled on its own, release build
+rebuilt, only its own test run — and each one turned red on its own: Skill Link and Scrappy/Mind's
+Eye as an outright tape divergence (the two engines drawing from the tape differently, or one
+seeing `NoEffect` where the other lands a hit); Serene Grace, Shield Dust, Pressure, Steadfast,
+Synchronize and Corrosion as a plain digest mismatch on the first turn a seed's random draws
+reached them. Confirmed afterward with the full validation suite (`cargo build/test/clippy
+--release`, `ruff check`, `pytest -q tests/test_rust_battles.py` — 122 passed, 1 skipped) and two
+differential sweeps: 3000 status-slice battles with switching and abilities enabled (2958/3000
+agreed, 42 refused — all the same documented Future Sight scope limit, 0 diverged) and 2000
+plain-slice battles (2000/2000 agreed, 0 diverged). They're counted in the 144/220 table above and,
+per invariant 2, now genuinely belong there.
+
+The remaining 76, grouped and roughly ordered by what unblocks the most (see "6. Hooks still
+missing" below — several of these clusters are gated on hooks that don't exist yet, and building
+one hook first is cheaper than building each ability's workaround separately):
+
+- **Unblocked by `ON_BEFORE_MOVE` (13) — type immunity / absorption**: Flash Fire, Volt Absorb,
+  Water Absorb, Sap Sipper, Motor Drive, Lightning Rod, Storm Drain, Dry Skin, Earth Eater, Water
+  Bubble, Well Baked Body, Soundproof, Levitate (Levitate's grounding half is already a one-liner
+  in `inline.rs`; its move-cancelling half needs this hook, which is why it's deliberately kept off
+  the ported list — see `inline.rs:19-23`).
+- **Unblocked by `ON_FAINT` (2)**: Moxie, Beast Boost.
+- **Unblocked by `ON_SWITCH_OUT` (2)**: Regenerator, Natural Cure.
+- **Unblocked by `ON_TURN_START` (2)**: Protosynthesis, Quark Drive.
+- **No new hook needed, one-liners at existing sites (~10)**: Sheer Force, Solar Power, Thermal
+  Exchange, Toxic Debris, Soul Heart, Wonder Guard, Wind Rider, Liquid Voice, Cursed Body, Poison
+  Puppeteer.
+- **Ability interaction (9)**: Mold Breaker/Teravolt/Turboblaze (one shared mechanism — an
+  attacker-side flag read wherever a target-ability immunity is checked), Neutralizing Gas, Mummy,
+  Trace, Imposter, Magician, Pickpocket. Imposter/Trace should reuse the existing Transform/
+  ability-copy machinery (Skill Swap etc., section 3) rather than new infrastructure.
+- **Bounce / field interaction (8)**: Magic Bounce, Mirror Armor, Good as Gold, Queenly Majesty,
+  Dazzling, Guard Dog, Bulletproof, Infiltrator.
+- **Activity gating (4)**: Slow Start, Truant, Wimp Out, Emergency Exit (the latter two need an
+  `ON_ACTION_RESOLVE`-adjacent forced-switch check, same call site as the existing Magic
+  Guard/Life Orb suppression logic).
+- **Trapping (3)**: Arena Trap, Shadow Tag, Magnet Pull — affects `legal_actions`, not `step`, and
+  `legal_actions` isn't ported yet (section 8). Do this cluster alongside that port rather than
+  half-implementing the damage-irrelevant half now.
+- **Gen 9 type-power boosters (3)**: Orichalcum Pulse, Hadron Engine, Electromorphosis — same shape
+  as the already-ported weather/terrain setters (Drought/Drizzle etc.).
+- **Primal weather (3)**: Delta Stream, Primordial Sea, Desolate Land — pair with the primal orb
+  items (section 5), since one is inert without the other.
+- **Formes (12)**: Stance Change, Zen Mode, Schooling, Shields Down, Power Construct, Zero to Hero,
+  Tera Shift, Disguise, Multitype, RKS System, Battle Bond, As One (Glastrier)/Chilling Neigh — "a
+  small architecture change" (see "Rough sizing"); build one forme-swap primitive and reuse it for
+  all twelve plus Mega Evolution (section 7), rather than reinventing it per ability.
+- **The butler**: Nine Lives, and the last-stand machinery in `damage_apply`. Bespoke to this bot,
+  no Python event-bus registration to crib from beyond `pokemon.py`'s `_revive`/`_last_stand`.
+  Isolated — doesn't block or get blocked by anything else in this list, do it whenever.
+
+### 5. Items — 160 left
+
+(This section's header disagreed with the status table in an earlier revision of this doc — 77 vs.
+193−33=160. 160 is correct; see the note in "Where it stands" above.)
+
+Recommended order, cheapest/most-unblocking first:
+
+1. **Standalone, no new hook needed**: weather rocks (Damp/Heat/Icy/Smooth Rock — extend the
+   existing weather-duration logic), terrain seeds (hook off `ON_SWITCH_IN`, already dispatched),
+   status/recovery berries (Chesto, Custap, Leppa, Lum), Air Balloon (its grounding check already
+   exists at `field.rs:43`; only the pop-on-hit half is new, and needs `ON_TURN_END` or
+   `ON_AFTER_HIT`, both already available once section 6 lands).
+2. **Choice trio** (Choice Band/Scarf/Specs, need `choice_locked_move`): verify first whether any
+   move-locking already exists generically — invariant 4 already caught one false "Choice Scarf is
+   ported" claim, so don't assume.
+3. **Focus Sash**, and Endure's other item cousins: unblocked by generalising the existing
+   `ON_BEFORE_HIT` survival-clamp dispatch (Sturdy's clamp in `turn.rs`) to also check held items,
+   not a new hook.
+4. **Life Orb, Eject Button/Pack, Red Card**: `ON_ACTION_RESOLVE`-adjacent, same call site as the
+   existing Magic Guard suppression check.
+5. **Plates (17) + memories (17) + drives (4)**: pair directly with the abilities that read them —
+   Multitype needs plates, RKS System needs memories — so do this batch once those two abilities
+   (section 4) land. The drives (Genesect only) have no ability dependency and can ride along.
+6. **Mega Stones / Primal orbs / Griseous Orb & Core (86)**: inert until Mega Evolution itself
+   exists (section 7) — do as part of that work, not before. Roughly 16 of these are custom/
+   fictional stones specific to this project's data set (`RAICHUNITE_X`, `GARCHOMPITE_Z`, etc. —
+   see `battle_sim/formes.py:mega_stones()`), not standard Showdown items; treat them identically
+   to real ones.
+7. **Everything not yet bucketed above**: Heavy-Duty Boots, Light Clay, Terrain Extender, Loaded
+   Dice, White Herb, Mental Herb, Mirror Herb, Clear Amulet, Covert Cloak, Shed Shell, Punching
+   Glove, Adrenaline Orb, Booster Energy, Power Herb, Ultranecrozium Z — none of these have been
+   individually scoped against their hook dependency yet; do that before starting each one rather
+   than assuming it's a plain one-liner.
 
 ### 6. Hooks still missing
 
-`ON_BEFORE_MOVE` (absorption, Magic Bounce, Air Balloon's float), `ON_BEFORE_HIT` (survival clamps:
-Sturdy, Focus Sash, Endure's item cousins), `ON_FAINT`, `ON_SWITCH_OUT` (Regenerator, Natural Cure),
-`ON_ACTION_RESOLVE` (Life Orb), `ON_TURN_START`/`ON_TURN_END`.
+None of these exist as a dispatch point in Rust at all — not even a stub. Rust never ported
+Python's generic `EventBus`; each existing hook (`on_switch_in`, `on_after_hit`,
+`residual_before_status`/`residual_after_status` in `hooks.rs`) is a bespoke function called from a
+fixed point in `turn.rs`, and the five below should follow that same shape rather than introducing
+a generic event-bus abstraction — that would be new architecture the rest of the codebase doesn't
+use, for a cost the direct-call pattern already pays cheaply elsewhere.
+
+Build in this order — each one sized to unlock the next-biggest ability/item cluster above:
+
+1. **`ON_BEFORE_MOVE`** — called from wherever `turn.rs` resolves a move's targets, before damage
+   calc. Unblocks the 13-ability type-immunity/absorption cluster (by far the largest single
+   ability cluster left) plus Magic Bounce and Air Balloon's float.
+2. **`ON_FAINT`** — called at every existing `fainted()` check site in `turn.rs`/`field.rs`/
+   `damage.rs` (there are several; a single shared call is fine as long as every site calls it).
+   Unblocks Moxie, Beast Boost, Battle Bond's post-KO half.
+3. **`ON_SWITCH_OUT`** — called from `turn::switch_out` (`turn.rs:673`), symmetric to the existing
+   `on_switch_in`. Unblocks Regenerator, Natural Cure, Zero to Hero.
+4. **`ON_TURN_START`** — called once at the top of the turn, before actions resolve. Unblocks
+   Protosynthesis/Quark Drive (and Booster Energy once items catch up).
+5. **`ON_TURN_END`** — called in the existing residual pass, symmetric to `field::tick_field`/
+   `tick_side`. Lowest priority of the five — nothing in the current ability gap needs it
+   standalone; it exists for later item interactions (Air Balloon's pop).
+
+`ON_BEFORE_HIT` (survival clamps) and `ON_ACTION_RESOLVE` (Life Orb, Magic Guard) already have
+partial, working dispatch — Sturdy's clamp and Magic Guard's suppression check respectively — that
+just needs generalising to cover more abilities/items at the same site, not a hook built from
+scratch.
 
 ### 7. Z-moves, megas, formes
 
 `zmove:` actions are refused where actions are parsed. Mega evolution, Z-moves and forme changes are
-a whole action/state dimension the port has not touched. Check what the bot actually uses before
-deciding how much is needed.
+a whole action/state dimension the port has not touched. **Check what the bot actually uses before
+deciding how much is needed** — if the search/team-generation code (`battle_sim/search.py` or
+wherever sets are built) never assigns a mega stone or a Z-move-carrying set, refusing this
+dimension permanently is a legitimate scope cut, not a gap, and it's cheaper to check that first
+than to build it and find out afterward.
+
+If it turns out to be in scope: Mega Evolution needs a forme-swap primitive (stat/type/ability
+override, triggered pre-move) — build it once and reuse it for the twelve non-mega forme-change
+abilities in section 4 and for Zygarde/Terapagos/Palafin. Z-moves are a separate, smaller unit
+(`battle_sim/zmoves.py` is 131 lines) — a generic type-crystal power/effect upgrade plus 15
+hand-mapped signature crystals.
 
 ### 8. Integration — after parity
 
@@ -360,9 +509,21 @@ deciding how much is needed.
 
 ## Rough sizing
 
-Sections 1–3 are perhaps two sessions. Section 4 is the largest single block but most of it is
-one-liners once the missing hooks exist — call it two sessions with section 6 folded in. Section 5
-is one. Integration is one, plus whatever the AI re-validation turns up.
+Sections 1–3 are done. Section 6 (the five missing hooks) should come first now, not last — it's
+small on its own but it's what turns section 4's largest cluster (13 type-immunity abilities) from
+blocked into one-liners, so do it before resuming section 4. Section 4 is the largest remaining
+block at 76 abilities but most of it is one-liners once section 6 lands — call it two sessions.
+Section 5 (160 items) is one, mostly following section 4's abilities in to reuse their plumbing
+(Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega stones).
+Section 7 (Z-moves/megas/formes) is a scope question before it's a sizing question — check bot
+usage first. Integration (section 8) is last, one session plus whatever the AI re-validation turns
+up.
 
 The tail is not uniform: absorption abilities and formes are each a small architecture change, and
 the butler's revival mechanic has no reference outside this codebase.
+
+**Immediate next step for whoever picks this up**: the nine-ability one-liner batch is now verified
+and committed (tests, individual vacuity checks, a confirming differential sweep — see its write-up
+in section 4 above). Start section 6, the five missing hooks — `ON_BEFORE_MOVE` first, since it
+unblocks the largest single ability cluster (13 type-immunity/absorption abilities) plus Magic
+Bounce and Air Balloon's float.

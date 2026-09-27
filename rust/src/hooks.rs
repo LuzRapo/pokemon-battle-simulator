@@ -138,13 +138,13 @@ fn ability_after_hit(
                         "STATIC" => Status::Paralysis,
                         _ => Status::Poison,
                     };
-                    apply_main_status_from(state, other, status, None, tape, log)?;
+                    apply_main_status_from(state, other, status, None, None, tape, log)?;
                 }
             }
             "EFFECT_SPORE" if hit.contact && attacker_up => {
                 if tape.probability()? < 0.3 {
                     let picked = tape.integer(0, SPORE_STATUSES.len() as i32 - 1)? as usize;
-                    apply_main_status_from(state, other, SPORE_STATUSES[picked], None, tape, log)?;
+                    apply_main_status_from(state, other, SPORE_STATUSES[picked], None, None, tape, log)?;
                 }
             }
             "WEAK_ARMOR" if hit.category == "PHYSICAL" && !fainted => {
@@ -176,12 +176,12 @@ fn ability_after_hit(
     match ability.as_str() {
         "POISON_TOUCH" if hit.contact && defender_up => {
             if tape.probability()? < 0.3 {
-                apply_main_status_from(state, other, Status::Poison, None, tape, log)?;
+                apply_main_status_from(state, other, Status::Poison, None, None, tape, log)?;
             }
         }
         "TOXIC_CHAIN" if defender_up => {
             if tape.probability()? < 0.3 {
-                apply_main_status_from(state, other, Status::Toxic, None, tape, log)?;
+                apply_main_status_from(state, other, Status::Toxic, None, None, tape, log)?;
             }
         }
         _ => {}
@@ -583,7 +583,7 @@ pub fn residual_after_status(state: &mut State, side: usize, tape: &mut Tape, lo
         if !state.sides[side].active_pokemon().fainted()
             && state.sides[side].active_pokemon().status == Status::None
         {
-            apply_main_status_from(state, side, status, None, tape, log)?;
+            apply_main_status_from(state, side, status, None, None, tape, log)?;
         }
     }
 
