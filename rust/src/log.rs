@@ -126,6 +126,11 @@ pub enum Event {
         pokemon: String,
         amount: i32,
     },
+    /// A pivot announcing that its user is on its way out.
+    SelfSwitchPending {
+        side: i32,
+        pokemon: String,
+    },
     /// A Protect turning a move aside, and an Endure surviving one.
     Protected {
         side: i32,

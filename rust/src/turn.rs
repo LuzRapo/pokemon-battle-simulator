@@ -287,7 +287,7 @@ pub fn unsupported(the_move: &Move, db: &Database) -> Option<Gap> {
     // `force_switch`, `recharges` and `self_destructs` are ported; a pivot and a charge turn are
     // not. A pivot needs the turn loop to send somebody in mid-turn, and a charge needs the move to
     // be remembered across one.
-    if the_move.self_switch || the_move.charge {
+    if the_move.charge {
         return Some(Gap::UserOrFieldEffect);
     }
     // An effect list that is empty is not a gap: the Python has nothing to apply either, so the
@@ -939,6 +939,19 @@ fn resolve_move(
     if the_move.name == "Fury Cutter" {
         state.sides[side].active_mut().rolling_hits += 1;
     }
+    // A pivot leaves at once, so a target still waiting to act this turn faces whoever arrived
+    // rather than the pivot's user. `send_out_replacement` is the harness's rule — the lowest
+    // healthy bench member — and the Python's `replacement_chooser` is the same one.
+    let bench = state.sides[side]
+        .team
+        .iter()
+        .enumerate()
+        .any(|(index, member)| index != state.sides[side].active && !member.fainted());
+    if the_move.self_switch && !state.sides[side].active_pokemon().fainted() && bench {
+        let nickname = state.sides[side].active_pokemon().nickname.clone();
+        log.push(Event::SelfSwitchPending { side: side as i32, pokemon: nickname });
+        send_out_replacement(state, side, db, log);
+    }
     if the_move.recharges {
         state.sides[side].active_mut().volatiles.insert("MUST_RECHARGE".to_string(), 1);
     }
@@ -950,6 +963,30 @@ fn resolve_move(
         log.push(Event::Fainted { side: side as i32, pokemon: nickname });
     }
     Ok(())
+}
+
+/// The harness's `replacement_chooser`: the lowest-index healthy benched Pokemon, always.
+///
+/// Deterministic on purpose. It consumes no randomness, so it cannot shift the tape, and both
+/// engines make the identical choice from the identical rule without the scenario recording it.
+fn send_out_replacement(state: &mut State, side: usize, db: &Database, log: &mut Log) {
+    let active = state.sides[side].active;
+    let Some(to) = (0..state.sides[side].team.len())
+        .find(|index| *index != active && !state.sides[side].team[*index].fainted())
+    else {
+        return;
+    };
+    let sent_out = state.sides[side].team[to].nickname.clone();
+    let withdrew = switch_out(state, side, to);
+    state.register_active(side);
+    let arriving = state.sides[side].active_mut();
+    arriving.just_switched_in = true;
+    arriving.turns_active = 0;
+    log.push(Event::Switched { side: side as i32, withdrew, sent_out });
+    crate::field::entry_hazards(state, side, db, log);
+    if !state.sides[side].active_pokemon().fainted() {
+        on_switch_in(state, side, log);
+    }
 }
 
 /// `_force_random_switch`: Whirlwind, Roar and Dragon Tail drag somebody in at random.

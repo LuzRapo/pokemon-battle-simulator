@@ -44,7 +44,7 @@ PLAIN_SPECIES = ("Rhydon", "Machamp", "Kangaskhan", "Tauros", "Dewgong", "Golem"
 
 # The attachments that take a move out of the ported slice: a second use, a forced switch, a charge
 # or recharge turn, a user that blows itself up. Not `healing` — see `unsupported` in turn.rs.
-_UNPORTED_ATTACHMENTS = ("self_switch", "charge")
+_UNPORTED_ATTACHMENTS = ("charge",)
 
 
 def _attached(move: object) -> bool:

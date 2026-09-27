@@ -288,7 +288,7 @@ def trace(scenario: Scenario) -> list[dict[str, Any]]:
         if state.outcome is not None:
             break
         chosen = {0: find_action(first, state, 0), 1: find_action(second, state, 1)}
-        log = step(state, chosen)
+        log = step(state, chosen, replacement_chooser)
         turns.append(
             {
                 "actions": [first, second],
@@ -367,6 +367,26 @@ def write(scenario: Scenario, expected: Sequence[dict[str, Any]], directory: Pat
     (directory / f"{name}.trace.json").write_text(json.dumps(list(expected), indent=2))
 
 
+def replacement_chooser(state: BattleState, side_index: int) -> Action | None:
+    """The lowest-index healthy benched Pokemon, always.
+
+    A pivot has to be answered *during* the turn — U-turn's user leaves at once, so a target still
+    waiting to act hits whoever arrived, not the pivot's user. Without a chooser the engine defers
+    that switch to the caller, and in this harness there is no caller: `needs_switch` stays set,
+    every later action is skipped, and the battle quietly stops happening. A green comparison over
+    dead battles is worse than a red one.
+
+    Deterministic rather than random on purpose. It consumes no randomness, so it cannot shift the
+    tape, and the second engine can make the identical choice from the identical rule without the
+    scenario having to record it.
+    """
+    side = state.sides[side_index]
+    for index, member in enumerate(side.team):
+        if index != side.active[0] and not member.is_fainted():
+            return Action(action=ActionType.SWITCH_OUT, switch_in=member)
+    return None
+
+
 def record(
     teams: tuple[Sequence[PokemonSpec], Sequence[PokemonSpec]],
     choose: "Chooser",
@@ -388,7 +408,7 @@ def record(
     while state.outcome is None and len(turns) < max_turns:
         actions = {side: choose(state, side) for side in (0, 1)}
         labels = (name_action(actions[0], state, 0), name_action(actions[1], state, 1))
-        log = step(state, actions)
+        log = step(state, actions, replacement_chooser)
         named.append(labels)
         turns.append(
             {
