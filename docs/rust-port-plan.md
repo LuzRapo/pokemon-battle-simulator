@@ -17,13 +17,13 @@ this doc; per invariant 2 the batch now belongs on the "done" side.
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 144 | 220 (65%) |
+| abilities | 145 | 220 (66%) |
 | items | 33 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
 The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
 a release build for this update:
-`{"abilities":{"live":220,"ported":144},"items":{"live":193,"ported":33},"moves":{"playable":843,
+`{"abilities":{"live":220,"ported":145},"items":{"live":193,"ported":33},"moves":{"playable":843,
 "refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
 row above. The stale code comment at `rust/src/turn.rs:318` ("220 abilities and 110 items are
 live") has been corrected to 193 for items.
@@ -379,14 +379,26 @@ agreed, 42 refused — all the same documented Future Sight scope limit, 0 diver
 plain-slice battles (2000/2000 agreed, 0 diverged). They're counted in the 144/220 table above and,
 per invariant 2, now genuinely belong there.
 
-The remaining 76, grouped and roughly ordered by what unblocks the most (see "6. Hooks still
+**Also done: Water Bubble.** A correction to this doc's own earlier scoping, caught the same way
+the Synchronize description above was: a fresh read showed it needs no new hook at all. It is a
+pure `ON_DAMAGE_CALC` ability — 2x on its own Water moves, 0.5x on Fire damage taken, the same
+`abilities::handle` dispatch Blaze/Torrent/Heatproof/Thick Fat already use — plus burn immunity
+(`_STATUS_ABILITY_IMMUNITY`), which turned out to already be written into `inline::
+ability_blocks_status` for Water Veil's sake and had simply never been reachable because Water
+Bubble itself wasn't on a `PORTED` array yet. Two match arms plus one name added to `abilities::
+PORTED` (48 → 49) was the entire change. Covered by
+`test_water_bubble_doubles_its_own_water_and_halves_fire_taken`; all three clauses (the offense
+boost, the defense reduction, the burn immunity) vacuity-checked individually, each turning its own
+half of the test into a digest mismatch on its own. 145/220 in the table above now.
+
+The remaining 75, grouped and roughly ordered by what unblocks the most (see "6. Hooks still
 missing" below — several of these clusters are gated on hooks that don't exist yet, and building
 one hook first is cheaper than building each ability's workaround separately):
 
-- **Unblocked by `ON_BEFORE_MOVE` (13) — type immunity / absorption**: Flash Fire, Volt Absorb,
-  Water Absorb, Sap Sipper, Motor Drive, Lightning Rod, Storm Drain, Dry Skin, Earth Eater, Water
-  Bubble, Well Baked Body, Soundproof, Levitate (Levitate's grounding half is already a one-liner
-  in `inline.rs`; its move-cancelling half needs this hook, which is why it's deliberately kept off
+- **Unblocked by `ON_BEFORE_MOVE` (12) — type immunity / absorption**: Flash Fire, Volt Absorb,
+  Water Absorb, Sap Sipper, Motor Drive, Lightning Rod, Storm Drain, Dry Skin, Earth Eater, Well
+  Baked Body, Soundproof, Levitate (Levitate's grounding half is already a one-liner in
+  `inline.rs`; its move-cancelling half needs this hook, which is why it's deliberately kept off
   the ported list — see `inline.rs:19-23`).
 - **Unblocked by `ON_FAINT` (2)**: Moxie, Beast Boost.
 - **Unblocked by `ON_SWITCH_OUT` (2)**: Regenerator, Natural Cure.
@@ -512,7 +524,7 @@ hand-mapped signature crystals.
 Sections 1–3 are done. Section 6 (the five missing hooks) should come first now, not last — it's
 small on its own but it's what turns section 4's largest cluster (13 type-immunity abilities) from
 blocked into one-liners, so do it before resuming section 4. Section 4 is the largest remaining
-block at 76 abilities but most of it is one-liners once section 6 lands — call it two sessions.
+block at 75 abilities but most of it is one-liners once section 6 lands — call it two sessions.
 Section 5 (160 items) is one, mostly following section 4's abilities in to reuse their plumbing
 (Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega stones).
 Section 7 (Z-moves/megas/formes) is a scope question before it's a sizing question — check bot

@@ -19,7 +19,7 @@ use crate::damage::Payload;
 use crate::data::{Database, Effect, Move};
 
 /// Every ability implemented here. `unsupported_pokemon` refuses anything live and absent.
-pub const PORTED: [&str; 48] = [
+pub const PORTED: [&str; 49] = [
     "ADAPTABILITY",
     "ANALYTIC",
     "AURA_BREAK",
@@ -68,6 +68,7 @@ pub const PORTED: [&str; 48] = [
     "TRANSISTOR",
     "UNAWARE",
     "VESSEL_OF_RUIN",
+    "WATER_BUBBLE",
 ];
 
 /// What the Python puts in `hit_payload_base` plus the few board facts these handlers read.
@@ -159,6 +160,7 @@ fn handle(ability: &str, pokemon: &Pokemon, is_actor: bool, aura_broken: bool, c
             payload.ignore_burn = true;
         }
         "DEFEATIST" if is_actor && pokemon.hp * 2 <= pokemon.totals.hp => payload.attack_mods_4096.push(2048),
+        "WATER_BUBBLE" if is_actor && calc.move_type == "WATER" => payload.attack_mods_4096.push(8192),
         "STEELWORKER" if is_actor && calc.move_type == "STEEL" => payload.attack_mods_4096.push(6144),
         "DRAGONS_MAW" if is_actor && calc.move_type == "DRAGON" => payload.attack_mods_4096.push(6144),
         "ROCKY_PAYLOAD" if is_actor && calc.move_type == "ROCK" => payload.attack_mods_4096.push(6144),
@@ -238,6 +240,7 @@ fn handle(ability: &str, pokemon: &Pokemon, is_actor: bool, aura_broken: bool, c
         }
         "ICE_SCALES" if !is_actor && special => payload.final_mods_4096.push(2048),
         "HEATPROOF" if !is_actor && calc.move_type == "FIRE" => payload.attack_mods_4096.push(2048),
+        "WATER_BUBBLE" if !is_actor && calc.move_type == "FIRE" => payload.attack_mods_4096.push(2048),
         "THICK_FAT" if !is_actor && (calc.move_type == "FIRE" || calc.move_type == "ICE") => {
             payload.attack_mods_4096.push(2048)
         }

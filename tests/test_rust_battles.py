@@ -1561,6 +1561,81 @@ def test_corrosion_lets_a_poison_status_through_a_steel_type(tmp_path: Path) -> 
     assert poisoned > 0, "Corrosion never once poisoned the Steel type across 20 seeds"
 
 
+def _damage_dealt(events: list[dict]) -> int:
+    return next(e["amount"] for e in events if e["type"] == "DamageDealt")
+
+
+@needs_rust
+def test_water_bubble_doubles_its_own_water_and_halves_fire_taken(tmp_path: Path) -> None:
+    """Water Bubble is a pure `ON_DAMAGE_CALC` ability like Blaze or Heatproof -- no new hook
+    needed, just two more match arms in the existing dispatch -- plus burn immunity
+    (`_STATUS_ABILITY_IMMUNITY`), which was already written into `ability_blocks_status` for
+    Water Veil's sake and had simply never been reachable because Water Bubble itself wasn't on
+    a `PORTED` list yet.
+
+    Same seed, same move, only the ability differs, so any damage difference is the modifier and
+    nothing else: Water Gun always hits with no secondary, so the two engines' shared tape draws
+    the same crit/damage roll in the boosted and unboosted battles alike.
+
+    Vacuity-checked directly: dropping the two new match arms out of `abilities::handle` turned
+    both the offense and defense matchups into a plain digest mismatch (this engine's un-doubled
+    or un-halved `DamageDealt` amount against Python's), and dropping "WATER_BUBBLE" back out of
+    `ability_blocks_status`'s reach (by leaving it off the `PORTED` array) turned every one of 20
+    burn-immunity seeds into a divergence the moment a burn actually landed in Python and this
+    engine refused the whole scenario as carrying a live, unported ability instead.
+    """
+    bubbled = [_mon("Tauros", "A0", Ability.WATER_BUBBLE, ["Water Gun"])]
+    plain_attacker = [_mon("Tauros", "A0", Ability.NONE, ["Water Gun"])]
+    target = [_mon("Rhydon", "B0", Ability.NONE, ["Splash"])]
+
+    scenario, boosted = record((bubbled, target), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"boosted case was refused: {theirs}"
+    assert compare(boosted, theirs) is None
+    scenario, plain = record((plain_attacker, target), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"control case was refused: {theirs}"
+    assert compare(plain, theirs) is None
+    boosted_amount = _damage_dealt(boosted[0]["events"])
+    plain_amount = _damage_dealt(plain[0]["events"])
+    assert boosted_amount > plain_amount * 1.5, f"{boosted_amount} was not roughly double {plain_amount}"
+
+    attacker = [_mon("Rhydon", "A0", Ability.NONE, ["Flamethrower"])]
+    bubbled_defender = [_mon("Tauros", "B0", Ability.WATER_BUBBLE, ["Splash"])]
+    plain_defender = [_mon("Tauros", "B0", Ability.NONE, ["Splash"])]
+
+    scenario, reduced = record((attacker, bubbled_defender), _chooser(random.Random(1)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"reduced case was refused: {theirs}"
+    assert compare(reduced, theirs) is None
+    scenario, full = record((attacker, plain_defender), _chooser(random.Random(1)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"control case was refused: {theirs}"
+    assert compare(full, theirs) is None
+    reduced_amount = _damage_dealt(reduced[0]["events"])
+    full_amount = _damage_dealt(full[0]["events"])
+    assert reduced_amount < full_amount * 0.6, f"{reduced_amount} was not roughly half {full_amount}"
+
+    burned, burn_landed_at_all = 0, 0
+    for seed in range(20):
+        rng = random.Random(41800 + seed)
+        scenario, expected = record((attacker, bubbled_defender), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"seed {seed}"
+        if any(e["type"] == "StatusInflicted" and e["status"] == "BURN" for e in expected[0]["events"]):
+            burned += 1
+        rng = random.Random(41900 + seed)
+        scenario, expected = record((attacker, plain_defender), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"control seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"control seed {seed}"
+        if any(e["type"] == "StatusInflicted" and e["status"] == "BURN" for e in expected[0]["events"]):
+            burn_landed_at_all += 1
+    assert burned == 0, f"Water Bubble should be flatly immune to burn, but caught fire {burned} times"
+    assert burn_landed_at_all > 0, "control never burned once in 20 seeds -- the test isn't exercising the immunity"
+
+
 @needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
