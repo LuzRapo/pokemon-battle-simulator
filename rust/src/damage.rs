@@ -153,7 +153,8 @@ pub fn calculate_hit(
     let type_multiplier = if the_move.typeless {
         1.0
     } else {
-        let natural = db.effectiveness_bypassing(&the_move.move_type, &defender.types, &defender.identify_bypass());
+        let natural =
+            db.effectiveness_bypassing(&the_move.move_type, &defender.battle_types(), &defender.identify_bypass());
         crate::power::effectiveness_override(&the_move.name, defender, natural, db)
     };
     if type_multiplier == 0.0 {

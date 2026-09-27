@@ -39,7 +39,7 @@ const SANDSTORM_IMMUNE: [&str; 3] = ["ROCK", "GROUND", "STEEL"];
 /// right, it is the *rest* of what they do that is missing, and a Pokemon carrying either is
 /// refused before it can reach this.
 pub fn is_grounded(pokemon: &Pokemon) -> bool {
-    !pokemon.types.iter().flatten().any(|t| t == "FLYING")
+    !pokemon.battle_types().iter().flatten().any(|t| t == "FLYING")
         && pokemon.item != "AIR_BALLOON"
         && pokemon.ability != "LEVITATE"
 }

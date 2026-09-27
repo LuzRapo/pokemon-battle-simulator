@@ -224,7 +224,7 @@ fn item_after_hit(
             apply_stage_changes(state, side, &stages, "seed", log);
         }
         "WEAKNESS_POLICY" if hit.dealt > 0 => {
-            let types = state.sides[side].active_pokemon().types.clone();
+            let types = state.sides[side].active_pokemon().battle_types();
             if db.effectiveness(hit.move_type, &types) >= 2.0 {
                 consume(state, side);
                 let stages = [("ATTACK".to_string(), 2), ("SP_ATTACK".to_string(), 2)];

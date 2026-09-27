@@ -263,6 +263,25 @@ impl Pokemon {
         self.hp <= 0
     }
 
+    /// `Pokemon.battle_types`: what this Pokemon counts as right now, which is not always what it
+    /// is. Roost puts a bird on the ground for the rest of the turn — its Flying type is ignored,
+    /// so Earthquake hits it and Ice Beam stops being doubly effective. Computed fresh rather than
+    /// stored, so a Pokemon that switches out, faints or changes forme mid-turn never carries the
+    /// edit with it. A pure Flying-type keeps its typing regardless — Tornadus alone, and the
+    /// alternative is a Pokemon with no type at all, which nothing here can represent.
+    pub fn battle_types(&self) -> Vec<Option<String>> {
+        if !self.volatiles.contains_key("ROOSTED") || !self.types.iter().flatten().any(|t| t == "FLYING") {
+            return self.types.clone();
+        }
+        let remaining: Vec<Option<String>> =
+            self.types.iter().flatten().filter(|t| *t != "FLYING").map(|t| Some(t.clone())).collect();
+        if remaining.is_empty() {
+            self.types.clone()
+        } else {
+            remaining
+        }
+    }
+
     /// `immunity_bypass`: Foresight/Odor Sleuth's `IDENTIFIED` lets a Normal or Fighting move
     /// through a Ghost type; Miracle Eye's `MIRACLE_EYE` does the same for a Psychic move against
     /// Dark. Only the named type's own 0x is affected — a Ghost/Flying target identified on Ghost

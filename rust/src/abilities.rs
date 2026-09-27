@@ -216,13 +216,13 @@ fn handle(ability: &str, pokemon: &Pokemon, is_actor: bool, aura_broken: bool, c
         "TINTED_LENS" if is_actor => {
             // The plain type chart against the defender's own types, which is what the Python
             // reads here — not the fully-resolved effectiveness the formula uses.
-            let effectiveness = calc.db.effectiveness(calc.move_type, &calc.defender.types);
+            let effectiveness = calc.db.effectiveness(calc.move_type, &calc.defender.battle_types());
             if effectiveness > 0.0 && effectiveness < 1.0 {
                 payload.final_mods_4096.push(8192);
             }
         }
         "NEUROFORCE" if is_actor => {
-            if calc.db.effectiveness(calc.move_type, &calc.defender.types) > 1.0 {
+            if calc.db.effectiveness(calc.move_type, &calc.defender.battle_types()) > 1.0 {
                 payload.final_mods_4096.push(5120);
             }
         }
@@ -242,7 +242,7 @@ fn handle(ability: &str, pokemon: &Pokemon, is_actor: bool, aura_broken: bool, c
             payload.attack_mods_4096.push(2048)
         }
         "PRISM_ARMOR" | "FILTER" if !is_actor => {
-            if calc.db.effectiveness(calc.move_type, &pokemon.types) >= 2.0 {
+            if calc.db.effectiveness(calc.move_type, &pokemon.battle_types()) >= 2.0 {
                 payload.final_mods_4096.push(3072);
             }
         }

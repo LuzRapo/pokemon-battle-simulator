@@ -752,6 +752,82 @@ def test_substitute_soaks_hits_and_blocks_secondaries(tmp_path: Path) -> None:
 
 
 @needs_rust
+def test_sleep_talk_calls_a_real_move_through_the_sleep(tmp_path: Path) -> None:
+    """Sleep Talk: acting through a status that would otherwise refuse every other move outright.
+
+    Vacuity-checked directly — disabling the substitution turned 300/300 of this exact matchup red,
+    since without it a sleeping Sleep-Talker just sits there logging `CantAct` instead.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Gyarados", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Spore"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Gyarados", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Sleep Talk", "Roost", "King's Shield", "Tackle"],
+        )
+    ]
+
+    called_through_sleep = 0
+    for seed in range(30):
+        rng = random.Random(28000 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=40)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            names = [e["move"] for e in turn["events"] if e["type"] == "MoveUsed" and e["side"] == 1]
+            if len(names) >= 2:
+                called_through_sleep += 1
+
+    assert called_through_sleep > 0, "Sleep Talk never actually called a second move"
+
+
+@needs_rust
+def test_roost_grounds_its_user_for_the_rest_of_the_turn(tmp_path: Path) -> None:
+    """A roosted Flying type loses its immunity to Ground moves for the turn it roosted.
+
+    Vacuity-checked directly against `Pokemon::battle_types` specifically (not `identify_bypass`,
+    which shares the same two-call-site shape): reverting only the immunity gate's site turned
+    300/300 of this exact matchup red, which means both sites still have to agree independently.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Gyarados", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Earthquake"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Gyarados", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Roost"],
+        )
+    ]
+
+    landed, immune = 0, 0
+    for seed in range(30):
+        rng = random.Random(29000 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=20)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        for turn in expected:
+            for e in turn["events"]:
+                if e["type"] == "DamageDealt" and e["side"] == 1:
+                    landed += 1
+                if e["type"] == "NoEffect" and e["side"] == 1:
+                    immune += 1
+
+    assert landed > 0, "Earthquake never once landed on a roosted Gyarados"
+    assert immune > 0, "Earthquake was never once blocked by an un-roosted Gyarados's Flying type"
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

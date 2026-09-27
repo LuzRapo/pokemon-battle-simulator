@@ -116,7 +116,7 @@ pub fn on_damage_calc(
                 }
             }
         }
-        if item == "EXPERT_BELT" && calc.db.effectiveness(calc.move_type, &calc.defender.types) >= 2.0 {
+        if item == "EXPERT_BELT" && calc.db.effectiveness(calc.move_type, &calc.defender.battle_types()) >= 2.0 {
             payload.final_mods_4096.push(4915);
         }
         return None;
@@ -131,7 +131,10 @@ pub fn on_damage_calc(
     if let Some((_, weakened)) = RESIST_BERRIES.iter().find(|(name, _)| *name == item) {
         // A hit a substitute is about to take is not one this berry reacts to — the Python's own
         // handler asks `payload["behind_substitute"]` before anything else.
-        if !calc.behind_substitute && calc.move_type == *weakened && calc.db.effectiveness(weakened, &pokemon.types) >= 2.0 {
+        if !calc.behind_substitute
+            && calc.move_type == *weakened
+            && calc.db.effectiveness(weakened, &pokemon.battle_types()) >= 2.0
+        {
             payload.final_mods_4096.push(2048);
             return Some(Consumed { side, item: item.to_string() });
         }

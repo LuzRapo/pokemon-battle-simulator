@@ -165,7 +165,19 @@ fn move_in_slot<'a>(actor: &Pokemon, slot: usize, db: &'a Database) -> Result<&'
 /// Deliberately short and explicit. That net is why silent wrong answers have been rare; a move
 /// only comes off it once its Python behaviour has been read, ported, and agreed about across a
 /// sweep.
-pub const PORTED_CODED_MOVES: [&str; 1] = ["Struggle"];
+pub const PORTED_CODED_MOVES: [&str; 4] = [
+    "Struggle",
+    // Sleep Talk (the redirect at the top of `resolve_move` plus `power::sleep_talk_choice`) and
+    // Roost (the `ROOSTED` volatile set in `apply_heal`) both have real, ported behaviour behind
+    // the name. King's Shield does not: its only mention anywhere in the Python is Aegislash's
+    // forme swap in `formes.stance_forme`, gated on Stance Change — an ability still refused, so
+    // this name is "ordinary despite being named" the same way the Z-move bases and the reachers
+    // are in `power::PORTED_ORDINARY_DESPITE_BEING_NAMED`. It lives here instead because that list
+    // is about `power.rs`'s tables specifically, and this one isn't in any of them.
+    "Sleep Talk",
+    "Roost",
+    "King's Shield",
+];
 
 /// Every coded move this engine has learned: Struggle, plus the rules in `power.rs`.
 ///
@@ -424,8 +436,14 @@ pub fn step(
                     let actor = state.sides[side].active_pokemon();
                     actor.status == Status::Freeze && move_in_slot(actor, *slot, db)?.defrosts_user
                 };
-                if can_act(state, side, defrosting, tape, &mut log)? {
-                    resolve_move(state, side, *slot, db, tape, &mut log)?
+                // Same idea, same reason: the *chosen* slot, read before any redirect could
+                // substitute a different move in.
+                let sleep_talking = {
+                    let actor = state.sides[side].active_pokemon();
+                    actor.status == Status::Sleep && move_in_slot(actor, *slot, db)?.name == "Sleep Talk"
+                };
+                if can_act(state, side, defrosting, sleep_talking, tape, &mut log)? {
+                    resolve_move(state, side, *slot, sleep_talking, db, tape, &mut log)?
                 } else {
                     // A skipped turn breaks the consecutive-Protect chain.
                     state.sides[side].active_mut().protect_streak = 0;
@@ -617,7 +635,7 @@ fn residuals(state: &mut State, tape: &mut Tape, log: &mut Log) -> Result<(), Re
             }
             // `_tick_volatiles`, which runs for the active whatever its status was — including one
             // that just fainted to a chip above. Each of these lasts exactly the turn it started.
-            for gone in ["FLINCH", "PROTECT", "ENDURE"] {
+            for gone in ["FLINCH", "PROTECT", "ENDURE", "ROOSTED"] {
                 state.sides[side].active_mut().volatiles.remove(gone);
             }
             // `_tick_countdown`: Taunt, Encore and Disable each count down here, and Encore/Disable
@@ -691,6 +709,7 @@ fn can_act(
     state: &mut State,
     side: usize,
     defrosting: bool,
+    sleep_talking: bool,
     tape: &mut Tape,
     log: &mut Log,
 ) -> Result<bool, Refusal> {
@@ -731,7 +750,7 @@ fn can_act(
                 pokemon: nickname.clone(),
                 clearance: "woke".into(),
             });
-        } else {
+        } else if !sleep_talking {
             log.push(Event::CantAct { side: side as i32, pokemon: nickname, reason: "asleep".into() });
             return Ok(false);
         }
@@ -777,6 +796,7 @@ fn resolve_move(
     state: &mut State,
     side: usize,
     slot: usize,
+    sleep_talking: bool,
     db: &Database,
     tape: &mut Tape,
     log: &mut Log,
@@ -843,15 +863,6 @@ fn resolve_move(
     if let Some(why) = unsupported_reason(&the_move, db) {
         return Err(Refusal::Unported(why));
     }
-    // The type it actually resolves as, decided before anything else looks at it — the Python
-    // rebuilds the move with the new type, so every later reader sees only the new one. The listed
-    // type is kept because the `-ate` boost is the one question that still needs it.
-    let listed_type = the_move.move_type.clone();
-    let mut the_move = the_move;
-    if let Some(became) = crate::power::type_override(&the_move, state.sides[side].active_pokemon(), state) {
-        the_move.move_type = became;
-    }
-    let the_move = the_move;
 
     // Spent before anything resolves, as `_spend_pp` does it: a move that misses still costs its
     // point, which is why this is here rather than after the hit lands. Rampaging or releasing a
@@ -899,6 +910,44 @@ fn resolve_move(
     if !escalating {
         state.sides[side].active_mut().rolling_hits = 0;
     }
+
+    // Sleep Talk: after it is announced (and after Taunt's check, which the *unsubstituted* move —
+    // still named "Sleep Talk", a status move — has already had to clear), the real move is picked
+    // and takes over for everything from here on, logged with its own second `MoveUsed`.
+    let the_move = if sleep_talking {
+        match crate::power::sleep_talk_choice(state.sides[side].active_pokemon(), db, tape)? {
+            None => {
+                log.push(Event::MoveFailed);
+                return Ok(());
+            }
+            Some(picked) => {
+                if let Some(why) = unsupported_reason(&picked, db) {
+                    return Err(Refusal::Unported(why));
+                }
+                log.push(Event::MoveUsed {
+                    side: side as i32,
+                    pokemon: state.sides[side].active_pokemon().nickname.clone(),
+                    the_move: picked.name.clone(),
+                    unleashed_as: None,
+                });
+                picked
+            }
+        }
+    } else {
+        the_move
+    };
+    // The type it actually resolves as, decided before anything else looks at it — the Python
+    // rebuilds the move with the new type, so every later reader sees only the new one. The listed
+    // type is kept because the `-ate` boost is the one question that still needs it. Placed after
+    // the Sleep Talk substitution rather than where the Struggle substitution is decided, because
+    // that is where the Python's own `override_type` sits — Sleep Talk changes what move this even
+    // is, and the type override has to ask about the move that is actually about to resolve.
+    let listed_type = the_move.move_type.clone();
+    let mut the_move = the_move;
+    if let Some(became) = crate::power::type_override(&the_move, state.sides[side].active_pokemon(), state) {
+        the_move.move_type = became;
+    }
+    let the_move = the_move;
 
     // A charge's first turn: the turn-boost (if it has one) applies whether or not the charge is
     // skipped, then — unless it is skipped — the user commits and the turn ends here. Nothing
@@ -994,7 +1043,8 @@ fn resolve_move(
         1.0
     } else {
         let defender = state.sides[other].active_pokemon();
-        let natural = db.effectiveness_bypassing(&the_move.move_type, &defender.types, &defender.identify_bypass());
+        let natural =
+            db.effectiveness_bypassing(&the_move.move_type, &defender.battle_types(), &defender.identify_bypass());
         crate::power::effectiveness_override(&the_move.name, defender, natural, db)
     };
     // The immunity gate is for *damaging* moves only, exactly as the Python writes it. Charge is
@@ -1078,7 +1128,7 @@ fn resolve_move(
             Effect::FixedDamageEffect { amount_formula, set_amount } => {
                 apply_fixed_damage(state, side, &the_move, amount_formula, *set_amount, behind_substitute, db, log);
             }
-            Effect::HealEffect { fraction } => apply_heal(state, side, *fraction, log),
+            Effect::HealEffect { fraction } => apply_heal(state, side, *fraction, &the_move.name, log),
             Effect::WeatherEffect { variant, duration_turns } => {
                 // A Weather Rock would make it eight; those items are still refused.
                 state.field.weather = variant.clone();
@@ -1473,7 +1523,7 @@ fn apply_fixed_damage(
     log: &mut Log,
 ) {
     let other = 1 - side;
-    let defender_types = state.sides[other].active_pokemon().types.clone();
+    let defender_types = state.sides[other].active_pokemon().battle_types();
     let bypass = state.sides[other].active_pokemon().identify_bypass();
     if db.effectiveness_bypassing(&the_move.move_type, &defender_types, &bypass) == 0.0 {
         log.push(Event::NoEffect {
@@ -1512,7 +1562,7 @@ fn apply_fixed_damage(
 
 /// `_apply_heal`. Roost's half of this — dropping the bird's Flying type for the turn — belongs to
 /// Roost, which is still refused for being special-cased by name.
-fn apply_heal(state: &mut State, side: usize, fraction: f64, log: &mut Log) {
+fn apply_heal(state: &mut State, side: usize, fraction: f64, move_name: &str, log: &mut Log) {
     let pokemon = state.sides[side].active_mut();
     let amount = std::cmp::max(1, (pokemon.totals.hp as f64 * fraction) as i32);
     let before = pokemon.hp;
@@ -1521,6 +1571,11 @@ fn apply_heal(state: &mut State, side: usize, fraction: f64, log: &mut Log) {
     if healed > 0 {
         let nickname = pokemon.nickname.clone();
         log.push(Event::Healed { side: side as i32, pokemon: nickname, amount: healed });
+    }
+    // Roost: the bird comes down whether or not there was anything left to heal, and stays down
+    // (Flying ignored by `Pokemon::battle_types`) for the rest of this turn regardless.
+    if move_name == "Roost" {
+        state.sides[side].active_mut().volatiles.insert("ROOSTED".to_string(), 1);
     }
 }
 

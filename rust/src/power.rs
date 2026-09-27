@@ -232,7 +232,7 @@ pub fn effective_power(
         }
     }
     if matches!(the_move.name.as_str(), "Electro Drift" | "Collision Course") {
-        let types = state.sides[1 - side].active_pokemon().types.clone();
+        let types = state.sides[1 - side].active_pokemon().battle_types();
         if db.effectiveness(&the_move.move_type, &types) >= 2.0 {
             power = power * 5461 / 4096;
         }
@@ -604,6 +604,25 @@ pub fn out_of_reach(defender: &Pokemon, the_move: &Move, db: &Database) -> bool 
     let Some(charging) = db.move_named(charging_name) else { return false };
     let Some(reaches) = reaches_through(&charging.name) else { return false };
     !reaches.contains(&the_move.name.as_str())
+}
+
+/// `_sleep_talk_choice`: a move drawn evenly from the *padded* moveset — the same four slots the
+/// digest compares, repeats and all, since a short moveset's repeated first move is exactly as
+/// likely to come up as if it had been chosen for real. `None` means nothing was left to call —
+/// only possible when the whole moveset is Sleep Talk itself plus charges, so a Pokemon holding
+/// only those and Sleep Talk fails outright.
+pub fn sleep_talk_choice(attacker: &Pokemon, db: &Database, tape: &mut Tape) -> Result<Option<Move>, Refusal> {
+    let options: Vec<&Move> = attacker
+        .moves
+        .iter()
+        .filter_map(|name| db.move_named(name))
+        .filter(|m| m.name != "Sleep Talk" && !m.charge)
+        .collect();
+    if options.is_empty() {
+        return Ok(None);
+    }
+    let picked = tape.integer(0, options.len() as i32)? as usize;
+    Ok(Some(options[picked].clone()))
 }
 
 /// `_target_is_about_to_attack`: has this side still got a damaging move coming this turn?
