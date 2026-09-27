@@ -330,8 +330,17 @@ pub const PORTED_ABILITIES: [&str; 20] = [
 ];
 
 /// Items implemented here, on top of the damage-calc ones.
-pub const PORTED_ITEMS: [&str; 5] =
-    ["ROCKY_HELMET", "SITRUS_BERRY", "STARF_BERRY", "WEAKNESS_POLICY", "WIKI_BERRY"];
+pub const PORTED_ITEMS: [&str; 9] = [
+    "ELECTRIC_SEED",
+    "GRASSY_SEED",
+    "MISTY_SEED",
+    "PSYCHIC_SEED",
+    "ROCKY_HELMET",
+    "SITRUS_BERRY",
+    "STARF_BERRY",
+    "WEAKNESS_POLICY",
+    "WIKI_BERRY",
+];
 
 /// `_SPORE_STATUSES`, and the draw that picks from it.
 ///
@@ -631,8 +640,9 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
             let weather = crate::inline::weather_from_ability(&ability).expect("just checked");
             if state.field.weather != weather {
                 state.field.weather = weather.to_string();
-                // A Weather Rock would make it eight; those items are still refused.
-                state.field.weather_turns_left = 5;
+                let rock = crate::inline::rock_for_weather(weather);
+                state.field.weather_turns_left =
+                    if rock.is_some_and(|r| state.sides[side].active_pokemon().item == r) { 8 } else { 5 };
                 let nickname = state.sides[side].active_pokemon().nickname.clone();
                 log.push(Event::WeatherSetByAbility {
                     side: side as i32,
@@ -652,6 +662,11 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
                     pokemon: nickname,
                     ability: ability.clone(),
                 });
+                // `_set_terrain_from_ability` sweeps both sides' seeds itself, on the spot — not
+                // through the bus at all. This is what makes a seed fire for a Pokemon that is not
+                // switching in this turn: an already-standing seed holder, or one auto-replacing a
+                // fainted ally elsewhere on the field the instant this ability's terrain lands.
+                consume_terrain_seeds_on_terrain_change(state, log);
             }
         }
         "DAUNTLESS_SHIELD" | "INTREPID_SWORD" => {
@@ -668,6 +683,41 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
     // `_bind_paradox` registers its own `ON_SWITCH_IN` handler separately from the match above,
     // rather than as one more arm in it.
     evaluate_paradox(state, side, log);
+    // `_bind_terrain_seed`'s own `ON_SWITCH_IN` binding, at `EventPriority.ITEM` (1000) — after
+    // every ability above it including Paradox's own 2000 — so a Pokemon that both sets and eats
+    // its own seed (Electric Surge holding Electric Seed) still sees the terrain it just set, on
+    // the same switch-in. This is only one of two paths to the same seed: the terrain-setter's own
+    // direct sweep (`consume_terrain_seeds_on_terrain_change`, called from the match above and from
+    // `turn::resolve_move`'s `TerrainEffect` arm) is the other, and fires even when this Pokemon
+    // itself never switches in at all.
+    consume_terrain_seed_for_side(state, side, log);
+}
+
+fn consume_terrain_seed_for_side(state: &mut State, side: usize, log: &mut Log) {
+    if state.sides[side].active_pokemon().fainted() {
+        return;
+    }
+    let (seed, stat) = match state.field.terrain.as_str() {
+        "GRASSY" => ("GRASSY_SEED", "DEFENCE"),
+        "ELECTRIC" => ("ELECTRIC_SEED", "DEFENCE"),
+        "PSYCHIC" => ("PSYCHIC_SEED", "SP_DEFENCE"),
+        "MISTY" => ("MISTY_SEED", "SP_DEFENCE"),
+        _ => ("", ""),
+    };
+    if !seed.is_empty() && state.sides[side].active_pokemon().item == seed {
+        let pokemon = state.sides[side].active_mut();
+        pokemon.last_consumed_item = pokemon.item.clone();
+        pokemon.item = "NONE".to_string();
+        pokemon.item_consumed = true;
+        apply_stage_changes(state, side, &[(stat.to_string(), 1)], "seed", log);
+    }
+}
+
+/// `_set_terrain_from_ability` / `_apply_field_effect`'s own direct sweep: the moment terrain
+/// actually changes, both sides' seeds are checked on the spot, independent of `ON_SWITCH_IN`.
+pub fn consume_terrain_seeds_on_terrain_change(state: &mut State, log: &mut Log) {
+    consume_terrain_seed_for_side(state, 0, log);
+    consume_terrain_seed_for_side(state, 1, log);
 }
 
 /// Abilities and items implemented at `ON_RESIDUAL`, on top of everything above.

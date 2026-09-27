@@ -79,6 +79,13 @@ pub enum Event {
         side: i32,
         pokemon: String,
     },
+    /// Leppa Berry.
+    PpRestored {
+        side: i32,
+        pokemon: String,
+        #[serde(rename = "move")]
+        the_move: String,
+    },
     /// Skill Swap, logged once for the attacker even though both abilities moved.
     AbilitiesSwapped {
         side: i32,

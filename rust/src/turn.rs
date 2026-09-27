@@ -91,20 +91,28 @@ fn priority_of(the_move: &Move) -> Result<i32, Refusal> {
 /// Sorts exactly as `_sort_key` does: category, then priority (descending), then speed
 /// (descending), then the tie-break draw. Rust sorts ascending, so speed and priority are negated
 /// the same way the Python negates speed.
-fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut Tape) -> Result<Vec<usize>, Refusal> {
+fn order_actions(
+    state: &mut State,
+    actions: &[Action; 2],
+    db: &Database,
+    tape: &mut Tape,
+) -> Result<Vec<usize>, Refusal> {
     // Drawn for both sides before anything resolves, in side order — the Python builds this dict
     // by comprehension over `actions`, which is insertion-ordered 0 then 1.
     let tie_breakers = [tape.probability()?, tape.probability()?];
     let mut keys: Vec<(i32, i32, i32, i32, f64, usize)> = Vec::new();
     for side in 0..2 {
-        let actor = state.sides[side].active_pokemon();
-        let speed = effective_speed(actor, &state.sides[side], &state.field);
+        let speed = effective_speed(state.sides[side].active_pokemon(), &state.sides[side], &state.field);
         let mut category = category_of(&actions[side]);
         let mut in_bracket_jump = 0;
         let priority = match &actions[side] {
             Action::Switch { .. } => 0,
             Action::Move { slot } => {
-                let the_move = move_in_slot(actor, *slot, db)?;
+                // `the_move` borrows `db`, not the active Pokemon, so it stays valid across the
+                // several fresh `active_pokemon()` re-borrows below — `bracket_jump` needs `state`
+                // by mutable reference, for Custap Berry's own consumption, which an `actor`
+                // reference held across the call would not allow.
+                let the_move = move_in_slot(state.sides[side].active_pokemon(), *slot, db)?;
                 // Pursuit's whole point: it catches its target on the way out, so it resolves
                 // ahead of the switch that would otherwise take the target off the field first.
                 // Switches already sort before every move, so this is the one thing that sorts
@@ -112,6 +120,7 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
                 if the_move.name == "Pursuit" && matches!(actions[1 - side], Action::Switch { .. }) {
                     category = category_of(&Action::Switch { to: 0 }) - 1;
                 }
+                let actor = state.sides[side].active_pokemon();
                 let at_full_hp = actor.hp == actor.totals.hp;
                 let bonus = crate::inline::priority_bonus(
                     &actor.ability,
@@ -120,13 +129,14 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
                     the_move.healing,
                     at_full_hp,
                 );
-                // `_bracket_jump`: Quick Draw's chance to move first within the bracket. Drawn
-                // unconditionally, same as the Python — Mycelium Might overrides the result below
-                // rather than skipping the draw, so the tape still owes this a probability on
-                // every move a Mycelium Might Pokemon makes, status or not. Quick Claw and Custap
-                // Berry are the item half of the same function; both are still-unported items, so
-                // any Pokemon holding one is refused before this runs and never reaches here.
-                in_bracket_jump = -bracket_jump(actor, tape)?;
+                // `_bracket_jump`: Quick Claw, then Quick Draw, then Custap Berry — each a chance
+                // (or, for Custap, a guaranteed but HP-gated) jump to the front of the priority
+                // bracket. Drawn unconditionally in that order, same as the Python — Mycelium
+                // Might overrides the result below rather than skipping the draw, so the tape
+                // still owes this a probability (Quick Claw's, then Quick Draw's) on every move a
+                // Mycelium Might Pokemon makes, status or not.
+                in_bracket_jump = -bracket_jump(state, side, tape)?;
+                let actor = state.sides[side].active_pokemon();
                 if actor.ability == "MYCELIUM_MIGHT" && the_move.category == "STATUS" {
                     in_bracket_jump = 1; // status moves go last within their bracket
                 }
@@ -142,12 +152,24 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
     Ok(keys.into_iter().map(|k| k.5).collect())
 }
 
-/// `_bracket_jump`'s Quick Draw branch: a 30% chance to move first within the priority bracket.
-/// Quick Claw rolls first in the Python and Custap Berry is checked last, but both are items no
-/// Pokemon in a playable scenario can be holding — either one is still-unported, live behaviour
-/// that `unsupported_pokemon` refuses before a battle starts — so this is the whole function.
-fn bracket_jump(actor: &Pokemon, tape: &mut Tape) -> Result<i32, Refusal> {
+/// `_bracket_jump`: Quick Claw's 20% roll, then Quick Draw's 30% roll, then Custap Berry's
+/// guaranteed jump under a quarter HP — each an early return, so a Pokemon holding Quick Claw
+/// *and* somehow carrying Quick Draw (impossible in practice, but the Python does not special-case
+/// it either) draws for both before either wins. Takes `state` rather than a plain `&Pokemon`
+/// because Custap Berry consumes itself.
+fn bracket_jump(state: &mut State, side: usize, tape: &mut Tape) -> Result<i32, Refusal> {
+    let actor = state.sides[side].active_pokemon();
+    if actor.item == "QUICK_CLAW" && tape.probability()? < 0.2 {
+        return Ok(1);
+    }
     if actor.ability == "QUICK_DRAW" && tape.probability()? < 0.3 {
+        return Ok(1);
+    }
+    if actor.item == "CUSTAP_BERRY" && 4 * actor.hp <= actor.totals.hp {
+        let actor = state.sides[side].active_mut();
+        actor.last_consumed_item = actor.item.clone();
+        actor.item = "NONE".to_string();
+        actor.item_consumed = true;
         return Ok(1);
     }
     Ok(0)
@@ -1064,6 +1086,20 @@ fn resolve_move(
         if let Some(left) = state.sides[side].active_mut().pp.get_mut(crate::battle::SLOT_NAMES[slot]) {
             *left = (*left - cost).max(0);
         }
+        // Leppa Berry: only when *this* spend is what brought the slot to zero — a slot already
+        // empty before this turn took the Struggle branch above instead, never reaching here.
+        if state.sides[side].active_pokemon().pp[crate::battle::SLOT_NAMES[slot]] == 0
+            && state.sides[side].active_pokemon().item == "LEPPA_BERRY"
+        {
+            let restored = std::cmp::min(10, the_move.pp);
+            let attacker = state.sides[side].active_mut();
+            attacker.last_consumed_item = attacker.item.clone();
+            attacker.item = "NONE".to_string();
+            attacker.item_consumed = true;
+            attacker.pp.insert(crate::battle::SLOT_NAMES[slot].to_string(), restored);
+            let nickname = attacker.nickname.clone();
+            log.push(Event::PpRestored { side: side as i32, pokemon: nickname, the_move: the_move.name.clone() });
+        }
     }
     // Taunt: after PP is spent, before the move is announced. A status move turned aside here still
     // cost its user the point, which is the whole reason this sits after the PP-spend block above
@@ -1369,17 +1405,24 @@ fn resolve_move(
             }
             Effect::HealEffect { fraction } => apply_heal(state, side, *fraction, &the_move.name, log),
             Effect::WeatherEffect { variant, duration_turns } => {
-                // A Weather Rock would make it eight; those items are still refused.
                 state.field.weather = variant.clone();
-                state.field.weather_turns_left = duration_turns.unwrap_or(5);
+                let rock = crate::inline::rock_for_weather(variant);
+                state.field.weather_turns_left =
+                    if rock.is_some_and(|r| state.sides[side].active_pokemon().item == r) {
+                        8
+                    } else {
+                        duration_turns.unwrap_or(5)
+                    };
                 log.push(Event::WeatherChanged { weather: variant.clone() });
             }
             Effect::TerrainEffect { variant, duration_turns } => {
-                // A Terrain Extender would make it eight; still refused. So are the terrain seeds
-                // the Python feeds here, which is why nothing is consumed.
+                // A Terrain Extender would make it eight; still refused.
                 state.field.terrain = variant.clone();
                 state.field.terrain_turns_left = duration_turns.unwrap_or(5);
                 log.push(Event::TerrainChanged { terrain: variant.clone() });
+                // `_apply_field_effect` sweeps both sides' seeds itself, unconditionally, every
+                // time a terrain move resolves -- even a terrain re-set to what it already was.
+                crate::hooks::consume_terrain_seeds_on_terrain_change(state, log);
             }
             Effect::SideConditionEffect { variant, duration_turns } => {
                 apply_side_condition(state, side, &the_move, variant, *duration_turns, log);
@@ -2890,6 +2933,24 @@ pub fn apply_main_status_from(
                 apply_volatile(state, target_side, "CONFUSION", tape, log)?;
             }
         }
+    }
+    // Lum Berry (any status) / Chesto Berry (sleep only) cure themselves off the instant the
+    // status lands — after Synchronize's reflect and Poison Puppeteer's confusion, matching the
+    // Python's own order in `_apply_main_status`.
+    let cures = match state.sides[target_side].active_pokemon().item.as_str() {
+        "LUM_BERRY" => true,
+        "CHESTO_BERRY" => status == Status::Sleep,
+        _ => false,
+    };
+    if cures {
+        let target = state.sides[target_side].active_mut();
+        target.last_consumed_item = target.item.clone();
+        target.item = "NONE".to_string();
+        target.item_consumed = true;
+        target.status = Status::None;
+        target.status_turns = 0;
+        let nickname = target.nickname.clone();
+        log.push(Event::StatusCleared { side: target_side as i32, pokemon: nickname, clearance: "berry".to_string() });
     }
     Ok(())
 }

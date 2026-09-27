@@ -8,25 +8,27 @@ then replace the Python engine.
 Branch `feature/vectorised-engine`. Sections 1, 2 and 3 (charges, volatiles, and the remaining
 coded moves) are all done — every `CodedMoveKind` is ported, and with it every move in the
 database. Section 4 (abilities) is underway: the turn-order cluster (seven abilities), Sturdy, and
-a nine-ability one-liner batch (Skill Link, Serene Grace, Shield Dust, Scrappy, Mind's Eye,
-Synchronize, Pressure, Steadfast, Corrosion) are in the tree and now verified — see the batch
-write-up below. Its dedicated tests, individual vacuity checks (all nine, each confirmed to turn
-red on its own), and a confirming differential sweep have all been run since the last update to
-this doc; per invariant 2 the batch now belongs on the "done" side.
+two one-liner batches (Skill Link/Serene Grace/Shield Dust/Scrappy/Mind's Eye/Synchronize/Pressure/
+Steadfast/Corrosion, then Sheer Force/Solar Power/Thermal Exchange/Toxic Debris/Cursed Body/Wonder
+Guard/Wind Rider/Liquid Voice/Poison Puppeteer) are in the tree and verified. Section 5 (items) has
+now started: the first batch — Quick Claw, Custap Berry, Leppa Berry, Chesto Berry, Lum Berry, the
+four weather rocks, and the four terrain seeds — is in the tree and verified; see the batch
+write-up below. Its dedicated tests, individual vacuity checks (all thirteen items, each confirmed
+to turn red on its own), and confirming differential sweeps have all been run since the last update
+to this doc; per invariant 2 the batch now belongs on the "done" side.
 
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
 | abilities | 172 | 220 (78%) |
-| items | 33 | 193 |
+| items | 46 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
 The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
 a release build for this update:
-`{"abilities":{"live":220,"ported":172},"items":{"live":193,"ported":33},"moves":{"playable":843,
+`{"abilities":{"live":220,"ported":172},"items":{"live":193,"ported":46},"moves":{"playable":843,
 "refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
-row above. The stale code comment at `rust/src/turn.rs:318` ("220 abilities and 110 items are
-live") has been corrected to 193 for items.
+row above.
 
 The items total jumped from 110 to 193 mid-section: 96 Mega Stones (and Primal orbs, Rusted
 Sword/Shield) turned out to have real behaviour — `_resolve_mega_evolution` — that the coverage
@@ -605,18 +607,95 @@ The remaining 48, grouped and roughly ordered by what unblocks the most:
   no Python event-bus registration to crib from beyond `pokemon.py`'s `_revive`/`_last_stand`.
   Isolated — doesn't block or get blocked by anything else in this list, do it whenever.
 
-### 5. Items — 160 left
+**Also done: section 5's opening items batch** — Quick Claw, Custap Berry, Leppa Berry, Chesto
+Berry, Lum Berry, the four weather rocks (Damp/Heat/Icy/Smooth Rock), and the four terrain seeds
+(Electric/Grassy/Misty/Psychic Seed). 13 items, no new hook needed, following the doc's own
+recommended order for section 5.
+
+Quick Claw and Custap Berry both live in `turn::bracket_jump`, the same function Quick Draw already
+occupied — Quick Claw checked first (a 20% draw to jump the bracket, taken and consumed whether it
+wins or not, unconditionally like Quick Draw's own draw), then Custap Berry (no draw at all: a flat
+guarantee once the holder is at or under a quarter of its max HP). Custap's own consumption needed
+`bracket_jump` and `order_actions` promoted from `&State`/`&Pokemon` to `&mut State`, which meant
+rewriting `order_actions`'s per-side loop to re-fetch `state.sides[side].active_pokemon()` at each
+point of use rather than holding one `actor: &Pokemon` borrow across the whole iteration — the
+`the_move: &'a Move` returned by `move_in_slot` borrows from `db`, not the Pokemon, so it stays
+valid across the re-borrows. Compiled clean on the first attempt. Leppa Berry sits in the PP-spend
+block in `resolve_move`: the instant *this* spend brings a slot to zero, it restores up to 10 (a new
+`PpRestored` log event), consumes the berry, and logs — a slot already at zero before the spend
+takes the Struggle branch instead and never reaches the check. Chesto Berry and Lum Berry both live
+in `apply_main_status_from`, checked last, right after the Poison Puppeteer block: Lum cures any
+status, Chesto only sleep, both curing on the same turn the status lands and logging
+`StatusCleared{clearance: "berry"}`. The four weather rocks extend an ability-set or move-set
+weather from 5 turns to 8, via a new `inline::rock_for_weather` helper wired into both sites that
+set weather (`hooks::on_switch_in`'s ability arm and `turn.rs`'s `WeatherEffect` handler) — mirroring
+the existing Heat Rock/Terrain Extender duration pattern already used elsewhere.
+
+The four terrain seeds turned out to need two independent trigger paths, not one, and finding the
+second was the real work of this batch. The seed's own `ON_SWITCH_IN` binding (`EventPriority.ITEM`,
+after every ability including Paradox's own) covers a Pokemon switching in after its terrain is
+already up, or one that both sets and eats its own seed on the same switch-in (Electric Surge
+holding Electric Seed) — this path was implemented first and its own dedicated test passed
+immediately. But a 3000-battle status-slice sweep (`--abilities --switches`) turned up 12
+divergences, all the same shape: a `StatStageChanged{source: "seed"}` Python's own trace had that
+Rust's didn't. A fresh read of `_set_terrain_from_ability` and `_apply_field_effect` (the ability and
+move terrain-setters, `abilities.py`/`field_apply.py`) showed why: both sweep *every* side's active
+Pokemon and call `consume_terrain_seed` directly, synchronously, the instant terrain actually
+changes — completely independent of the event bus. This is what lets a seed fire for a Pokemon that
+never switches in at all: an already-standing seed holder, or (the exact shape the sweep found) an
+ally auto-replacing a fainted Pokemon on a later turn while a Misty Surge lead's own switch-in sets
+the terrain, with nobody else switching in to trigger the seed's own `ON_SWITCH_IN` binding. Fixed
+by adding `hooks::consume_terrain_seeds_on_terrain_change`, a sweep of both sides called from both
+terrain-setting sites (the ability arm in `hooks::on_switch_in`, and the `TerrainEffect` arm in
+`turn::resolve_move`) right after terrain is set and logged. The two paths don't double-consume:
+`consume_terrain_seed_for_side`'s own item-match guard is naturally idempotent, and matches Python's
+own (a seed already spent by the sweep is simply not `pokemon.item` any more by the time the bus's
+lower-priority `ON_SWITCH_IN` handler gets to check it in the same emit).
+
+Six dedicated tests: one each for Quick Claw (60-seed sweep, seed-loop check), Custap Berry
+(deterministic — Dragon Rage's fixed 40 damage four times over brings a 180-HP Rhydon to 20, under
+the 45-HP quarter-mark), Leppa Berry (a 5-PP move spent from the same slot for exactly 5 turns),
+Chesto/Lum Berry together (Spore for the deterministic sleep-only case, a Thunder Wave seed-loop for
+Lum's any-status case), weather rocks (both the ability- and move-triggered sites, asserting
+`weather_turns_left == 7` one turn after an 8-turn set — the counter itself ticks once in the same
+turn it's set, so it reads one below its nominal duration, not the raw duration itself), and terrain
+seeds (a same-turn ability+seed case). A seventh test,
+`test_terrain_seed_fires_for_a_pokemon_that_never_switched_in`, was added specifically to cover the
+cross-side sweep the first terrain-seed test's own scenario couldn't reach (both Pokemon there are
+leads switching in together, so the sequential per-side `ON_SWITCH_IN` path alone was enough to pass
+it) — a move-set terrain (so the setter's own switch-in predates the terrain by a full move
+resolution) against a seed holder that never switches in at all. Vacuity-checked directly, one item
+at a time: Quick Claw and Custap Berry (renaming each string in `bracket_jump` — Quick Claw broke
+the tape's own draw count, Custap Berry broke turn order), Leppa Berry (renaming its string in the
+PP-spend block), Chesto Berry and Lum Berry (renaming each arm separately in the cure match), both
+weather-rock call sites independently (forcing `rock` to `None` at each), and the terrain-seed match
+arm plus — separately — both calls to `consume_terrain_seeds_on_terrain_change` (commented out
+together, since disabling either one alone leaves the other still covering the single-lead test;
+the seventh test is what catches this pair). Every one turned its own test red on its own, then
+clean again on revert.
+
+Confirmed with the full validation suite (`cargo build/test/clippy --release`, `ruff check`, 150
+pytest cases, 1 pre-existing unrelated skip) and two differential sweeps after the terrain-seed fix:
+3000 status-slice battles with `--abilities --switches` (2971/3000 agreed, 29 refused — the same
+documented Future Sight/Doom Desire scope limit, 0 diverged) and 5000 plain-slice battles (5000/5000
+agreed, 0 diverged). Before the fix, the same 3000-battle status-slice sweep showed 12 diverged; the
+fix brought that to 0 without changing the refusal count. 46/193 items now.
+
+### 5. Items — 147 left
 
 (This section's header disagreed with the status table in an earlier revision of this doc — 77 vs.
-193−33=160. 160 is correct; see the note in "Where it stands" above.)
+193−33=160. That has since been corrected as items were ported; 147 = 193−46 is current.)
 
 Recommended order, cheapest/most-unblocking first:
 
-1. **Standalone, no new hook needed**: weather rocks (Damp/Heat/Icy/Smooth Rock — extend the
-   existing weather-duration logic), terrain seeds (hook off `ON_SWITCH_IN`, already dispatched),
-   status/recovery berries (Chesto, Custap, Leppa, Lum), Air Balloon (its grounding check already
-   exists at `field.rs:43`; only the pop-on-hit half is new, and needs `ON_TURN_END` or
-   `ON_AFTER_HIT`, both already available once section 6 lands).
+1. **Standalone, no new hook needed — done**: Quick Claw and Custap Berry (`turn::bracket_jump`),
+   Leppa Berry (the PP-spend block in `resolve_move`), Chesto and Lum Berry
+   (`apply_main_status_from`), the four weather rocks (`hooks::on_switch_in`'s ability arm and
+   `turn.rs`'s `WeatherEffect` handler), and the four terrain seeds (`hooks::on_switch_in`'s own
+   `ON_SWITCH_IN` binding plus the new `consume_terrain_seeds_on_terrain_change` sweep called from
+   both terrain-setting sites) — see the batch write-up above. Air Balloon is the one name left in
+   this bucket: its grounding check already exists at `field.rs:43`, only the pop-on-hit half is
+   new, and needs `ON_TURN_END` or `ON_AFTER_HIT`, both already available once section 6 lands.
 2. **Choice trio** (Choice Band/Scarf/Specs, need `choice_locked_move`): verify first whether any
    move-locking already exists generically — invariant 4 already caught one false "Choice Scarf is
    ported" claim, so don't assume.
@@ -715,8 +794,9 @@ ability gap to unlock standalone — it exists for Air Balloon's pop, an item, s
 alongside section 5 than ahead of it. Section 4 is the largest remaining block at 48 abilities but
 most of it needs pairing with section 5's items (plates, memories, mega stones) or section 7's
 forme-swap primitive rather than being one-liners in isolation — call it a session from here.
-Section 5 (160 items) is one, mostly following section 4's abilities in to reuse their plumbing
-(Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega stones).
+Section 5 (147 items left) is one, mostly following section 4's abilities in to reuse their
+plumbing (Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega
+stones).
 Section 7 (Z-moves/megas/formes) is a scope question before it's a sizing question — check bot
 usage first. Integration (section 8) is last, one session plus whatever the AI re-validation turns
 up.
@@ -724,10 +804,12 @@ up.
 The tail is not uniform: absorption abilities and formes are each a small architecture change, and
 the butler's revival mechanic has no reference outside this codebase.
 
-**Immediate next step for whoever picks this up**: all four of `ON_BEFORE_MOVE`, `ON_FAINT`,
-`ON_SWITCH_OUT` and `ON_TURN_START` are done, along with everything they unblocked outright, and so
-are the nine no-new-hook one-liners (Dry Skin, Libero/Protean and Booster Energy held back — see
-their own notes in section 4). What's left in section 4 needs pairing with items (plates, memories,
-mega stones) or the not-yet-built forme-swap primitive, so the natural next step is section 5
-(items), reusing the `ON_BEFORE_MOVE`/`ON_SWITCH_OUT` plumbing already built, rather than `ON_TURN_END`
-— the one hook in section 6 with nothing to unlock standalone until items catch up to it.
+**Immediate next step for whoever picks this up**: section 5's opening batch (Quick Claw, Custap
+Berry, Leppa/Chesto/Lum Berry, the four weather rocks, the four terrain seeds) is done — see its
+write-up above. What's left in section 4 needs pairing with items (plates, memories, mega stones) or
+the not-yet-built forme-swap primitive, so stay in section 5 rather than jumping back: next up per
+its own recommended order is Air Balloon (the last name in the "no new hook" bucket — needs
+`ON_TURN_END` or `ON_AFTER_HIT` for its pop-on-hit half, both available since section 6), then the
+Choice trio (verify no generic move-locking already exists before assuming it's unported — invariant
+4 already caught one false claim here), then Focus Sash and Endure's item cousins (generalising the
+existing Sturdy clamp in `turn::apply_damage` to also check held items).

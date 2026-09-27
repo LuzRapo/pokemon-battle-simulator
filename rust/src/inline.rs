@@ -96,7 +96,20 @@ pub const PORTED_ABILITIES: [&str; 71] = [
 ];
 
 /// Items implemented at their inline sites.
-pub const PORTED_ITEMS: [&str; 3] = ["PROTECTIVE_PADS", "SCOPE_LENS", "WIDE_LENS"];
+pub const PORTED_ITEMS: [&str; 12] = [
+    "CHESTO_BERRY",
+    "CUSTAP_BERRY",
+    "DAMP_ROCK",
+    "HEAT_ROCK",
+    "ICY_ROCK",
+    "LEPPA_BERRY",
+    "LUM_BERRY",
+    "PROTECTIVE_PADS",
+    "QUICK_CLAW",
+    "SCOPE_LENS",
+    "SMOOTH_ROCK",
+    "WIDE_LENS",
+];
 
 /// `_priority_modifiers`: Prankster bumps a status move, Gale Wings a full-HP Flying move, Triage
 /// a healing move — each by a fixed amount, folded together the way the Python adds them rather
@@ -272,6 +285,19 @@ pub fn weather_from_ability(ability: &str) -> Option<&'static str> {
         "DRIZZLE" => "RAIN",
         "SAND_STREAM" => "SANDSTORM",
         "SNOW_WARNING" => "SNOW",
+        _ => return None,
+    })
+}
+
+/// `WEATHER_ROCKS`: the item that stretches a weather's ordinary 5-turn duration to 8, whether the
+/// weather was set by a move or by one of the four abilities above. Primal weather (`HARSH_SUN`,
+/// `HEAVY_RAIN`) is not in this table in the Python either — a rock cannot touch it.
+pub fn rock_for_weather(weather: &str) -> Option<&'static str> {
+    Some(match weather {
+        "RAIN" => "DAMP_ROCK",
+        "SUN" => "HEAT_ROCK",
+        "SANDSTORM" => "SMOOTH_ROCK",
+        "SNOW" => "ICY_ROCK",
         _ => return None,
     })
 }
