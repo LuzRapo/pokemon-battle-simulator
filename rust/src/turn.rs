@@ -99,11 +99,22 @@ fn order_actions(state: &State, actions: &[Action; 2], db: &Database, tape: &mut
     for side in 0..2 {
         let actor = state.sides[side].active_pokemon();
         let speed = effective_speed(actor, &state.sides[side], &state.field);
+        let mut category = category_of(&actions[side]);
         let priority = match &actions[side] {
             Action::Switch { .. } => 0,
-            Action::Move { slot } => priority_of(move_in_slot(actor, *slot, db)?)?,
+            Action::Move { slot } => {
+                let the_move = move_in_slot(actor, *slot, db)?;
+                // Pursuit's whole point: it catches its target on the way out, so it resolves
+                // ahead of the switch that would otherwise take the target off the field first.
+                // Switches already sort before every move, so this is the one thing that sorts
+                // before them.
+                if the_move.name == "Pursuit" && matches!(actions[1 - side], Action::Switch { .. }) {
+                    category = category_of(&Action::Switch { to: 0 }) - 1;
+                }
+                priority_of(the_move)?
+            }
         };
-        keys.push((category_of(&actions[side]), -priority, -speed, tie_breakers[side], side));
+        keys.push((category, -priority, -speed, tie_breakers[side], side));
     }
     keys.sort_by(|a, b| a.partial_cmp(b).expect("no NaNs in a sort key"));
     Ok(keys.into_iter().map(|k| k.4).collect())
@@ -825,7 +836,9 @@ fn resolve_move(
     let effectiveness = if the_move.typeless {
         1.0
     } else {
-        db.effectiveness(&the_move.move_type, &state.sides[other].active_pokemon().types)
+        let defender = state.sides[other].active_pokemon();
+        let natural = db.effectiveness(&the_move.move_type, &defender.types);
+        crate::power::effectiveness_override(&the_move.name, defender, natural, db)
     };
     // The immunity gate is for *damaging* moves only, exactly as the Python writes it. Charge is
     // Electric and targets its user, so a Ground-type across the field does not stop it boosting —
@@ -1288,6 +1301,8 @@ fn apply_damage(
         // on the first blow has to be gone by the second.
         let (mut payload, eaten) = collect_damage_payload(state, side, the_move, db, &shared_power_mods);
         payload.power_override = power_override;
+        payload.attack_stat_override = overrides.attack_stat;
+        payload.use_target_attack = overrides.use_target_attack;
         payload.defense_stat_override = overrides.defense_stat;
         payload.ignore_burn |= overrides.ignore_burn;
         payload.ignore_weather_drop = overrides.ignore_weather_drop;

@@ -15,7 +15,7 @@ use crate::tape::Tape;
 use crate::turn::Refusal;
 
 /// Coded moves whose power rule is implemented here. They come off the by-name refusal.
-pub const PORTED: [&str; 46] = [
+pub const PORTED: [&str; 53] = [
     // `_POWER_FORMULAS`
     "Low Kick",
     "Grass Knot",
@@ -59,12 +59,21 @@ pub const PORTED: [&str; 46] = [
     "Expanding Force",
     "Psyblade",
     "Hydro Steam",
+    "Pursuit",
     // `_SE_BONUS_MOVES`, `_HITS_PHYSICAL_DEFENCE`, and two of `payload_overrides`
     "Electro Drift",
     "Collision Course",
     "Psyshock",
     "Psystrike",
     "Secret Sword",
+    // `payload_overrides`' stat swaps, and the one per-move effectiveness override
+    "Body Press",
+    "Foul Play",
+    "Photon Geyser",
+    "Light That Burns the Sky",
+    "Freeze-Dry",
+    // only ever named in the weather-accuracy tables, which are ported
+    "Blizzard",
 ];
 
 /// `_STAGED_STATS`, in the Python's enum order.
@@ -179,6 +188,9 @@ fn condition(name: &str, state: &State, side: usize) -> Option<(bool, i32, i32)>
         // Weather Ball is in two tables: it changes type *and* doubles. Porting only the type
         // override made it a Fire move at half strength, which is most of the move missing.
         "Weather Ball" => crate::hooks::effective_weather(state) != "NONE",
+        // Pursuit doubles against a target caught on its way out. A side whose chosen action is a
+        // switch has no move name recorded, which is exactly the question being asked.
+        "Pursuit" => !state.sides[1 - side].acted_this_turn && state.sides[1 - side].chosen_move.is_none(),
         "Wake-Up Slap" => defender.status == Status::Sleep,
         "Smelling Salts" => defender.status == Status::Paralysis,
         "Rising Voltage" => state.field.terrain == "ELECTRIC" && grounded(defender),
@@ -237,6 +249,8 @@ pub fn effective_power(
 /// each needs a different stat *owner* rather than a different stat.
 #[derive(Debug, Default)]
 pub struct Overrides {
+    pub attack_stat: Option<&'static str>,
+    pub use_target_attack: bool,
     pub defense_stat: Option<&'static str>,
     pub ignore_burn: bool,
     pub ignore_weather_drop: bool,
@@ -244,10 +258,30 @@ pub struct Overrides {
 }
 
 pub fn payload_overrides(the_move: &Move, listed_type: &str, attacker: &Pokemon) -> Overrides {
+    if the_move.name == "Body Press" {
+        // It attacks with its Defence — the same Pokemon's, just a different stat.
+        return Overrides { attack_stat: Some("DEFENCE"), ..Default::default() };
+    }
     if matches!(the_move.name.as_str(), "Psyshock" | "Psystrike" | "Secret Sword") {
         // Special moves that land on physical Defence — not expressible as a category, which is
         // why the Python overrides the stat rather than the move.
         return Overrides { defense_stat: Some("DEFENCE"), ..Default::default() };
+    }
+    if matches!(the_move.name.as_str(), "Photon Geyser" | "Light That Burns the Sky") {
+        // Listed Special, but it uses whichever attacking stat is higher *after* boosts, and swaps
+        // the defending stat to match. An early return either way, so no later clause applies.
+        if attacker.effective("ATTACK") > attacker.effective("SP_ATTACK") {
+            return Overrides {
+                attack_stat: Some("ATTACK"),
+                defense_stat: Some("DEFENCE"),
+                ..Default::default()
+            };
+        }
+        return Overrides::default();
+    }
+    if the_move.name == "Foul Play" {
+        // It attacks with the *target's* Attack, which is a different owner, not a different stat.
+        return Overrides { use_target_attack: true, ..Default::default() };
     }
     if the_move.name == "Facade" {
         // The reason its own doubling is worth anything: a burned Pokemon using it does not also
@@ -410,14 +444,46 @@ pub const PORTED_ORDINARY_DESPITE_BEING_NAMED: [&str; 24] = [
     "Whirlpool",
 ];
 
+/// `_EFFECTIVENESS_OVERRIDES`: Freeze-Dry is super effective against Water whatever the chart says.
+pub fn effectiveness_override(move_name: &str, defender: &Pokemon, natural: f64, db: &Database) -> f64 {
+    if move_name != "Freeze-Dry" {
+        return natural;
+    }
+    if !defender.types.iter().flatten().any(|t| t == "WATER") {
+        return natural;
+    }
+    // The forced value replaces what Water alone contributed, leaving the other half of a dual
+    // type standing — so Water/Ground is 2x from the override and 2x from Ground's own Ice
+    // weakness, not a flat 2x overall.
+    let from_water = db.effectiveness(move_name_type(), &[Some("WATER".to_string()), None]);
+    if from_water == 0.0 {
+        return natural;
+    }
+    natural / from_water * 2.0
+}
+
+fn move_name_type() -> &'static str {
+    "ICE" // Freeze-Dry is the only entry in the table
+}
+
 /// `_SCREEN_BREAKERS`: these take the opponent's screens down before they hit.
 pub const SCREEN_BREAKERS: [&str; 3] = ["Psychic Fangs", "Raging Bull", "Brick Break"];
 
 /// Coded moves this engine has learned to fail. `coded_move_fails`, minus the ones needing state
 /// it does not keep: Belch wants the last consumed item, Shell Trap the category of the last hit
 /// taken by category *and* that it was this turn.
-pub const PORTED_FAILURES: [&str; 6] =
-    ["Poltergeist", "Sucker Punch", "Thunderclap", "Dream Eater", "Fake Out", "First Impression"];
+pub const PORTED_FAILURES: [&str; 10] = [
+    "Poltergeist",
+    "Sucker Punch",
+    "Thunderclap",
+    "Dream Eater",
+    "Fake Out",
+    "First Impression",
+    "Focus Punch",
+    "Shell Trap",
+    "Last Resort",
+    "Belch",
+];
 
 pub fn coded_move_fails(the_move: &Move, state: &State, side: usize, db: &Database) -> bool {
     let attacker = state.sides[side].active_pokemon();
@@ -428,8 +494,25 @@ pub fn coded_move_fails(the_move: &Move, state: &State, side: usize, db: &Databa
         "Dream Eater" => defender.status != Status::Sleep,
         // Only on the turn it arrived, which `turns_active` counts and a switch resets.
         "Fake Out" | "First Impression" => attacker.turns_active > 0,
+        // The turn-start commitment moves: priority -3, so the opponent almost always acts first,
+        // and what happened in between is the whole move.
+        // Lost if anything hit its user, which is the whole of the move — not gated on it.
+        "Focus Punch" => attacker.last_hit_taken > 0,
+        "Shell Trap" => !(attacker.last_hit_taken > 0 && attacker.last_hit_category.as_deref() == Some("PHYSICAL")),
+        "Last Resort" => !every_other_move_used(attacker, db),
+        // Not quite the real rule — it wants a berry actually eaten — but that is what the Python
+        // reads, and a name ending in _BERRY is how it decides.
+        "Belch" => !attacker.last_consumed_item.ends_with("_BERRY"),
         _ => false,
     }
+}
+
+/// `_every_other_move_used`, read off spent PP: a slot at full PP has certainly not been used.
+fn every_other_move_used(attacker: &Pokemon, db: &Database) -> bool {
+    crate::battle::SLOT_NAMES.iter().zip(&attacker.moves).all(|(slot, name)| {
+        name == "Last Resort"
+            || db.move_named(name).is_none_or(|listed| attacker.pp.get(*slot).copied().unwrap_or(0) < listed.pp)
+    })
 }
 
 /// `_target_is_about_to_attack`: has this side still got a damaging move coming this turn?

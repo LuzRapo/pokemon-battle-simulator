@@ -75,6 +75,8 @@ pub struct Pokemon {
     pub status_turns: i32,
     pub item: String,
     pub item_consumed: bool,
+    /// What was eaten, which Belch will not fire without.
+    pub last_consumed_item: String,
     pub ability: String,
     pub stages: BTreeMap<String, i32>,
     pub volatiles: BTreeMap<String, i32>,
@@ -211,6 +213,7 @@ impl Pokemon {
             status_turns: 0,
             item: spec.item.clone(),
             item_consumed: false,
+            last_consumed_item: "NONE".to_string(),
             ability: spec.ability.clone(),
             stages: STAGE_NAMES.iter().map(|s| (s.to_string(), 0)).collect(),
             volatiles: BTreeMap::new(),

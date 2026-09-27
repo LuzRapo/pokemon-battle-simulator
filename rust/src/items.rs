@@ -149,6 +149,7 @@ fn base_power(calc: &crate::abilities::Calc) -> Option<i32> {
 
 /// Eat the berry: `Pokemon.consume_item`, plus the entry the Python logs alongside it.
 pub fn consume(pokemon: &mut Pokemon, side: usize, item: &str, log: &mut Log) {
+    pokemon.last_consumed_item = pokemon.item.clone();
     pokemon.item = "NONE".to_string();
     pokemon.item_consumed = true;
     log.push(Event::BerryWeakened {

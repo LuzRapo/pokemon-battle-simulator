@@ -264,6 +264,7 @@ fn heal(state: &mut State, side: usize, divisor: i32, item: &str, log: &mut Log)
 
 fn consume(state: &mut State, side: usize) {
     let pokemon = state.sides[side].active_mut();
+    pokemon.last_consumed_item = pokemon.item.clone();
     pokemon.item = "NONE".to_string();
     pokemon.item_consumed = true;
 }

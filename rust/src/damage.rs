@@ -110,6 +110,10 @@ pub struct Payload {
     pub weather_suppressed: bool,
     /// What a coded move's power rule computed, standing in for the number in the data.
     pub power_override: Option<i32>,
+    /// Body Press and Photon Geyser: a different attacking stat, same owner.
+    pub attack_stat_override: Option<&'static str>,
+    /// Foul Play: a different *owner* for the attacking stat.
+    pub use_target_attack: bool,
     /// Psyshock and friends: a Special move landing on physical Defence.
     pub defense_stat_override: Option<&'static str>,
     /// Hydro Steam, which thrives in the sun instead of wilting in it.
@@ -149,7 +153,8 @@ pub fn calculate_hit(
     let type_multiplier = if the_move.typeless {
         1.0
     } else {
-        db.effectiveness(&the_move.move_type, &defender.types)
+        let natural = db.effectiveness(&the_move.move_type, &defender.types);
+        crate::power::effectiveness_override(&the_move.name, defender, natural, db)
     };
     if type_multiplier == 0.0 {
         return Hit::nothing();
@@ -172,10 +177,14 @@ pub fn calculate_hit(
     };
     // Psyshock and friends are Special moves that land on physical Defence. Not expressible as a
     // category, which is why the Python overrides the stat rather than the move.
+    let attack_stat = payload.attack_stat_override.unwrap_or(attack_stat);
     let defense_stat = payload.defense_stat_override.unwrap_or(defense_stat);
+    // Foul Play hits with the target's Attack — so the *owner* of the stat changes, not just which
+    // stat it is, and the crit rule then reads that Pokemon's stages rather than the attacker's.
+    let attack_owner = if payload.use_target_attack { defender } else { attacker };
     let mut attack = crit_aware(
-        attacker.stat(attack_stat),
-        attacker.stage(attack_stat),
+        attack_owner.stat(attack_stat),
+        attack_owner.stage(attack_stat),
         is_crit,
         true,
         payload.ignore_attack_stages,
