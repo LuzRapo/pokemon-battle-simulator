@@ -753,6 +753,17 @@ fn resolve_move(
             *left = (*left - 1).max(0);
         }
     }
+    // `TRACE_DRAWS=1` prints where on the tape each move started. When the two engines disagree
+    // about *how many* draws a turn took, the divergence message names the position but not the
+    // move that got there — this closes that gap in one run.
+    if std::env::var_os("TRACE_DRAWS").is_some() {
+        eprintln!(
+            "[draw {}] side {side} uses {} (slot {slot}, accuracy {:?})",
+            tape.position(),
+            the_move.name,
+            the_move.accuracy_probability
+        );
+    }
     log.push(Event::MoveUsed {
         side: side as i32,
         pokemon: state.sides[side].active_pokemon().nickname.clone(),
