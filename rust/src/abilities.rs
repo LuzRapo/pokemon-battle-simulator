@@ -274,6 +274,26 @@ fn handle(ability: &str, pokemon: &Pokemon, is_actor: bool, aura_broken: bool, c
         }
         "UNAWARE" if !is_actor => payload.ignore_attack_stages = true,
 
+        // Protosynthesis / Quark Drive: 1.3x, on whichever side the boosted stat actually applies
+        // to. `paradox_boost` is set (or not) by `hooks::evaluate_paradox`, called from
+        // `ON_SWITCH_IN`/`ON_TURN_START`/`ON_RESIDUAL` — deliberately not on this file's own
+        // `PORTED` array, per the module doc, since three other events decide whether this arm ever
+        // has anything to read. The Speed boost is a separate 1.5x in `turn::effective_speed`.
+        "PROTOSYNTHESIS" | "QUARK_DRIVE" => {
+            if let Some(boost) = &pokemon.paradox_boost {
+                let offensive =
+                    (boost == "ATTACK" && physical) || (boost == "SP_ATTACK" && special);
+                let defensive =
+                    (boost == "DEFENCE" && physical) || (boost == "SP_DEFENCE" && special);
+                if is_actor && offensive {
+                    payload.attack_mods_4096.push(5325);
+                }
+                if !is_actor && defensive {
+                    payload.defense_mods_4096.push(5325);
+                }
+            }
+        }
+
         // -- effects that read which side you are on, not whether you are attacking ---------
         "TABLETS_OF_RUIN" if !is_actor && physical => payload.attack_mods_4096.push(3072),
         "VESSEL_OF_RUIN" if !is_actor && special => payload.attack_mods_4096.push(3072),

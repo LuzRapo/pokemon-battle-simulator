@@ -197,6 +197,12 @@ pub struct Pokemon {
     /// Flash Fire: set the first time a Fire move is absorbed, cleared on switch-out. Boosts every
     /// Fire move this Pokemon uses afterward, until then.
     pub flash_fire_active: bool,
+    /// Protosynthesis / Quark Drive: which stat is currently boosted, if any. `None` until the
+    /// field condition (or a consumed Booster Energy) activates it; cleared on switch-out.
+    pub paradox_boost: Option<String>,
+    /// Whether the current `paradox_boost` came from Booster Energy rather than the field — a
+    /// booster-sourced boost outlives the field condition ending, a field-sourced one does not.
+    pub paradox_from_booster: bool,
 }
 
 /// A pre-Transform form, restored on switch-out. Mirrors `models.pokemon.FormSnapshot` exactly —
@@ -343,6 +349,8 @@ impl Pokemon {
             encored_slot: None,
             disabled_slot: None,
             flash_fire_active: false,
+            paradox_boost: None,
+            paradox_from_booster: false,
         })
     }
 

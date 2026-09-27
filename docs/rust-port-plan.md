@@ -17,13 +17,13 @@ this doc; per invariant 2 the batch now belongs on the "done" side.
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 161 | 220 (73%) |
+| abilities | 163 | 220 (74%) |
 | items | 33 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
 The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
 a release build for this update:
-`{"abilities":{"live":220,"ported":161},"items":{"live":193,"ported":33},"moves":{"playable":843,
+`{"abilities":{"live":220,"ported":163},"items":{"live":193,"ported":33},"moves":{"playable":843,
 "refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
 row above. The stale code comment at `rust/src/turn.rs:318` ("220 abilities and 110 items are
 live") has been corrected to 193 for items.
@@ -491,7 +491,45 @@ Confirmed with the full validation suite and two differential sweeps: 3000 statu
 agreed, 40 refused, the same Future Sight limit, 0 diverged) and 5000 plain-slice (5000/5000, 0
 diverged). 161/220 abilities now.
 
-The remaining 59, grouped and roughly ordered by what unblocks the most:
+**Also done: section 6's `ON_TURN_START` hook, and Protosynthesis/Quark Drive.** The largest single
+ability unit ported so far, and the reason it earned its own hook rather than riding along with
+`ON_SWITCH_IN`/`ON_RESIDUAL` alone: the same `_paradox_evaluate` binds to *three* events
+(`ON_SWITCH_IN`, `ON_TURN_START`, `ON_RESIDUAL` at `ResidualOrder.PARADOX`, right after the field's
+own duration tick and before the weather chip) with no event-specific behaviour, so `hooks::
+evaluate_paradox` is one function called from all three sites — the existing `on_switch_in`, the new
+`ability_on_turn_start` (called once per turn, before `order_actions` reads `effective_speed` —
+which is the entire reason `ON_TURN_START` needs to exist at all, not just the residual pass), and a
+new call at the top of each side's `residuals()` block. Two new `Pokemon` fields
+(`paradox_boost: Option<String>`, `paradox_from_booster: bool`), reset on switch-out alongside Flash
+Fire's own flag. The boost itself has three destinations, matching the Python's three separate
+sites: a 1.3x offense-or-defense modifier in `abilities::handle` (deliberately not on that file's
+own `PORTED` array, for the same reason Flash Fire's boost half isn't — three other events decide
+whether it ever has anything to read), a 1.5x Speed multiplier in `effective_speed`, and neither at
+all when the boosted stat is something a plain damage roll or turn-order comparison never touches.
+`switch_out` needed the same `log` threading as `ON_SWITCH_OUT` did. Booster Energy's own half of
+the mechanism (a held-item activation path that outlives the field condition) is written faithfully
+but is dead code for now — the item itself is still refused as unported, confirmed directly by
+holding one and watching the refusal fire before this code is ever reached — exactly the same shape
+Water Bubble's burn immunity and Levitate's grounding clause were before their own abilities joined
+a `PORTED` array.
+
+Four differential tests: `test_protosynthesis_and_quark_drive_boost_the_highest_stat_and_agree` (the
+1.3x damage case, both abilities, against a Drought/Electric Surge partner whose own switch-in sets
+the field before `ON_TURN_START` ever asks), `test_quark_drive_speed_boost_reorders_turns` (Tauros at
+110 base Speed loses to a 112-Speed Lycanroc unboosted and wins at a boosted 165 — a strict
+comparison, not a coin flip a tie could still lose), and
+`test_paradox_boost_fades_silently_when_the_field_ends` (Drought's sun lasts 5 turns; by the last of
+7, Machamp's Tackle has quietly reverted to its unboosted amount with no second `ParadoxActivated`
+ever logged — the Python does not announce losing the boost the way it announces gaining it).
+Vacuity-checked directly: the two activation conditions, the offensive damage multiplier, the Speed
+multiplier, and the field-ended clearing, each disabled in turn (five checks), each turning its own
+test red — the activation checks as a plain digest mismatch on the very first turn (`ParadoxActivated`
+missing entirely), the multipliers and the clearing as damage or turn-order mismatches once the
+activation itself was intact. Confirmed with the full validation suite and two differential sweeps:
+3000 status-slice (2956/3000 agreed, 44 refused, the same Future Sight limit, 0 diverged) and 5000
+plain-slice (5000/5000, 0 diverged). 163/220 abilities now.
+
+The remaining 57, grouped and roughly ordered by what unblocks the most:
 
 - **Dry Skin**: the one name left over from the `ON_BEFORE_MOVE` cluster above — its own absorb half
   would be a one-line addition to `hooks::ability_before_move` (`"DRY_SKIN" if move_type ==
@@ -500,10 +538,10 @@ The remaining 59, grouped and roughly ordered by what unblocks the most:
   (`ON_TURN_END`, not built yet — see below) both have to land in the same pass, per invariant 2.
 - **Libero / Protean**: bind `ON_SWITCH_OUT` (restore original type) alongside a stateful
   `ON_BEFORE_MOVE` handler (shift to the used move's type, once per switch-in) — see the note above.
-- **Unblocked by `ON_TURN_START` (2)**: Protosynthesis, Quark Drive.
-- **No new hook needed, one-liners at existing sites (~10)**: Sheer Force, Solar Power, Thermal
-  Exchange, Toxic Debris, Soul Heart, Wonder Guard, Wind Rider, Liquid Voice, Cursed Body, Poison
-  Puppeteer.
+- **No new hook needed, one-liners at existing sites (~9)**: Sheer Force, Solar Power, Thermal
+  Exchange, Toxic Debris, Wonder Guard, Wind Rider, Liquid Voice, Cursed Body, Poison Puppeteer
+  (Soul Heart, also in this bullet in an earlier revision of this doc, was ported with the
+  `ON_FAINT` batch above — it binds `_bind_ko_boost` like Moxie, not a standalone one-liner).
 - **Ability interaction (9)**: Mold Breaker/Teravolt/Turboblaze (one shared mechanism — an
   attacker-side flag read wherever a target-ability immunity is checked), Neutralizing Gas, Mummy,
   Trace, Imposter, Magician, Pickpocket. Imposter/Trace should reuse the existing Transform/
@@ -589,8 +627,10 @@ Build in this order — each one sized to unlock the next-biggest ability/item c
    `on_switch_in`, and only for a switch that is not a faint replacement. Unblocked Regenerator and
    Natural Cure — see the write-up in section 4. Zero to Hero stays with the Formes cluster; Libero
    and Protean need a second, stateful hook into `ON_BEFORE_MOVE` alongside this one.
-4. **`ON_TURN_START`** — called once at the top of the turn, before actions resolve. Unblocks
-   Protosynthesis/Quark Drive (and Booster Energy once items catch up).
+4. **`ON_TURN_START` — done.** Called once at the top of the turn, before `order_actions` reads
+   `effective_speed`. Unblocked Protosynthesis and Quark Drive — see the write-up in section 4;
+   Booster Energy rides along once items catch up, its own logic already written and waiting on the
+   item joining a `PORTED` array the same way Levitate's grounding clause once waited.
 5. **`ON_TURN_END`** — called in the existing residual pass, symmetric to `field::tick_field`/
    `tick_side`. Lowest priority of the five — nothing in the current ability gap needs it
    standalone; it exists for later item interactions (Air Balloon's pop).
@@ -627,13 +667,14 @@ hand-mapped signature crystals.
 
 ## Rough sizing
 
-Sections 1–3 are done. Section 6's first three hooks — `ON_BEFORE_MOVE`, `ON_FAINT`,
-`ON_SWITCH_OUT` — are done and have already unblocked their clusters outright (eleven of
-`ON_BEFORE_MOVE`'s twelve abilities, all three of `ON_FAINT`'s, both of `ON_SWITCH_OUT`'s — see
-section 4). The remaining two hooks (`ON_TURN_START`, `ON_TURN_END`) are still worth building ahead
-of resuming section 4 at large, for the same reason the first three were: small on their own, each
-turns a blocked cluster into one-liners. Section 4 is the largest remaining block at 59 abilities
-but most of it is one-liners once the rest of section 6 lands — call it a session from here.
+Sections 1–3 are done. Section 6's first four hooks — `ON_BEFORE_MOVE`, `ON_FAINT`,
+`ON_SWITCH_OUT`, `ON_TURN_START` — are all done and have already unblocked their clusters outright
+(eleven of `ON_BEFORE_MOVE`'s twelve abilities, all three of `ON_FAINT`'s, both of
+`ON_SWITCH_OUT`'s, both of `ON_TURN_START`'s — see section 4). `ON_TURN_END`, the last of the five,
+is the one hook left with nothing in the current ability gap to unlock standalone — it exists for
+Air Balloon's pop, an item, so it makes more sense alongside section 5 than ahead of it. Section 4
+is the largest remaining block at 57 abilities but most of it is one-liners at sites this port
+already has — call it a session from here.
 Section 5 (160 items) is one, mostly following section 4's abilities in to reuse their plumbing
 (Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega stones).
 Section 7 (Z-moves/megas/formes) is a scope question before it's a sizing question — check bot
@@ -643,8 +684,12 @@ up.
 The tail is not uniform: absorption abilities and formes are each a small architecture change, and
 the butler's revival mechanic has no reference outside this codebase.
 
-**Immediate next step for whoever picks this up**: `ON_BEFORE_MOVE`, `ON_FAINT` and `ON_SWITCH_OUT`
-are all done, along with everything they unblocked outright (Dry Skin and Libero/Protean held back
-— see their own notes in section 4). Build the next hook, `ON_TURN_START`, called once at the top of
-the turn before actions resolve — it unblocks Protosynthesis and Quark Drive, and the same "one hook
-first" logic applies for the same reason it did the last three times.
+**Immediate next step for whoever picks this up**: all four of `ON_BEFORE_MOVE`, `ON_FAINT`,
+`ON_SWITCH_OUT` and `ON_TURN_START` are done, along with everything they unblocked outright (Dry
+Skin, Libero/Protean and Booster Energy held back — see their own notes in section 4). Build the
+last hook, `ON_TURN_END`, in the existing residual pass symmetric to `field::tick_field`/`tick_side`
+— nothing in the current ability gap needs it standalone, so this is the one hook in section 6
+that's cheaper to build once the item work in section 5 gives it something to unlock (Air Balloon's
+pop) than to build speculatively now. With that in mind, the more useful next step is probably to
+start section 5 (items) directly, reusing the plumbing `ON_BEFORE_MOVE` and `ON_SWITCH_OUT` already
+built, rather than building a fifth hook nothing yet needs.

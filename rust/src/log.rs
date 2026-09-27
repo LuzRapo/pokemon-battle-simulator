@@ -236,6 +236,14 @@ pub enum Event {
         side: i32,
         pokemon: String,
     },
+    /// Protosynthesis / Quark Drive boosting the holder's strongest stat.
+    ParadoxActivated {
+        side: i32,
+        pokemon: String,
+        ability: String,
+        stat: String,
+        from_booster: bool,
+    },
     /// The weather or terrain a Pokemon brings onto the field.
     WeatherSetByAbility {
         side: i32,

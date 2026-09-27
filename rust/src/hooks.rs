@@ -12,7 +12,7 @@
 //! entries for a single-hit move — the Python emits it inside the per-hit loop and logs the summary
 //! after — so Rough Skin's chip is announced before the damage that caused it.
 
-use crate::battle::{State, Status};
+use crate::battle::{Pokemon, State, Status};
 use crate::data::{Database, Effect, Move};
 use crate::log::{Event, Log};
 use crate::tape::Tape;
@@ -194,6 +194,89 @@ pub fn ability_on_switch_out(state: &mut State, side: usize, log: &mut Log) {
             clear_status(state, side, "natural_cure", log);
         }
         _ => {}
+    }
+}
+
+/// Protosynthesis / Quark Drive: the same `_paradox_evaluate` runs from three separate events —
+/// `ON_SWITCH_IN`, `ON_TURN_START` and `ON_RESIDUAL` (at `ResidualOrder.PARADOX`, right after the
+/// field's own duration tick and before the weather chip) — with no event-specific behaviour of
+/// its own, which is why one function is called from all three sites rather than three copies of
+/// it. The 1.3x damage contribution lives in `abilities::handle`; the 1.5x Speed contribution lives
+/// in `effective_speed`; this function only ever decides *which* stat, if any, is boosted.
+pub const PORTED_PARADOX_ABILITIES: [&str; 2] = ["PROTOSYNTHESIS", "QUARK_DRIVE"];
+const PARADOX_STATS: [&str; 5] = ["ATTACK", "DEFENCE", "SP_ATTACK", "SP_DEFENCE", "SPEED"];
+
+/// `_best_stat`: `max(_PARADOX_STATS, key=pokemon.effective_stat)` — keeps the first equal element
+/// on a tie, matched here the same way Beast Boost's own tie-break is.
+fn best_effective_stat(pokemon: &Pokemon) -> &'static str {
+    let mut best = PARADOX_STATS[0];
+    let mut best_value = pokemon.effective(best);
+    for &stat in &PARADOX_STATS[1..] {
+        let value = pokemon.effective(stat);
+        if value > best_value {
+            best = stat;
+            best_value = value;
+        }
+    }
+    best
+}
+
+fn activate_paradox(state: &mut State, side: usize, ability: &str, from_booster: bool, log: &mut Log) {
+    let best = best_effective_stat(state.sides[side].active_pokemon());
+    let pokemon = state.sides[side].active_mut();
+    pokemon.paradox_boost = Some(best.to_string());
+    pokemon.paradox_from_booster = from_booster;
+    let nickname = pokemon.nickname.clone();
+    log.push(Event::ParadoxActivated {
+        side: side as i32,
+        pokemon: nickname,
+        ability: ability.to_string(),
+        stat: best.to_string(),
+        from_booster,
+    });
+}
+
+pub fn evaluate_paradox(state: &mut State, side: usize, log: &mut Log) {
+    let pokemon = state.sides[side].active_pokemon();
+    let ability = pokemon.ability.clone();
+    let energized = match ability.as_str() {
+        "PROTOSYNTHESIS" => matches!(state.field.weather.as_str(), "SUN" | "HARSH_SUN"),
+        "QUARK_DRIVE" => state.field.terrain == "ELECTRIC",
+        _ => return,
+    };
+    if pokemon.fainted() {
+        return;
+    }
+    if pokemon.paradox_boost.is_some() {
+        if energized || pokemon.paradox_from_booster {
+            return;
+        }
+        // The condition ended; a held Booster Energy may still take over below, in the same call.
+        state.sides[side].active_mut().paradox_boost = None;
+    }
+    if energized {
+        activate_paradox(state, side, &ability, false, log);
+    } else if state.sides[side].active_pokemon().item == "BOOSTER_ENERGY" {
+        let pokemon = state.sides[side].active_mut();
+        pokemon.last_consumed_item = pokemon.item.clone();
+        pokemon.item = "NONE".to_string();
+        pokemon.item_consumed = true;
+        activate_paradox(state, side, &ability, true, log);
+    }
+}
+
+/// `ON_TURN_START`: emitted once per turn, before actions are ordered — before `order_actions`
+/// reads `effective_speed`, which is the entire reason this exists rather than leaving Paradox
+/// abilities to `ON_SWITCH_IN` and `ON_RESIDUAL` alone. Visited in `registered_at` order, the same
+/// rule `abilities::apply_damage_calc` sorts by, since both sides register at the same bus
+/// priority.
+pub fn ability_on_turn_start(state: &mut State, log: &mut Log) {
+    let mut order = [0usize, 1];
+    order.sort_by_key(|side| state.sides[*side].active_pokemon().registered_at);
+    for side in order {
+        if !state.sides[side].active_pokemon().fainted() {
+            evaluate_paradox(state, side, log);
+        }
     }
 }
 
@@ -520,6 +603,9 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
         }
         _ => {}
     }
+    // `_bind_paradox` registers its own `ON_SWITCH_IN` handler separately from the match above,
+    // rather than as one more arm in it.
+    evaluate_paradox(state, side, log);
 }
 
 /// Abilities and items implemented at `ON_RESIDUAL`, on top of everything above.

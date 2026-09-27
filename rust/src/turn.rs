@@ -177,6 +177,9 @@ pub fn effective_speed(pokemon: &Pokemon, side: &Side, field: &crate::battle::Fi
     if pokemon.ability == "UNBURDEN" && pokemon.item == "NONE" && pokemon.item_consumed {
         speed *= 2;
     }
+    if pokemon.paradox_boost.as_deref() == Some("SPEED") {
+        speed = speed * 3 / 2;
+    }
     if side.tailwind_turns > 0 {
         speed *= 2;
     }
@@ -325,6 +328,7 @@ pub fn ported_abilities() -> &'static std::collections::HashSet<&'static str> {
         all.extend(crate::hooks::PORTED_BEFORE_MOVE_ABILITIES);
         all.extend(crate::hooks::PORTED_ON_FAINT_ABILITIES);
         all.extend(crate::hooks::PORTED_ON_SWITCH_OUT_ABILITIES);
+        all.extend(crate::hooks::PORTED_PARADOX_ABILITIES);
         all.extend(crate::inline::PORTED_ABILITIES);
         all.extend(crate::hooks::PORTED_RESIDUAL_ABILITIES);
         all.extend(crate::power::PORTED_ATE_ABILITIES);
@@ -485,6 +489,10 @@ pub fn step(
             on_switch_in(state, side, &mut log);
         }
     }
+    // `ON_TURN_START`: emitted once here, before `order_actions` reads `effective_speed` below —
+    // which is the entire reason a Paradox ability needs this hook and not just `ON_SWITCH_IN` and
+    // `ON_RESIDUAL`.
+    crate::hooks::ability_on_turn_start(state, &mut log);
     // Who chose each action, by team slot. A Pokemon dragged out by Roar before it acted takes its
     // queued move with it — resolving the slot anyway means the replacement uses whatever happens
     // to be in that slot, which is a different move belonging to a different Pokemon.
@@ -704,6 +712,8 @@ fn withdraw(side: &mut Side, to: usize) -> String {
     outgoing.encored_slot = None;
     outgoing.disabled_slot = None;
     outgoing.flash_fire_active = false;
+    outgoing.paradox_boost = None;
+    outgoing.paradox_from_booster = false;
     if outgoing.status == Status::Toxic {
         outgoing.status_turns = 0;
     }
@@ -739,10 +749,10 @@ fn residuals(state: &mut State, db: &Database, tape: &mut Tape, log: &mut Log) -
     crate::field::tick_field(state, log);
     for side in 0..2 {
         if !state.sides[side].active_pokemon().fainted() {
-            // ResidualOrder: WEATHER (9000) and TERRAIN (8400) come before STATUS (6000).
-            // ResidualOrder, top to bottom: WEATHER (9000), then the weather abilities (8500),
-            // the terrain (8400), the cures and the recovery items, then the status chip at 6000,
-            // then everything below it.
+            // ResidualOrder, top to bottom: PARADOX (9500, right after the field-duration tick
+            // above), WEATHER (9000), then the weather abilities (8500), the terrain (8400), the
+            // cures and the recovery items, then the status chip at 6000, then everything below it.
+            crate::hooks::evaluate_paradox(state, side, log);
             crate::field::weather_residual(state, side, log);
             crate::hooks::residual_before_status(state, side, tape, log)?;
             status_chip(state, side, log);

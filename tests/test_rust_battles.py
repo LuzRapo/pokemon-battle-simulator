@@ -2004,6 +2004,107 @@ def test_regenerator_and_natural_cure_dont_fire_on_a_fainted_switch(tmp_path: Pa
 
 
 @needs_rust
+def test_protosynthesis_and_quark_drive_boost_the_highest_stat_and_agree(tmp_path: Path) -> None:
+    """Protosynthesis and Quark Drive: the same `_paradox_evaluate` runs from `ON_SWITCH_IN`,
+    `ON_TURN_START` and `ON_RESIDUAL`, boosting whichever of the holder's five relevant stats is
+    highest by 1.3x in `ON_DAMAGE_CALC` (the Speed case is its own test below, since it shows up in
+    turn order rather than a damage number). Both leads' switch-ins happen before `ON_TURN_START`
+    fires, so a Drought/Electric Surge partner sets the field before this engine ever asks whether
+    the condition is active -- deterministic, no seed needed.
+
+    Machamp's Attack (130) is comfortably its highest stat, so `ParadoxActivated` naming anything
+    else would be a real bug, not this test picking a bad example.
+
+    Vacuity-checked directly: renaming the ability strings in `hooks::evaluate_paradox`'s match
+    turned the activation itself into a plain digest mismatch (no `ParadoxActivated`, no boosted
+    `DamageDealt`, where Python has both); reverting that and instead zeroing the 5325 multiplier in
+    `abilities::handle` left the activation log line intact but turned the boosted `DamageDealt`
+    amount into a mismatch on its own.
+    """
+    cases = [("PROTOSYNTHESIS", "DROUGHT"), ("QUARK_DRIVE", "ELECTRIC_SURGE")]
+    for ability, setter in cases:
+        boosted_a = [_mon("Machamp", "A0", Ability[ability], ["Tackle"])]
+        setter_b = [_mon("Kangaskhan", "B0", Ability[setter], ["Splash"])]
+        scenario, boosted = record((boosted_a, setter_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"{ability} was refused: {theirs}"
+        assert compare(boosted, theirs) is None, f"{ability}"
+        events = boosted[0]["events"]
+        activation = next((e for e in events if e["type"] == "ParadoxActivated"), None)
+        assert activation is not None, f"{ability}: never activated\n{events}"
+        assert activation["stat"] == "ATTACK", f"{ability}: boosted {activation['stat']} instead of ATTACK"
+        assert activation["from_booster"] is False, activation
+        boosted_amount = _damage_dealt(events)
+
+        plain_a = [_mon("Machamp", "A0", Ability.NONE, ["Tackle"])]
+        scenario, plain = record((plain_a, setter_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"{ability} control was refused: {theirs}"
+        assert compare(plain, theirs) is None, f"{ability} control"
+        plain_amount = _damage_dealt(plain[0]["events"])
+        assert boosted_amount > plain_amount * 1.2, f"{ability}: {boosted_amount} was not ~1.3x {plain_amount}"
+
+
+@needs_rust
+def test_quark_drive_speed_boost_reorders_turns(tmp_path: Path) -> None:
+    """The Speed case of the same boost, in `turn::effective_speed` rather than `abilities::handle`:
+    Tauros (110 base Speed, its own highest stat) is slower than Lycanroc (112) unboosted but faster
+    once Quark Drive's 1.3x -- no, 1.5x for Speed specifically -- pushes it to 165. Both numbers are
+    far enough apart that this is a strict comparison, not a tie a coin flip could still lose.
+
+    Vacuity-checked directly: removing the `paradox_boost == SPEED` line from `effective_speed`
+    turned this into a tape divergence -- Lycanroc moving first in this engine where Python's boosted
+    Tauros already does.
+    """
+    boosted_a = [_mon("Tauros", "A0", Ability.QUARK_DRIVE, ["Splash"])]
+    setter_b = [_mon("Lycanroc", "B0", Ability.ELECTRIC_SURGE, ["Splash"])]
+    scenario, expected = record((boosted_a, setter_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    activation = next((e for e in events if e["type"] == "ParadoxActivated"), None)
+    assert activation is not None and activation["stat"] == "SPEED", events
+    movers = [e["side"] for e in events if e["type"] == "MoveUsed"]
+    assert movers[0] == 0, f"Tauros should move first once boosted: {movers}"
+
+
+@needs_rust
+def test_paradox_boost_fades_silently_when_the_field_ends(tmp_path: Path) -> None:
+    """A field-sourced boost (not from Booster Energy) is cleared the moment the condition ends --
+    silently, per `_paradox_evaluate`: no log line marks the loss the way `ParadoxActivated` marked
+    the gain. Drought's own sun lasts 5 turns, so by the last of 7 the boost is long gone and
+    Machamp's Tackle should have quietly reverted to its unboosted amount, with `ParadoxActivated`
+    never appearing a second time (nothing re-activates a name that already ended and holds no
+    Booster Energy).
+
+    Vacuity-checked directly: keeping `paradox_boost` set once activated, rather than clearing it
+    when `energized` goes false, turned the final turn's `DamageDealt` into a mismatch -- this
+    engine still boosting an attack Python had already let lapse.
+    """
+    # Rhydon, not Kangaskhan: bulky enough on both sides of this matchup that seven Tackles apiece
+    # never end the battle early and shift which turn "the last one" actually is.
+    team_a = [_mon("Machamp", "A0", Ability.PROTOSYNTHESIS, ["Tackle"])]
+    team_b = [_mon("Rhydon", "B0", Ability.DROUGHT, ["Splash"])]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=7)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    activations = [e for turn in expected for e in turn["events"] if e["type"] == "ParadoxActivated"]
+    assert len(activations) == 1, activations
+    assert len(expected) == 7, f"the battle ended early: {len(expected)} turns"
+    late_amount = _damage_dealt(expected[6]["events"])
+
+    plain_a = [_mon("Machamp", "A0", Ability.NONE, ["Tackle"])]
+    scenario, plain = record((plain_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=7)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"control was refused: {theirs}"
+    assert compare(plain, theirs) is None
+    plain_late_amount = _damage_dealt(plain[6]["events"])
+    assert late_amount == plain_late_amount, f"turn 7 should be unboosted: {late_amount} vs {plain_late_amount}"
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 
