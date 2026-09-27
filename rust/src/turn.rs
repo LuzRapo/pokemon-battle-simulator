@@ -201,7 +201,7 @@ const DEFENDER_FACING: [&str; 3] = ["SINGLE_OPPONENT", "ALL_ADJACENT_ENEMIES", "
 /// generic one, so routing it through the generic path would silently play it wrong.
 pub const PORTED_BESPOKE_VOLATILES: [&str; 3] = ["LOCKED_MOVE", "ENCORE", "DISABLE"];
 
-pub const PORTED_VOLATILES: [&str; 11] = [
+pub const PORTED_VOLATILES: [&str; 12] = [
     "FLINCH",
     "CONFUSION",
     "PROTECT",
@@ -213,6 +213,7 @@ pub const PORTED_VOLATILES: [&str; 11] = [
     "PARTIALLY_TRAPPED",
     "YAWN",
     "TAUNT",
+    "DESTINY_BOND",
 ];
 
 /// Everything this engine has implemented, gathered from the modules that implement it so a name
@@ -778,6 +779,10 @@ fn resolve_move(
     log: &mut Log,
 ) -> Result<(), Refusal> {
     let other = 1 - side;
+    // The bond lasts until its user's next action, so it is cleared right here — before that action
+    // is even decided — rather than by a countdown. A Destiny Bond that killed something last turn
+    // does not still threaten to on this one.
+    state.sides[side].active_mut().volatiles.remove("DESTINY_BOND");
     // Encore, a rampage or a charge each continue a use the Pokemon already committed to, whatever
     // slot the recorded action names — a short moveset pads itself by repeating its first move, so
     // the same move can sit in several slots and the recorded action can name a different one of
@@ -1623,6 +1628,17 @@ fn apply_damage(
             side: other as i32,
             pokemon: state.sides[other].active_pokemon().nickname.clone(),
         });
+        // Destiny Bond: the fallen defender takes its attacker down too, unless that attacker is
+        // already gone (a Struggle recoil, say, that finished itself off on the very same hit).
+        if state.sides[other].active_pokemon().volatiles.contains_key("DESTINY_BOND")
+            && !state.sides[side].active_pokemon().fainted()
+        {
+            let attacker = state.sides[side].active_mut();
+            let all_of_it = attacker.hp;
+            attacker.take_damage(all_of_it);
+            let nickname = attacker.nickname.clone();
+            log.push(Event::Fainted { side: side as i32, pokemon: nickname });
+        }
     }
     // Once for the whole move, against the total: a multi-hit drain heals on the sum, not per blow.
     recoil_and_drain(state, side, the_move, total_dealt, log);

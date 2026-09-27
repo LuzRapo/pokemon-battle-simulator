@@ -613,6 +613,46 @@ def test_move_restriction_volatiles_fire_and_agree(tmp_path: Path) -> None:
 
 
 @needs_rust
+def test_destiny_bond_takes_its_attacker_down_too(tmp_path: Path) -> None:
+    """A turn where the Destiny Bond user faints has to take its attacker with it.
+
+    Vacuity-checked directly: disabling the KO turned 105/300 of a Destiny-Bond-heavy batch red, so
+    this asserts on the concrete signature of it firing — a single turn logging two `Fainted`
+    entries — rather than trusting that mere agreement means the feature ran.
+    """
+    pool = ["Destiny Bond", "Tackle", "Protect"]
+
+    def team(rng: random.Random) -> list[PokemonSpec]:
+        return [
+            PokemonSpec(
+                species=rng.choice(PLAIN_SPECIES),
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool), "Tackle"],
+            )
+            for index in range(3)
+        ]
+
+    double_faints = 0
+    for seed in range(40):
+        rng = random.Random(25000 + seed)
+        teams = (team(rng), team(rng))
+        scenario, expected = record(teams, _chooser(rng), seed=seed, max_turns=60)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        divergence = compare(expected, theirs)
+        assert divergence is None, f"seed {seed}\n{divergence}"
+        double_faints += sum(
+            sum(1 for e in turn["events"] if e["type"] == "Fainted") >= 2 for turn in expected
+        )
+
+    assert double_faints > 0, "no turn ever fainted both sides at once"
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 
