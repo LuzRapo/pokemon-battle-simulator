@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from battle_sim.database.loader import get_all_moves
-from battle_sim.differential import Scenario, compare, record
+from battle_sim.differential import Chooser, Scenario, compare, record
 from battle_sim.engine import legal_actions
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.moves import MoveSlot
@@ -1511,6 +1511,91 @@ def test_rks_system_tracks_a_held_memory_the_same_way_multitype_does(tmp_path: P
 
 
 @needs_rust
+@pytest.mark.parametrize(
+    ("species", "ability", "item"),
+    [
+        ("Arceus", Ability.MULTITYPE, Item.IRON_PLATE),
+        ("Giratina-Origin", Ability.LEVITATE, Item.GRISEOUS_ORB),
+    ],
+)
+def test_knock_off_cannot_take_an_item_that_defines_its_holder(
+    species: str, ability: Ability, item: Item, tmp_path: Path
+) -> None:
+    """`formes.is_fused_to`'s two special cases. Arceus's formes name no required item in the dex —
+    Multitype supplies the plate — and Giratina-Origin's names the Gen 9 "Griseous Core" while every
+    Gen 7 set holds the "Griseous Orb". Both were once unreachable (the items were refused outright),
+    which is why the port could leave them out; porting plates and the Orb made both live."""
+    team_a = [PokemonSpec(species=species, nickname="A0", level=50, ability=ability, item=item, moves=["Splash"])]
+    team_b = [PokemonSpec(species="Machamp", nickname="B0", level=50, moves=["Knock Off"])]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    assert any(e["type"] == "MoveUsed" and e["move"] == "Knock Off" for e in expected[0]["events"])
+    assert expected[-1]["state"]["sides"][0]["team"][0]["item"] == item.name
+
+
+@needs_rust
+def test_the_griseous_orb_boosts_giratinas_dragon_and_ghost_moves(tmp_path: Path) -> None:
+    """The Orb's own 1.2x on Dragon and Ghost for the Giratina line, the same `_bind_legend_orb`
+    Soul Dew and the Origin orbs use — against a control on the same seed with no item, so the boost
+    is proven present rather than assumed from agreement alone."""
+
+    def damage(item: Item) -> int:
+        team_a = [
+            PokemonSpec(
+                species="Giratina-Origin",
+                nickname="A0",
+                level=50,
+                ability=Ability.LEVITATE,
+                item=item,
+                moves=["Dragon Claw"],
+            )
+        ]
+        team_b = [PokemonSpec(species="Rhydon", nickname="B0", level=50, moves=["Splash"])]
+        scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=3, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"was refused: {theirs}"
+        assert compare(expected, theirs) is None
+        b0 = expected[0]["state"]["sides"][1]["team"][0]
+        return int(b0["max_hp"] - b0["hp"])
+
+    assert damage(Item.GRISEOUS_ORB) > damage(Item.NONE)
+
+
+@needs_rust
+def test_an_air_balloon_floats_over_ground_until_a_hit_pops_it(tmp_path: Path) -> None:
+    """Announced on the way in, floats over Earthquake, bursts on the next hit that takes HP, and
+    the Earthquake after that lands. The pop is logged at `ON_AFTER_HIT`, which for a single hit
+    fires before the `DamageDealt` it belongs to — the Python's order, not the games'."""
+    team_a = [PokemonSpec(species="Rhydon", nickname="A0", level=50, item=Item.AIR_BALLOON, moves=["Splash"])]
+    team_b = [PokemonSpec(species="Machamp", nickname="B0", level=50, moves=["Earthquake", "Tackle"])]
+    scenario, expected = record((team_a, team_b), _round_robin_chooser(), seed=0, max_turns=3)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    kinds = [[e["type"] for e in turn["events"]] for turn in expected]
+    assert "AirBalloonRevealed" in kinds[0] and "FloatedOnAirBalloon" in kinds[0], kinds[0]
+    assert kinds[1].index("AirBalloonPopped") < kinds[1].index("DamageDealt"), kinds[1]
+    assert "FloatedOnAirBalloon" not in kinds[2] and "DamageDealt" in kinds[2], kinds[2]
+
+
+@needs_rust
+def test_a_balloon_popped_by_residual_chip_is_logged_against_side_zero(tmp_path: Path) -> None:
+    """Poison chip is not a hit, so the pop waits for `ON_RESIDUAL`, whose payload has no
+    `defender_index` — `payload.get("defender_index", 0)` logs a side-1 balloon against side 0.
+    Reproduced rather than corrected; this test pins the quirk so a fix lands in both engines."""
+    team_a = [PokemonSpec(species="Machamp", nickname="A0", level=50, moves=["Toxic"])]
+    team_b = [PokemonSpec(species="Rhydon", nickname="B0", level=50, item=Item.AIR_BALLOON, moves=["Splash"])]
+    scenario, expected = record((team_a, team_b), _round_robin_chooser(), seed=1, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    popped = [e for turn in expected for e in turn["events"] if e["type"] == "AirBalloonPopped"]
+    assert popped == [{"type": "AirBalloonPopped", "side": 0, "pokemon": "B0"}], popped
+
+
+@needs_rust
 def test_trick_room_inverts_the_speed_sort(tmp_path: Path) -> None:
     """The four pseudo-weather rooms. Gravity, Magic Room and Wonder Room have no gameplay effect
     anywhere in this codebase beyond standing up and ticking down — a deliberate simplification,
@@ -2115,7 +2200,7 @@ def test_scrappy_and_minds_eye_hit_ghosts_with_normal_and_fighting(tmp_path: Pat
     assert any(e["type"] == "NoEffect" for e in events), "control: Tackle should have no effect on Gengar"
 
 
-def _round_robin_chooser():
+def _round_robin_chooser() -> Chooser:
     """Cycles a Pokemon through its four move slots in order, side by side independently.
 
     A moveset shorter than four moves is padded by repeating the first one into every empty slot

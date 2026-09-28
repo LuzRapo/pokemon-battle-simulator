@@ -246,6 +246,23 @@ pub enum Event {
         side: i32,
         pokemon: String,
     },
+    /// An Air Balloon cancelling a Ground move outright, at `ON_BEFORE_MOVE` right after Levitate.
+    FloatedOnAirBalloon {
+        side: i32,
+        pokemon: String,
+    },
+    /// An Air Balloon announcing itself, on every `ON_SWITCH_IN` its holder is bound for. `side` is
+    /// the *switching* side's, whoever holds the balloon — see `hooks::announce_air_balloons`.
+    AirBalloonRevealed {
+        side: i32,
+        pokemon: String,
+    },
+    /// An Air Balloon bursting. `side` is whatever the moment it was noticed at says, not the
+    /// holder's own — see `hooks::check_air_balloons`.
+    AirBalloonPopped {
+        side: i32,
+        pokemon: String,
+    },
     /// Flash Fire's first activation on a given switch-in.
     FlashFireActivated {
         side: i32,

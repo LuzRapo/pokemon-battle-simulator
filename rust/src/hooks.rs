@@ -60,7 +60,22 @@ pub fn ability_before_move(state: &mut State, side: usize, the_move: &Move, db: 
     }
     let ability = state.sides[other].active_pokemon().ability.clone();
     let move_type = the_move.move_type.as_str();
-    match ability.as_str() {
+    let cancelled = ability_absorbs(state, other, &ability, the_move, db, log);
+    // `_bind_air_balloon`'s `float_over`, at `EventPriority.ITEM` — after every ability above, and
+    // only reached if none of them already cancelled the emit.
+    if !cancelled && move_type == "GROUND" {
+        let defender = state.sides[other].active_pokemon();
+        if defender.balloon_bound && defender.item == "AIR_BALLOON" {
+            log.push(Event::FloatedOnAirBalloon { side: other as i32, pokemon: defender.nickname.clone() });
+            return true;
+        }
+    }
+    cancelled
+}
+
+fn ability_absorbs(state: &mut State, other: usize, ability: &str, the_move: &Move, db: &Database, log: &mut Log) -> bool {
+    let move_type = the_move.move_type.as_str();
+    match ability {
         "VOLT_ABSORB" if move_type == "ELECTRIC" => absorb_heal(state, other, "VOLT_ABSORB", log),
         "WATER_ABSORB" if move_type == "WATER" => absorb_heal(state, other, "WATER_ABSORB", log),
         "EARTH_EATER" if move_type == "GROUND" => absorb_heal(state, other, "EARTH_EATER", log),
@@ -118,6 +133,58 @@ pub fn ability_before_move(state: &mut State, side: usize, the_move: &Move, db: 
             absorb_boost(state, other, "ATTACK", 1, "justified", log)
         }
         _ => false,
+    }
+}
+
+/// Both sides, in the order their handlers sit on the bus at equal priority: registration order.
+pub fn by_registration(state: &State) -> [usize; 2] {
+    let mut order = [0, 1];
+    order.sort_by_key(|side| state.sides[*side].active_pokemon().registered_at);
+    order
+}
+
+/// `_bind_air_balloon`'s `pop`: burst the balloon the moment its holder has lost any HP at all,
+/// since whenever this handler last looked. A house rule, not the games' (which only burst it on
+/// an attack), and checked at four moments — `ON_AFTER_HIT`, `ON_ACTION_RESOLVE`, `ON_RESIDUAL`,
+/// `ON_TURN_END` — each of which reaches *both* actives' handlers, not only the one the event is
+/// about. `log_side` is `payload.get("defender_index", 0)` at whichever moment this is: the hit's
+/// defender for the first two, and 0 for the last two, whose payloads carry no such key — so a
+/// balloon on side 1 popping at turn end is logged against side 0. Reproduced, not corrected.
+pub fn check_air_balloon(state: &mut State, side: usize, log_side: usize, log: &mut Log) {
+    let pokemon = state.sides[side].active_mut();
+    if !pokemon.balloon_bound {
+        return;
+    }
+    if pokemon.item != "AIR_BALLOON" {
+        pokemon.balloon_seen = pokemon.hp;
+        return;
+    }
+    let now = pokemon.hp;
+    if now < pokemon.balloon_seen {
+        pokemon.last_consumed_item = pokemon.item.clone();
+        pokemon.item = "NONE".to_string();
+        pokemon.item_consumed = true;
+        let nickname = pokemon.nickname.clone();
+        log.push(Event::AirBalloonPopped { side: log_side as i32, pokemon: nickname });
+    }
+    state.sides[side].active_mut().balloon_seen = now;
+}
+
+/// `check_air_balloon` for both actives, in registration order — the whole of the balloon's
+/// part in an emit that nothing else at `EventPriority.ITEM` shares.
+pub fn check_air_balloons(state: &mut State, log_side: usize, log: &mut Log) {
+    for side in by_registration(state) {
+        check_air_balloon(state, side, log_side, log);
+    }
+}
+
+/// `_bind_air_balloon`'s `announce`, on `ON_SWITCH_IN`: no `context.actor` check, so *every*
+/// switch-in re-announces every bound balloon still held — the opponent's arrival included — and
+/// logs it with the switching side's `side_index`, not the holder's.
+fn announce_air_balloon(state: &State, holder: usize, switching: usize, log: &mut Log) {
+    let pokemon = state.sides[holder].active_pokemon();
+    if pokemon.balloon_bound && pokemon.item == "AIR_BALLOON" {
+        log.push(Event::AirBalloonRevealed { side: switching as i32, pokemon: pokemon.nickname.clone() });
     }
 }
 
@@ -400,7 +467,8 @@ pub const PORTED_ABILITIES: [&str; 20] = [
 ];
 
 /// Items implemented here, on top of the damage-calc ones.
-pub const PORTED_ITEMS: [&str; 13] = [
+pub const PORTED_ITEMS: [&str; 14] = [
+    "AIR_BALLOON",
     "BOOSTER_ENERGY",
     "EJECT_BUTTON",
     "ELECTRIC_SEED",
@@ -485,6 +553,12 @@ pub fn on_after_hit(
     }
     for side in order {
         item_after_hit(state, side, hit, db, tape, log)?;
+        // Each active holds one item, so the balloon's own `ON_AFTER_HIT` handler sits exactly
+        // where that Pokemon's item handlers do. Skipped for an attacker Red Card has already sent
+        // away, whose handlers went with it.
+        if side != hit.attacker_side || attacker_registered {
+            check_air_balloon(state, side, defender_side, log);
+        }
     }
     Ok(())
 }
@@ -848,7 +922,16 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
     // direct sweep (`consume_terrain_seeds_on_terrain_change`, called from the match above and from
     // `turn::resolve_move`'s `TerrainEffect` arm) is the other, and fires even when this Pokemon
     // itself never switches in at all.
-    consume_terrain_seed_for_side(state, side, log);
+    //
+    // The balloon's `announce` shares that priority, so the two interleave by registration: the
+    // switching Pokemon's own item handler (seed or balloon — it holds one item) at its own place,
+    // the other active's balloon at its.
+    for holder in by_registration(state) {
+        if holder == side {
+            consume_terrain_seed_for_side(state, side, log);
+        }
+        announce_air_balloon(state, holder, side, log);
+    }
 }
 
 fn consume_terrain_seed_for_side(state: &mut State, side: usize, log: &mut Log) {
@@ -1123,29 +1206,32 @@ pub fn residual_after_status(state: &mut State, side: usize, tape: &mut Tape, lo
         }
     }
 
-    // SPEED_BOOST (1000): every turn-end except the one it arrived on, and logged only if the
-    // stage actually moved.
-    if ability == "SPEED_BOOST" {
-        let pokemon = state.sides[side].active_pokemon();
-        if !pokemon.fainted() && !pokemon.just_switched_in {
-            let pokemon = state.sides[side].active_mut();
-            let before = pokemon.stage("SPEED");
-            let after = (before + 1).clamp(-6, 6);
-            pokemon.stages.insert("SPEED".to_string(), after);
-            if after > before {
-                let nickname = pokemon.nickname.clone();
-                log.push(Event::StatStageChanged {
-                    side: side as i32,
-                    pokemon: nickname,
-                    stat: "SPEED".into(),
-                    delta: after - before,
-                    requested: 1,
-                    source: "speed_boost".into(),
-                });
-            }
-        }
-    }
     Ok(())
+}
+
+/// SPEED_BOOST (1000): every turn-end except the one it arrived on, and logged only if the stage
+/// actually moved. Its own function rather than the tail of `residual_after_status`, because the
+/// Air Balloon's pop shares its priority and the two interleave by registration — see `residuals`.
+pub fn speed_boost_residual(state: &mut State, side: usize, log: &mut Log) {
+    let pokemon = state.sides[side].active_pokemon();
+    if pokemon.ability != "SPEED_BOOST" || pokemon.fainted() || pokemon.just_switched_in {
+        return;
+    }
+    let pokemon = state.sides[side].active_mut();
+    let before = pokemon.stage("SPEED");
+    let after = (before + 1).clamp(-6, 6);
+    pokemon.stages.insert("SPEED".to_string(), after);
+    if after > before {
+        let nickname = pokemon.nickname.clone();
+        log.push(Event::StatStageChanged {
+            side: side as i32,
+            pokemon: nickname,
+            stat: "SPEED".into(),
+            delta: after - before,
+            requested: 1,
+            source: "speed_boost".into(),
+        });
+    }
 }
 
 /// Whether a heal is announced under an ability's name or an item's — the only difference between

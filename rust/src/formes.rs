@@ -118,6 +118,9 @@ pub fn resolve_forme_changes(state: &mut State, actions: &[Action; 2], db: &Data
         let known_moves = state.sides[side].active_pokemon().moves.clone();
         let Some(forme) = mega_forme(&species_name, &item, &known_moves, db) else { continue };
         apply_forme(state.sides[side].active_mut(), &forme, db);
+        // `rewire_active`: the new forme's ability replaces the old one's handlers, which re-register
+        // behind everyone else's at their priority.
+        state.register_active(side);
         if bursts {
             state.sides[side].has_ultra_bursted = true;
         } else {

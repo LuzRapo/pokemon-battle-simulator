@@ -690,6 +690,9 @@ pub fn step(
             }
         }
     }
+    // `ON_TURN_END`, emitted unconditionally after the turn-active tick — its only subscriber is
+    // the balloon's pop, with an empty payload, so side 0 again.
+    crate::hooks::check_air_balloons(state, 0, &mut log);
     state.turn += 1;
     Ok(log)
 }
@@ -868,6 +871,15 @@ fn residuals(state: &mut State, db: &Database, tape: &mut Tape, log: &mut Log) -
             crate::hooks::residual_before_status(state, side, tape, log)?;
             status_chip(state, side, log);
             crate::hooks::residual_after_status(state, side, tape, log)?;
+            // SPEED_BOOST (1000) and the balloon's pop (`EventPriority.ITEM`, also 1000), by
+            // registration — the pop for *both* actives, since this emit reaches every handler,
+            // and logged against side 0 whichever side holds the balloon (see `check_air_balloon`).
+            for holder in crate::hooks::by_registration(state) {
+                if holder == side {
+                    crate::hooks::speed_boost_residual(state, side, log);
+                }
+                crate::hooks::check_air_balloon(state, holder, 0, log);
+            }
             // One faint line for the whole residual pass, whichever chip did it — the Python logs
             // it in `_apply_residuals` after the emit, not inside any handler. Announcing it from
             // the status chip alone was right until a sandstorm got a kill of its own.
@@ -2389,6 +2401,8 @@ fn knock_off_item(state: &mut State, side: usize, db: &Database, log: &mut Log) 
     defender.item = "NONE".to_string();
     defender.item_consumed = true;
     let nickname = defender.nickname.clone();
+    // `rewire_active`: the item's handlers go, and whatever is left re-registers behind the rest.
+    state.register_active(other);
     log.push(Event::ItemRemoved { side: other as i32, pokemon: nickname, item: removed });
 }
 
@@ -2411,6 +2425,9 @@ fn trick(state: &mut State, side: usize, db: &Database, log: &mut Log) {
     let (a, b) = state.sides.split_at_mut(1);
     let (mine, theirs) = if side == 0 { (&mut a[0], &mut b[0]) } else { (&mut b[0], &mut a[0]) };
     std::mem::swap(&mut mine.active_mut().item, &mut theirs.active_mut().item);
+    // `rewire_active` on both, attacker first: each binds the item it now holds.
+    state.register_active(side);
+    state.register_active(other);
     let nickname = state.sides[side].active_pokemon().nickname.clone();
     log.push(Event::ItemsSwapped { side: side as i32, pokemon: nickname });
 }
@@ -2432,6 +2449,8 @@ fn skill_swap(state: &mut State, side: usize, log: &mut Log) {
     let (a, b) = state.sides.split_at_mut(1);
     let (mine, theirs) = if side == 0 { (&mut a[0], &mut b[0]) } else { (&mut b[0], &mut a[0]) };
     std::mem::swap(&mut mine.active_mut().ability, &mut theirs.active_mut().ability);
+    state.register_active(side);
+    state.register_active(other);
     let nickname = state.sides[side].active_pokemon().nickname.clone();
     log.push(Event::AbilitiesSwapped { side: side as i32, pokemon: nickname });
 }
@@ -2473,6 +2492,7 @@ fn set_ability(state: &mut State, target_side: usize, ability: &str, log: &mut L
         return false;
     }
     state.sides[target_side].active_mut().ability = ability.to_string();
+    state.register_active(target_side);
     let nickname = state.sides[target_side].active_pokemon().nickname.clone();
     log.push(Event::AbilityChanged { side: target_side as i32, pokemon: nickname, ability: ability.to_string() });
     true
@@ -2916,8 +2936,17 @@ fn apply_damage(
     // `ON_ACTION_RESOLVE`, emitted from exactly this point in the Python: after recoil/drain, once
     // for the whole move rather than once per hit. Skipped if the attacker already left mid-move,
     // same reason as Moxie above: Life Orb's own handler is a bus subscription too.
-    if !attacker_switched_mid_move {
-        crate::hooks::life_orb_recoil(state, side, total_dealt, log);
+    //
+    // Life Orb and the balloon's pop are the only handlers here at `EventPriority.ITEM`, so they
+    // run in registration order: the attacker's Life Orb, and both actives' balloons.
+    for holder in crate::hooks::by_registration(state) {
+        if holder == side && attacker_switched_mid_move {
+            continue;
+        }
+        if holder == side {
+            crate::hooks::life_orb_recoil(state, side, total_dealt, log);
+        }
+        crate::hooks::check_air_balloon(state, holder, other, log);
     }
     // Un-pin: whoever Red Card actually sent out is who the rest of the turn (and the game) sees.
     state.sides[side].active = attacker_active_after_hits;

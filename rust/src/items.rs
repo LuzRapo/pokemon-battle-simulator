@@ -3,8 +3,7 @@
 //! Same contract as `abilities.rs`, and the same discipline: only items whose whole behaviour is
 //! `ON_DAMAGE_CALC`, and which the Python does not also read inline somewhere outside
 //! `mechanics/items.py`. Choice Band and Choice Specs are absent for that reason — they also lock
-//! their holder into a move, which lives in the move flow — as is the Griseous Orb, which forces a
-//! forme. The plates are a near miss — they also double as Judgment's type selector — but that half
+//! their holder into a move, which lives in the move flow. The plates are a near miss — they also double as Judgment's type selector — but that half
 //! already lives in `power::plate_type`, a query the Judgment case reads independently, so their
 //! ordinary 1.2x boost (`_bind_type_boost`, the same binder Black Glasses/Miracle Seed/etc. use)
 //! joins `TYPE_BOOSTERS` below like any other. Only six of the seventeen plates actually have that
@@ -26,7 +25,7 @@ use crate::damage::Payload;
 use crate::log::{Event, Log};
 
 /// Every item implemented here.
-pub const PORTED: [&str; 27] = [
+pub const PORTED: [&str; 29] = [
     "ADAMANT_CRYSTAL",
     "ASSAULT_VEST",
     "BLACK_GLASSES",
@@ -36,6 +35,8 @@ pub const PORTED: [&str; 27] = [
     "EARTH_PLATE",
     "EVIOLITE",
     "EXPERT_BELT",
+    "GRISEOUS_CORE",
+    "GRISEOUS_ORB",
     "IRON_PLATE",
     "LUSTROUS_GLOBE",
     "MEOWFREDS_MONOCLE",
@@ -97,11 +98,15 @@ const TYPE_BOOSTERS: [(&str, &str); 13] = [
     ("STONE_PLATE", "ROCK"),
 ];
 
-/// Soul Dew and the Origin orbs: item, the line that may hold it, and the two types it boosts.
-const LEGEND_ORBS: [(&str, [&str; 2], [&str; 2]); 3] = [
+/// Soul Dew and the Origin orbs: item, the line that may hold it, and the two types it boosts. The
+/// Griseous Orb and Core are one item under its Gen 7 and Gen 9 names, registered twice in the
+/// Python for the same reason.
+const LEGEND_ORBS: [(&str, [&str; 2], [&str; 2]); 5] = [
     ("SOUL_DEW", ["Latios", "Latias"], ["PSYCHIC", "DRAGON"]),
     ("ADAMANT_CRYSTAL", ["Dialga", "Dialga-Origin"], ["STEEL", "DRAGON"]),
     ("LUSTROUS_GLOBE", ["Palkia", "Palkia-Origin"], ["WATER", "DRAGON"]),
+    ("GRISEOUS_CORE", ["Giratina", "Giratina-Origin"], ["GHOST", "DRAGON"]),
+    ("GRISEOUS_ORB", ["Giratina", "Giratina-Origin"], ["GHOST", "DRAGON"]),
 ];
 
 /// The Ogerpon masks: item, and the forme it belongs to.

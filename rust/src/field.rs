@@ -119,9 +119,18 @@ pub fn weather_residual(state: &mut State, side: usize, log: &mut Log) {
     }
 }
 
+/// The hazards, then `_execute_switch`'s own follow-up: an arrival they knocked out is unregistered
+/// on the spot, so a balloon it carried in is never checked again.
+pub fn entry_hazards(state: &mut State, side: usize, db: &Database, log: &mut Log) {
+    lay_entry_hazards(state, side, db, log);
+    if state.sides[side].active_pokemon().fainted() {
+        state.sides[side].active_mut().balloon_bound = false;
+    }
+}
+
 /// `_apply_entry_hazards`, in the Python's order: rocks, then spikes, then toxic spikes, then the
 /// web. Rocks and spikes each stop the rest if they knock the arrival out.
-pub fn entry_hazards(state: &mut State, side: usize, db: &Database, log: &mut Log) {
+fn lay_entry_hazards(state: &mut State, side: usize, db: &Database, log: &mut Log) {
     // Magic Guard cancels the whole ON_ENTRY_HAZARD emit, so not even Sticky Web's speed drop
     // lands — it is not "no damage from hazards", it is "no hazards". Heavy Duty Boots cancels the
     // same emit the same way, as an item rather than an ability.

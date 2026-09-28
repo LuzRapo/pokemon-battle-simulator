@@ -342,20 +342,29 @@ impl Database {
             .or_else(|| self.species.get(&Self::normalize_id(name)))
     }
 
-    /// `formes.is_fused_to`, minus the two special cases (Arceus's plates, Giratina's two names
-    /// for one orb) that never reach here: every item either names is a *live* one, so a Pokemon
-    /// holding it is already refused before this is asked, on either engine. Z-Crystals are
-    /// refused on any holder — checked by name, `_Z`, which covers this dex's real ones and its
-    /// three deliberately invented ones (Absolite Z, Garchompite Z, Lucarionite Z) alike.
+    /// `formes.is_fused_to`. Z-Crystals are refused on any holder — checked by name, `_Z`, which
+    /// covers this dex's real ones and its three deliberately invented ones (Absolite Z, Garchompite
+    /// Z, Lucarionite Z) alike. Plus the Python's two special cases the species table cannot supply:
+    /// Arceus's formes name no required item (Multitype supplies the plate), and Giratina-Origin's
+    /// names the Gen 9 "Griseous Core" while a Gen 7 set holds the "Griseous Orb" — one item, two
+    /// names. Both used to be unreachable, every item they name being refused outright; porting
+    /// plates and the Orb made them live, and Knock Off took a plate off Arceus until they landed.
     pub fn is_fused_to(&self, species_name: &str, item: &str) -> bool {
         if item.ends_with("_Z") {
             return true;
         }
         let Some(entry) = self.species_named(species_name) else { return false };
         let base = entry.base_species.as_deref().unwrap_or(species_name);
-        self.species
-            .values()
-            .any(|s| s.base_species.as_deref().unwrap_or(s.name.as_str()) == base && s.fused_item.as_deref() == Some(item))
+        if base == "Arceus" && item.ends_with("_PLATE") {
+            return true;
+        }
+        let fused = |wanted: &str| {
+            self.species.values().any(|s| {
+                s.base_species.as_deref().unwrap_or(s.name.as_str()) == base && s.fused_item.as_deref() == Some(wanted)
+            })
+        };
+        const GRISEOUS: [&str; 2] = ["GRISEOUS_CORE", "GRISEOUS_ORB"];
+        fused(item) || (GRISEOUS.contains(&item) && GRISEOUS.iter().any(|name| fused(name)))
     }
 
     pub fn move_named(&self, name: &str) -> Option<&Move> {

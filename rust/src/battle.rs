@@ -210,6 +210,13 @@ pub struct Pokemon {
     /// one of this Pokemon's stats, and drained (whether or not the switch actually happens) by
     /// `resolve_eject_pack` right after the action that armed it finishes resolving.
     pub eject_pending: bool,
+    /// `_bind_air_balloon` ran for this Pokemon at its last registration — whether it held a
+    /// balloon *then*, which is what decides whether its handlers exist at all. A balloon gained
+    /// mid-stint does nothing until the holder is next registered; one lost mid-stint leaves
+    /// handlers that simply find no balloon.
+    pub balloon_bound: bool,
+    /// The binder's own `seen`: the HP its pop handler last looked at, reset on every registration.
+    pub balloon_seen: i32,
 }
 
 /// A pre-Transform form, restored on switch-out. Mirrors `models.pokemon.FormSnapshot` exactly —
@@ -360,6 +367,8 @@ impl Pokemon {
             paradox_from_booster: false,
             choice_locked_move: None,
             eject_pending: false,
+            balloon_bound: false,
+            balloon_seen: 0,
         })
     }
 
@@ -614,11 +623,17 @@ impl State {
         state
     }
 
-    /// Stamp whoever is active on this side as freshly registered.
+    /// Stamp whoever is active on this side as freshly registered — `register_active` in the Python,
+    /// and `rewire_active` too, which is the same unbind-then-bind: every Python site that rewires
+    /// (an item or ability changing hands, a Mega Evolution) calls this, so the Pokemon's handlers
+    /// move behind every other handler at their priority exactly as the bus re-appends them.
     pub fn register_active(&mut self, side: usize) {
         self.registrations += 1;
         let stamp = self.registrations;
-        self.sides[side].active_mut().registered_at = stamp;
+        let pokemon = self.sides[side].active_mut();
+        pokemon.registered_at = stamp;
+        pokemon.balloon_bound = pokemon.item == "AIR_BALLOON";
+        pokemon.balloon_seen = pokemon.hp;
     }
 
     /// The Python's `_update_outcome`: a side with nothing left standing has lost, and both at once
