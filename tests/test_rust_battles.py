@@ -2914,6 +2914,103 @@ def test_red_card_mid_multi_hit_stops_the_departed_attackers_own_ability(tmp_pat
 
 
 @needs_rust
+def test_red_card_mid_multi_hit_stops_the_departed_attackers_own_after_hit_reaction(tmp_path: Path) -> None:
+    """A third bug the same territory turned up once this batch's own sweeps ran long enough: Poison
+    Touch and Toxic Chain are `ON_AFTER_HIT` bus subscriptions too, just like Tough Claws' own
+    `ON_DAMAGE_CALC` one -- and `ability_after_hit`'s `is_actor` arm was not gated by
+    `attacker_registered` at all, only `apply_damage_calc`'s was. A second hit of the same multi-hit
+    move, after Red Card forces the attacker out on the first, drew an extra probability for Poison
+    Touch's 30% check that the Python's own trace never drew at all, since the departed Pokemon's
+    handler no longer exists to ask -- a tape draw-count mismatch, not just a wrong value, which is
+    what makes this one so disruptive: it corrupts every draw for the rest of the battle, not just
+    this hit's own damage number.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.RED_CARD,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        PokemonSpec(
+            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Kangaskhan", nickname="B0", level=50, ability=Ability.POISON_TOUCH, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Arm Thrust"],
+        ),
+        PokemonSpec(
+            species="Tauros", nickname="B1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    checked = 0
+    for seed in range(20):
+        rng = random.Random(44500 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"seed {seed}"
+        events = expected[0]["events"]
+        if not any(e["type"] == "Switched" and e["side"] == 1 for e in events):
+            continue
+        checked += 1
+    assert checked > 0, "Red Card never once triggered mid-multi-hit across 20 seeds"
+
+
+@needs_rust
+def test_eject_pack_and_a_pivots_own_switch_both_arm_before_either_executes(tmp_path: Path) -> None:
+    """A fourth bug the same sweep found: an earlier version of `resolve_pending_switches` folded
+    "arm this side" and "execute this side" into one call, walked side 0 then side 1 -- so a side-0
+    pivot already holding `needs_switch` (armed inline, during its own move) executed its switch
+    *before* a side-1 Eject Pack that same move's stat drop had just triggered even got its own
+    `SelfSwitchPending` logged. The Python runs `_resolve_eject_packs` (both sides, arm and log only)
+    to completion, then `_resolve_pending_switches` (both sides, execute only) to completion --
+    two full passes, not one merged pass per side. Parting Shot both drops its target's Attack and
+    Sp. Atk (arming Eject Pack) and self-switches its own user (arming its own pivot) in the same
+    move, and both are 100% moves, making this deterministic.
+
+    Vacuity-checked directly: re-merging the two passes back into one call per side reordered the
+    events exactly as the sweep first found them -- side 0's `Switched` landing ahead of side 1's own
+    `SelfSwitchPending`, a plain event-order mismatch against the Python's own arm-both-then-
+    execute-both order.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Parting Shot"],
+        ),
+        PokemonSpec(
+            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.EJECT_PACK,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        PokemonSpec(
+            species="Tauros", nickname="B1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    kinds = [(e["type"], e["side"]) for e in events if e["type"] in ("SelfSwitchPending", "Switched")]
+    assert kinds == [
+        ("SelfSwitchPending", 0),
+        ("SelfSwitchPending", 1),
+        ("Switched", 0),
+        ("Switched", 1),
+    ], events
+
+
+@needs_rust
 def test_a_pivots_own_switch_is_deferred_behind_a_lower_indexed_side(tmp_path: Path) -> None:
     """A third bug the same sweep found: U-turn's own self-switch was still wired as an immediate,
     inline call in `resolve_move` -- pre-dating this whole batch, just never visible before, since
@@ -3052,6 +3149,76 @@ def test_a_phazing_moves_own_force_switch_sees_the_real_board_not_the_stale_atta
         assert drop is not None and drop["pokemon"] == "A1", (seed, events)
         checked_a_hit += 1
     assert checked_a_hit > 0, "Circle Throw never once hit across 20 seeds"
+
+
+@needs_rust
+def test_heavy_duty_boots_blocks_an_entry_hazard(tmp_path: Path) -> None:
+    """Heavy Duty Boots cancels `_apply_entry_hazards` entirely, the same way Magic Guard does as an
+    ability -- not "no damage from hazards", "no hazards" -- checked at the same early-return site.
+    Stealth Rock always succeeds (`accuracy_probability` is `None`), and switching a second team
+    member in on turn two is what actually reaches `entry_hazards` at all: a hazard already standing
+    when its holder arrives is not retroactive to whoever was already out.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Golem", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Stealth Rock", "Splash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        PokemonSpec(
+            species="Rhydon", nickname="B1", level=50, ability=Ability.NONE, item=Item.HEAVY_DUTY_BOOTS,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+
+    def switch_b_on_turn_one(state, side_index):  # type: ignore[no-untyped-def]
+        if side_index == 1 and state.turn == 1:
+            return Action(action=ActionType.SWITCH_OUT, switch_in=state.sides[1].team[1])
+        options = [a for a in legal_actions(state, side_index) if a.action is ActionType.USE_MOVE]
+        return (options or legal_actions(state, side_index))[0]
+
+    scenario, expected = record((team_a, team_b), switch_b_on_turn_one, seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    assert any(e["type"] == "HazardSet" for e in expected[0]["events"]), expected[0]["events"]
+    second_turn = expected[1]["events"]
+    assert any(e["type"] == "Switched" and e["sent_out"] == "B1" for e in second_turn), second_turn
+    assert not any(e["type"] == "HazardDamage" for e in second_turn), second_turn
+    b1_digest = expected[1]["state"]["sides"][1]["team"][1]
+    assert b1_digest["item"] == "HEAVY_DUTY_BOOTS" and b1_digest["hp"] == b1_digest["max_hp"], b1_digest
+
+
+@needs_rust
+def test_the_drives_change_techno_blasts_type(tmp_path: Path) -> None:
+    """The four drives: `power::type_override`'s own already-written match arm, unblocked the
+    moment each joins a `PORTED` array. Douse Drive turns Techno Blast to Water, super effective
+    against Golem's Rock/Ground -- unreachable if the move had stayed Normal, which has no
+    super-effective matchups at all. Techno Blast's 100% accuracy keeps the hit deterministic.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.DOUSE_DRIVE,
+            nature=Nature.HARDY, moves=["Techno Blast"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Golem", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "Effectiveness" and e["level"] == "super" for e in events), events
 
 
 @needs_rust

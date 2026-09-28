@@ -96,9 +96,11 @@ pub const PORTED_ABILITIES: [&str; 71] = [
 ];
 
 /// Items implemented at their inline sites.
-pub const PORTED_ITEMS: [&str; 28] = [
+pub const PORTED_ITEMS: [&str; 33] = [
     "ADRENALINE_ORB",
+    "BURN_DRIVE",
     "CHESTO_BERRY",
+    "CHILL_DRIVE",
     "CHOICE_BAND",
     "CHOICE_SCARF",
     "CHOICE_SPECS",
@@ -106,9 +108,11 @@ pub const PORTED_ITEMS: [&str; 28] = [
     "COVERT_CLOAK",
     "CUSTAP_BERRY",
     "DAMP_ROCK",
+    "DOUSE_DRIVE",
     "EJECT_PACK",
     "FOCUS_SASH",
     "HEAT_ROCK",
+    "HEAVY_DUTY_BOOTS",
     "ICY_ROCK",
     "LEPPA_BERRY",
     "LIGHT_CLAY",
@@ -121,6 +125,7 @@ pub const PORTED_ITEMS: [&str; 28] = [
     "PUNCHING_GLOVE",
     "QUICK_CLAW",
     "SCOPE_LENS",
+    "SHOCK_DRIVE",
     "SMOOTH_ROCK",
     "TERRAIN_EXTENDER",
     "WHITE_HERB",

@@ -366,9 +366,17 @@ pub struct Hit<'a> {
 }
 
 /// Walk both actives' abilities, then both actives' items.
+///
+/// `attacker_registered` is Red Card's own residual concern: once it switches the attacker out
+/// mid-multi-hit, the departed Pokemon's own reactions (Poison Touch, Toxic Chain — both `is_actor`
+/// arms in `ability_after_hit`) are bus subscriptions that `_execute_switch` has already torn down,
+/// same as the attacker's own `ON_DAMAGE_CALC` contribution in `apply_damage_calc`. The defender's
+/// own reactions are untouched by this — they read the pinned stale attacker for the same reason
+/// `apply_damage_calc`'s two-entry walk does, and Red Card never switches the defender's own side.
 pub fn on_after_hit(
     state: &mut State,
     hit: &Hit,
+    attacker_registered: bool,
     db: &Database,
     tape: &mut Tape,
     log: &mut Log,
@@ -377,6 +385,9 @@ pub fn on_after_hit(
     let mut order = [hit.attacker_side, defender_side];
     order.sort_by_key(|side| state.sides[*side].active_pokemon().registered_at);
     for side in order {
+        if side == hit.attacker_side && !attacker_registered {
+            continue;
+        }
         ability_after_hit(state, side, hit, tape, log)?;
     }
     for side in order {

@@ -123,8 +123,11 @@ pub fn weather_residual(state: &mut State, side: usize, log: &mut Log) {
 /// web. Rocks and spikes each stop the rest if they knock the arrival out.
 pub fn entry_hazards(state: &mut State, side: usize, db: &Database, log: &mut Log) {
     // Magic Guard cancels the whole ON_ENTRY_HAZARD emit, so not even Sticky Web's speed drop
-    // lands — it is not "no damage from hazards", it is "no hazards".
-    if crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon()) {
+    // lands — it is not "no damage from hazards", it is "no hazards". Heavy Duty Boots cancels the
+    // same emit the same way, as an item rather than an ability.
+    if crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon())
+        || state.sides[side].active_pokemon().item == "HEAVY_DUTY_BOOTS"
+    {
         return;
     }
     if stealth_rock(state, side, db, log) {

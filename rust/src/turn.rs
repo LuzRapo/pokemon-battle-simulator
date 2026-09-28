@@ -583,9 +583,15 @@ pub fn step(
         state.sides[side].acted_this_turn = true;
         // Both sides, after *every* completed action, not just the one that just acted — a drop or
         // an Eject Button this action triggered on the other side pulls that side's Pokemon before
-        // it ever gets its own turn, if it hasn't acted yet this turn.
+        // it ever gets its own turn, if it hasn't acted yet this turn. Two full passes, in the
+        // Python's own order: every pending Eject Pack is armed (and logged) before any switch at
+        // all executes, so a side-0 pivot already holding `needs_switch` doesn't jump the queue
+        // ahead of a side-1 Eject Pack this same action just triggered.
         for eject_side in 0..2 {
-            resolve_pending_switches(state, eject_side, db, &mut log);
+            resolve_eject_packs(state, eject_side, &mut log);
+        }
+        for switch_side in 0..2 {
+            resolve_pending_switches(state, switch_side, db, &mut log);
         }
         let was_decided = state.outcome.is_some();
         state.update_outcome();
@@ -1662,22 +1668,36 @@ pub(crate) fn send_out_replacement(state: &mut State, side: usize, db: &Database
 /// itself already logged and consumed, and just waits here for its actual switch — the Python's own
 /// split between "announce it happened" and "who actually walks in", which for this harness's fixed
 /// `replacement_chooser` collapse into the same deterministic pick either way.
-fn resolve_pending_switches(state: &mut State, side: usize, db: &Database, log: &mut Log) {
-    if state.sides[side].active_pokemon().eject_pending {
-        state.sides[side].active_mut().eject_pending = false;
-        let active = state.sides[side].active;
-        let has_bench = (0..state.sides[side].team.len())
-            .any(|index| index != active && !state.sides[side].team[index].fainted());
-        if !state.sides[side].active_pokemon().fainted() && has_bench {
-            let pokemon = state.sides[side].active_mut();
-            pokemon.last_consumed_item = pokemon.item.clone();
-            pokemon.item = "NONE".to_string();
-            pokemon.item_consumed = true;
-            let nickname = pokemon.nickname.clone();
-            log.push(Event::SelfSwitchPending { side: side as i32, pokemon: nickname });
-            state.sides[side].needs_switch = true;
-        }
+/// `_resolve_eject_packs`: only the arming half — logging `SelfSwitchPending` and setting
+/// `needs_switch`, never executing. Kept as its own full pass over both sides, called before any
+/// switch actually executes, because the Python's own two functions are two separate passes:
+/// `_resolve_eject_packs` (both sides) runs to completion, then `_resolve_pending_switches` (both
+/// sides) runs to completion. Folding "arm this side" and "execute this side" into one call per
+/// side, the way an earlier version of this function did, executed side 0's own already-armed pivot
+/// switch *before* an Eject Pack a side-1 stat drop had just armed even got its own `SelfSwitchPending`
+/// logged — the Python logs both pendings first, in side order, before either switch happens.
+fn resolve_eject_packs(state: &mut State, side: usize, log: &mut Log) {
+    if !state.sides[side].active_pokemon().eject_pending {
+        return;
     }
+    state.sides[side].active_mut().eject_pending = false;
+    let active = state.sides[side].active;
+    let has_bench =
+        (0..state.sides[side].team.len()).any(|index| index != active && !state.sides[side].team[index].fainted());
+    if !state.sides[side].active_pokemon().fainted() && has_bench {
+        let pokemon = state.sides[side].active_mut();
+        pokemon.last_consumed_item = pokemon.item.clone();
+        pokemon.item = "NONE".to_string();
+        pokemon.item_consumed = true;
+        let nickname = pokemon.nickname.clone();
+        log.push(Event::SelfSwitchPending { side: side as i32, pokemon: nickname });
+        state.sides[side].needs_switch = true;
+    }
+}
+
+/// `_resolve_pending_switches`: the execution half, for whichever side(s) `needs_switch` — armed
+/// by a pivot, Eject Button, `resolve_eject_packs` above, or Shed Tail — by the time this runs.
+fn resolve_pending_switches(state: &mut State, side: usize, db: &Database, log: &mut Log) {
     if state.sides[side].needs_switch {
         state.sides[side].needs_switch = false;
         send_out_replacement(state, side, db, log);
@@ -2735,7 +2755,7 @@ fn apply_damage(
         let (category, _) = hit_shape(the_move);
         let contact = makes_contact(the_move, state.sides[side].active_pokemon());
         let shape = Hit { attacker_side: side, move_type: &the_move.move_type, category, contact, dealt };
-        on_after_hit(state, &shape, db, tape, log)?;
+        on_after_hit(state, &shape, attacker_registered, db, tape, log)?;
         // Red Card can switch `side`'s own active right here. Recorded once, then pinned straight
         // back for the rest of this loop — a second hit of the same multi-hit move still has to be
         // calculated off the Pokemon that is actually still swinging, the Python's own stale
