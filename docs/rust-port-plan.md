@@ -20,13 +20,13 @@ to this doc; per invariant 2 the batch now belongs on the "done" side.
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 172 | 220 (78%) |
-| items | 46 | 193 |
+| abilities | 178 | 220 (81%) |
+| items | 71 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
 The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
 a release build for this update:
-`{"abilities":{"live":220,"ported":172},"items":{"live":193,"ported":46},"moves":{"playable":843,
+`{"abilities":{"live":220,"ported":178},"items":{"live":193,"ported":71},"moves":{"playable":843,
 "refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
 row above.
 
@@ -760,18 +760,52 @@ scratch.
 
 ### 7. Z-moves, megas, formes
 
-`zmove:` actions are refused where actions are parsed. Mega evolution, Z-moves and forme changes are
-a whole action/state dimension the port has not touched. **Check what the bot actually uses before
-deciding how much is needed** — if the search/team-generation code (`battle_sim/search.py` or
-wherever sets are built) never assigns a mega stone or a Z-move-carrying set, refusing this
-dimension permanently is a legitimate scope cut, not a gap, and it's cheaper to check that first
-than to build it and find out afterward.
+Decided in scope: a Gen 7 Anything Goes replay corpus (`data/ag_replays/`, feeding
+`tools/build_ag_teams.py`) is the intended self-training data, and 89.5% of Pokemon slots across the
+teams it builds need Mega Evolution, Primal Reversion, Z-Moves or an Arceus plate — this is not a
+dimension the bot can do without.
 
-If it turns out to be in scope: Mega Evolution needs a forme-swap primitive (stat/type/ability
-override, triggered pre-move) — build it once and reuse it for the twelve non-mega forme-change
-abilities in section 4 and for Zygarde/Terapagos/Palafin. Z-moves are a separate, smaller unit
-(`battle_sim/zmoves.py` is 131 lines) — a generic type-crystal power/effect upgrade plus 15
-hand-mapped signature crystals.
+**Mega Evolution / Primal Reversion / Ultra Burst — done.** Python's `_resolve_mega_evolution` is
+one generic table-driven forme-swap (`formes.mega_forme`/`apply_forme`), not 83 special cases —
+Mega Stones and Primal orbs share the same `_forme_by_base_and_item()` table, keyed off the vendored
+species data's own `requiredItem`/`baseSpecies` fields. `battle_sim/export_data.py` now exports that
+table directly (`mega_formes`, `ultra_burst_formes`, plus a `move_gated_formes` fix — it used to
+throw the forme name away) and each species' own `regular_ability` in this engine's name, so Rust
+carries none of Python's own filtering logic (`_is_transformed_forme`/`_is_playable`/`_source_forme`)
+— only one filter Python's export can't supply: whether *this* engine has ported the forme's ability
+yet (`rust/src/formes.rs::playable`), so a still-unplayable forme (Sableye-Mega/Magic Bounce) stays
+refused rather than silently mega-evolving into an ability with no dispatch. `resolve_forme_changes`
+runs once per turn per side, in `turn::step`, in the same slot `ability_on_turn_start` already
+occupies, right before `order_actions` reads speed. Desolate Land/Primordial Sea/Delta Stream ride
+the existing ability-weather table; Delta Stream's own damage effect (neutralizes a Flying-type's
+weaknesses) is ported in `power::strong_winds_negation`, called from both places type effectiveness
+feeds a real hit. Shadow Tag/Arena Trap/Magnet Pull were pulled forward from section 4's Trapping
+cluster and ported as verified no-ops (Gengar-Mega's ability is Shadow Tag) — confirmed by reading
+`battle_sim/` end to end that all three are legal-actions-only, never consulted by `step()`.
+Six dedicated tests, all vacuity-checked; a targeted 1300-battle sweep over every playable
+mega/primal/ultra-burst pairing plus the still-refused Sableye control (0 diverged); the usual broad
+sweeps unaffected. See the commit for the full write-up. **Not done**: Zygarde's Power Construct is
+a different forme-swap shape (HP-triggered, no item — belongs with section 4's other HP-forme
+abilities, Stance Change/Zen Mode/Schooling/Shields Down, not this one), and Multitype/RKS
+System/Arceus-plates/memories (needed for Arceus, extremely common in the same corpus) are next.
+
+**Z-Moves — not started.** A Z-move is a flag on the ordinary move action in Python
+(`z_move: bool` on the existing `USE_MOVE` action, same slot, same PP), not a new action type, so
+`step()` doesn't need `legal_actions` ported to execute one — only `Action::Move` needs the flag and
+`replay.rs`'s `parse_action` needs to stop refusing `"zmove:"`. `battle_sim/zmoves.py` (131 lines) is
+a generic type-crystal power-tier table plus 15 hand-mapped signature crystals; status-move Z-effects
+are not modelled in Python either (preserve that gap). `has_used_z_move`, once per battle per side,
+never consumes the crystal itself (permanently fused, same as a Mega Stone).
+
+**Multitype/RKS System/plates — not started.** Simpler than Mega Evolution: not a forme swap at
+all, just a live `Item -> Type` table the ability reads continuously (`_bind_item_type_shifter` in
+Python). Fits into whatever on-demand type-override function Roost's temporary type removal already
+uses in Rust, plus adding the plates' 1.2x same-type boost to `items.rs`'s existing type-booster
+table (`power.rs::plate_type` already has the Judgment-type-selection half).
+
+**Trapping cluster (Arena Trap/Shadow Tag/Magnet Pull) — done, see above; Ghost/Shed-Shell escape
+and the rest of `legal_actions`** — genuinely deferred to section 8, since nothing else in this
+cluster has any `step()`-level effect to port.
 
 ### 8. Integration — after parity
 
@@ -797,9 +831,11 @@ forme-swap primitive rather than being one-liners in isolation — call it a ses
 Section 5 (147 items left) is one, mostly following section 4's abilities in to reuse their
 plumbing (Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega
 stones).
-Section 7 (Z-moves/megas/formes) is a scope question before it's a sizing question — check bot
-usage first. Integration (section 8) is last, one session plus whatever the AI re-validation turns
-up.
+Section 7 (Z-moves/megas/formes) is in scope (see its own write-up): Mega Evolution/Primal
+Reversion/Ultra Burst and the Shadow Tag/Arena Trap/Magnet Pull no-ops are done; Z-Moves and
+Multitype/RKS System/plates are next, each sized closer to a single batch than a full session since
+the forme-swap primitive and the data export both already exist. Integration (section 8) is last,
+one session plus whatever the AI re-validation turns up.
 
 The tail is not uniform: absorption abilities and formes are each a small architecture change, and
 the butler's revival mechanic has no reference outside this codebase.
