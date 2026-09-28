@@ -581,6 +581,12 @@ pub fn step(
         // Set after the action, not before: Analytic asks whether the *other* side has already
         // moved, and a side that has just finished moving is exactly what that means.
         state.sides[side].acted_this_turn = true;
+        // Both sides, after *every* completed action, not just the one that just acted — a drop or
+        // an Eject Button this action triggered on the other side pulls that side's Pokemon before
+        // it ever gets its own turn, if it hasn't acted yet this turn.
+        for eject_side in 0..2 {
+            resolve_pending_switches(state, eject_side, db, &mut log);
+        }
         let was_decided = state.outcome.is_some();
         state.update_outcome();
         // `_update_outcome` announces the result the moment it is decided, once.
@@ -733,6 +739,7 @@ fn withdraw(side: &mut Side, to: usize) -> String {
     outgoing.last_move_slot = None;
     outgoing.encored_slot = None;
     outgoing.disabled_slot = None;
+    outgoing.choice_locked_move = None;
     outgoing.flash_fire_active = false;
     outgoing.paradox_boost = None;
     outgoing.paradox_from_booster = false;
@@ -1012,6 +1019,16 @@ fn resolve_move(
     // is even decided — rather than by a countdown. A Destiny Bond that killed something last turn
     // does not still threaten to on this one.
     state.sides[side].active_mut().volatiles.remove("DESTINY_BOND");
+    // A Choice item redirects to whatever it already locked, checked before Encore/rampage/charge —
+    // the Python's own order. `None` both before the first use and for anyone not holding one.
+    let choice_locked_slot = {
+        let actor = state.sides[side].active_pokemon();
+        if matches!(actor.item.as_str(), "CHOICE_BAND" | "CHOICE_SCARF" | "CHOICE_SPECS") {
+            actor.choice_locked_move
+        } else {
+            None
+        }
+    };
     // Encore, a rampage or a charge each continue a use the Pokemon already committed to, whatever
     // slot the recorded action names — a short moveset pads itself by repeating its first move, so
     // the same move can sit in several slots and the recorded action can name a different one of
@@ -1029,6 +1046,9 @@ fn resolve_move(
         actor.volatiles.contains_key("CHARGING") && actor.charging_slot.is_some()
     };
     let mut slot = slot;
+    if let Some(locked) = choice_locked_slot {
+        slot = locked;
+    }
     if encored {
         slot = state.sides[side].active_pokemon().encored_slot.expect("checked above");
     }
@@ -1126,6 +1146,14 @@ fn resolve_move(
         the_move: the_move.name.clone(),
         unleashed_as: None,
     });
+    // Locked in on the first move used while holding one — never re-set once `Some`, and using
+    // whatever slot was actually used (Struggle included), same as the Python's own `action.move`
+    // read at this exact point, after its own choice/encore/rampage/charge redirects.
+    if matches!(state.sides[side].active_pokemon().item.as_str(), "CHOICE_BAND" | "CHOICE_SCARF" | "CHOICE_SPECS")
+        && state.sides[side].active_pokemon().choice_locked_move.is_none()
+    {
+        state.sides[side].active_mut().choice_locked_move = Some(slot);
+    }
     // Read by Encore, Disable, and a rampage's own `InflictStatusEffect` — always the slot just
     // used, Struggle included, since the Python assigns this before the Struggle substitution
     // changes what `move` points at without changing `slot` itself.
@@ -1329,6 +1357,17 @@ fn resolve_move(
 
     // Effects resolve in the order the move lists them, which is the order `_apply_effect` is
     // called in and therefore the order their draws come off the tape.
+    //
+    // Red Card (inside the `DamageEffect` arm's own `apply_damage`) can switch `side`'s own active
+    // mid-move. The Python reads everything from here on — every later effect, a rampage's own
+    // `LOCKED_MOVE`, a recharge's own flag, this same move's recoil — against the one `attacker`
+    // object reference it captured before any of this started, so all of it still lands on whoever
+    // actually swung, not on whoever that side benched in behind them. `apply_damage` itself already
+    // reproduces this for its own internal tail and for a second hit of the same multi-hit move;
+    // `restore_active_to`, set the instant a switch is first seen below, pins the rest of this
+    // function to match and is put back only once, right before `resolve_move` itself returns.
+    let attacker_active_at_move_start = state.sides[side].active;
+    let mut restore_active_to: Option<usize> = None;
     for effect in &the_move.effects {
         // `_DELAYED_DAMAGE_MOVES`: Future Sight and Doom Desire carry a real `DamageEffect` for the
         // residual to apply two turns on, and it must not also land immediately on the turn the
@@ -1350,6 +1389,14 @@ fn resolve_move(
             Effect::DamageEffect { .. } => {
                 // Effectiveness is logged inside, because the hit-count roll comes before it.
                 apply_damage(state, side, &the_move, &listed_type, effectiveness, behind_substitute, db, tape, log)?;
+                // `apply_damage` settles back to its own real, post-hit active index before it
+                // returns (it needs the live board for its own multi-hit loop); catching the change
+                // here, once, is what lets everything after this arm — for the rest of this whole
+                // function — read the original attacker instead.
+                if restore_active_to.is_none() && state.sides[side].active != attacker_active_at_move_start {
+                    restore_active_to = Some(state.sides[side].active);
+                    state.sides[side].active = attacker_active_at_move_start;
+                }
             }
             Effect::InflictStatusEffect { status, probability, to_self, is_secondary } => {
                 // `_apply_status_routed`: the *move* targeting its user is enough, whatever the
@@ -1454,9 +1501,16 @@ fn resolve_move(
     // Nothing at all happened: every effect was skipped, most often because the target had already
     // been knocked out by the other side this turn. The Python decides this by whether the log grew
     // rather than by inspecting the move, so this does too.
+    //
+    // Unreachable with `restore_active_to` set in practice — Red Card only ever fires once real
+    // damage has already landed and been logged — but restoring before every return out of this
+    // function, rather than trusting that, is the cheaper thing to get right.
     if log.entries.len() == log_before {
         log.push(Event::MoveFailed);
         crash_damage(state, side, &the_move, log);
+        if let Some(real_active) = restore_active_to {
+            state.sides[side].active = real_active;
+        }
         return Ok(());
     }
 
@@ -1472,9 +1526,14 @@ fn resolve_move(
             attacker.locked_slot = Some(slot);
         }
     }
-    // A pivot leaves at once, so a target still waiting to act this turn faces whoever arrived
-    // rather than the pivot's user. `send_out_replacement` is the harness's rule — the lowest
-    // healthy bench member — and the Python's `replacement_chooser` is the same one.
+    // A pivot's own switch is deferred exactly like Eject Button's: `SelfSwitchPending` logs and
+    // `needs_switch` arms here, in `_execute_move` itself, but the actual switch waits for
+    // `resolve_pending_switches` — called once per completed action, for both sides in side order.
+    // That ordering is what a target still waiting to act this turn faces whoever arrived rather
+    // than the pivot's user (nothing else happens between this action finishing and the next one
+    // starting) — and it is also why a defender's own Eject Button, armed first (from `on_after_hit`,
+    // strictly before this check), still resolves *after* this side's pivot if the pivot's own side
+    // index is lower: `resolve_pending_switches` walks side 0 then side 1, not arming order.
     let bench = state.sides[side]
         .team
         .iter()
@@ -1483,7 +1542,7 @@ fn resolve_move(
     if the_move.self_switch && !state.sides[side].active_pokemon().fainted() && bench {
         let nickname = state.sides[side].active_pokemon().nickname.clone();
         log.push(Event::SelfSwitchPending { side: side as i32, pokemon: nickname });
-        send_out_replacement(state, side, db, log);
+        state.sides[side].needs_switch = true;
     }
     if the_move.recharges {
         state.sides[side].active_mut().volatiles.insert("MUST_RECHARGE".to_string(), 1);
@@ -1494,6 +1553,11 @@ fn resolve_move(
         user.take_damage(all_of_it);
         let nickname = user.nickname.clone();
         log.push(Event::Fainted { side: side as i32, pokemon: nickname });
+    }
+    // Let go of the pin, if one was ever needed: whoever Red Card actually sent out is who the rest
+    // of the turn — and the game — sees from here on.
+    if let Some(real_active) = restore_active_to {
+        state.sides[side].active = real_active;
     }
     Ok(())
 }
@@ -1535,7 +1599,7 @@ fn grant_switch_in_bonuses(state: &mut State, side: usize, log: &mut Log) {
 ///
 /// Deterministic on purpose. It consumes no randomness, so it cannot shift the tape, and both
 /// engines make the identical choice from the identical rule without the scenario recording it.
-fn send_out_replacement(state: &mut State, side: usize, db: &Database, log: &mut Log) {
+pub(crate) fn send_out_replacement(state: &mut State, side: usize, db: &Database, log: &mut Log) {
     let active = state.sides[side].active;
     let Some(to) = (0..state.sides[side].team.len())
         .find(|index| *index != active && !state.sides[side].team[*index].fainted())
@@ -1556,11 +1620,40 @@ fn send_out_replacement(state: &mut State, side: usize, db: &Database, log: &mut
     }
 }
 
+/// `_resolve_eject_packs` followed by `_resolve_pending_switches`, both called once per completed
+/// action in the Python — back to back, with nothing observable in between, so one function does
+/// both here. Eject Pack's own flag is armed silently by a stat drop and is logged/consumed only
+/// now, on resolution; `needs_switch` is the more general flag (Eject Button today) that arms
+/// itself already logged and consumed, and just waits here for its actual switch — the Python's own
+/// split between "announce it happened" and "who actually walks in", which for this harness's fixed
+/// `replacement_chooser` collapse into the same deterministic pick either way.
+fn resolve_pending_switches(state: &mut State, side: usize, db: &Database, log: &mut Log) {
+    if state.sides[side].active_pokemon().eject_pending {
+        state.sides[side].active_mut().eject_pending = false;
+        let active = state.sides[side].active;
+        let has_bench = (0..state.sides[side].team.len())
+            .any(|index| index != active && !state.sides[side].team[index].fainted());
+        if !state.sides[side].active_pokemon().fainted() && has_bench {
+            let pokemon = state.sides[side].active_mut();
+            pokemon.last_consumed_item = pokemon.item.clone();
+            pokemon.item = "NONE".to_string();
+            pokemon.item_consumed = true;
+            let nickname = pokemon.nickname.clone();
+            log.push(Event::SelfSwitchPending { side: side as i32, pokemon: nickname });
+            state.sides[side].needs_switch = true;
+        }
+    }
+    if state.sides[side].needs_switch {
+        state.sides[side].needs_switch = false;
+        send_out_replacement(state, side, db, log);
+    }
+}
+
 /// `_force_random_switch`: Whirlwind, Roar and Dragon Tail drag somebody in at random.
 ///
 /// The draw happens only when there *is* a bench to drag from, which is the Python's order — an
 /// empty bench costs the tape nothing.
-fn force_random_switch(
+pub(crate) fn force_random_switch(
     state: &mut State,
     side: usize,
     db: &Database,
@@ -1681,6 +1774,7 @@ fn makes_contact(the_move: &Move, attacker: &Pokemon) -> bool {
 fn collect_damage_payload(
     state: &State,
     side: usize,
+    attacker_registered: bool,
     the_move: &Move,
     db: &Database,
     seed_power_mods: &[i64],
@@ -1707,7 +1801,7 @@ fn collect_damage_payload(
     let mut payload = Payload::new();
     payload.power_mods_4096 = seed_power_mods.to_vec();
     payload.weather_suppressed = weather != state.field.weather;
-    let consumed = apply_damage_calc(state, side, &calc, &mut payload);
+    let consumed = apply_damage_calc(state, side, attacker_registered, &calc, &mut payload);
     (payload, consumed)
 }
 
@@ -2416,6 +2510,16 @@ fn apply_damage(
     log: &mut Log,
 ) -> Result<(), Refusal> {
     let other = 1 - side;
+    // Red Card can switch the attacker's own side mid-resolution (`ON_AFTER_HIT`, inside the hit
+    // loop below). The Python holds `attacker` as a plain object reference from the top of
+    // `_apply_damage`, so every later hit of the same multi-hit move, and everything "once for the
+    // whole move" after the loop (recoil, drain, Life Orb's chip) still lands on whoever actually
+    // swung, not on whoever that side benched in to replace them. Re-pinned back to this index the
+    // instant it changes, and only let go of for real once this function is done with it — the same
+    // trick as the `Refusal`-free early exits elsewhere, minus needing a second notion of "the
+    // attacker" in every stage-change/heal site downstream.
+    let attacker_active_before = state.sides[side].active;
+    let mut attacker_active_after_hits = attacker_active_before;
     let attacker_ability = state.sides[side].active_pokemon().ability.clone();
     let (is_multi_hit, planned) = planned_hits(the_move, &attacker_ability, tape)?;
     log.effectiveness(effectiveness);
@@ -2438,11 +2542,17 @@ fn apply_damage(
     let aliased = overrides.ate_power_mod.is_some();
 
     let (mut total_dealt, mut hits_landed, mut critical) = (0, 0, false);
+    // Flips the instant Red Card switches `side`'s own active (below) — from the *next* hit of the
+    // same multi-hit move on, the attacker's own ability and item stop contributing to the damage
+    // calc entirely, matching the bus unregistering the departed Pokemon's handlers. The hit that
+    // triggers the switch still gets its own contribution: the switch happens at `on_after_hit`,
+    // strictly after this same hit's own `ON_DAMAGE_CALC` already ran.
+    let mut attacker_registered = true;
     for _ in 0..planned {
         // Re-collected every hit, as the Python re-emits ON_DAMAGE_CALC every hit: a berry eaten
         // on the first blow has to be gone by the second.
         let (mut payload, eaten) =
-            collect_damage_payload(state, side, the_move, db, &shared_power_mods, behind_substitute);
+            collect_damage_payload(state, side, attacker_registered, the_move, db, &shared_power_mods, behind_substitute);
         payload.power_override = power_override;
         payload.attack_stat_override = overrides.attack_stat;
         payload.use_target_attack = overrides.use_target_attack;
@@ -2511,6 +2621,24 @@ fn apply_damage(
         // of `_land_hit`) checked first — moot in practice, since a hit Sturdy has already reduced
         // below the defender's current HP can never also satisfy Endure's own `>= defender.hp`.
         let mut incoming = hit.amount;
+        // Focus Sash: the same full-HP clamp as Sturdy, checked first — historically the sash is
+        // consumed in preference to the ability, which is why the Python binds it above the ABILITY
+        // band rather than beside it.
+        {
+            let survives = {
+                let defender = state.sides[other].active_pokemon();
+                defender.item == "FOCUS_SASH" && defender.hp == defender.totals.hp && incoming >= defender.hp
+            };
+            if survives {
+                let defender = state.sides[other].active_mut();
+                incoming = defender.hp - 1;
+                defender.last_consumed_item = defender.item.clone();
+                defender.item = "NONE".to_string();
+                defender.item_consumed = true;
+                let nickname = defender.nickname.clone();
+                log.push(Event::SurvivedAtOneHp { side: other as i32, pokemon: nickname, cause: "focus_sash".into() });
+            }
+        }
         {
             let defender = state.sides[other].active_pokemon();
             if defender.ability == "STURDY" && defender.hp == defender.totals.hp && incoming >= defender.hp {
@@ -2562,11 +2690,33 @@ fn apply_damage(
         let contact = makes_contact(the_move, state.sides[side].active_pokemon());
         let shape = Hit { attacker_side: side, move_type: &the_move.move_type, category, contact, dealt };
         on_after_hit(state, &shape, db, tape, log)?;
+        // Red Card can switch `side`'s own active right here. Recorded once, then pinned straight
+        // back for the rest of this loop — a second hit of the same multi-hit move still has to be
+        // calculated off the Pokemon that is actually still swinging, the Python's own stale
+        // reference, not whoever just got benched in behind it — everywhere except its own
+        // ability/item damage-calc contribution, which `attacker_registered` turns off starting
+        // next hit.
+        if state.sides[side].active != attacker_active_before {
+            attacker_active_after_hits = state.sides[side].active;
+            state.sides[side].active = attacker_active_before;
+            attacker_registered = false;
+        }
         if state.sides[other].active_pokemon().fainted() {
             break;
         }
     }
 
+    // `state.sides[side].active` is already pinned to `attacker_active_before` here — the loop
+    // above re-pins it the instant Red Card moves it. `attacker_active_after_hits` remembers the
+    // real destination so it can be restored below, once this function is done needing the
+    // original — but it is *also* the tell for whether a switch happened at all, which matters
+    // for what comes next: Destiny Bond and recoil/drain are plain function calls in the Python,
+    // reading the same stale `attacker` object directly, so the pin alone reproduces them
+    // correctly. Moxie's own `ON_FAINT` boost and Life Orb's own `ON_ACTION_RESOLVE` chip are not —
+    // they are bus subscriptions, and `_execute_switch` unregisters the departing Pokemon's the
+    // instant it leaves. A stale reference does not save a subscription that has already been torn
+    // down, so both of those have to be skipped outright once a switch has happened, not pinned.
+    let attacker_switched_mid_move = attacker_active_after_hits != attacker_active_before;
     if is_multi_hit {
         log.push(Event::MultiHitSummary { hits: hits_landed });
     } else if total_dealt > 0 {
@@ -2589,8 +2739,11 @@ fn apply_damage(
             pokemon: state.sides[other].active_pokemon().nickname.clone(),
         });
         // `ON_FAINT`: emitted right here and nowhere else, matching the one site the Python emits
-        // it from — before Destiny Bond's retaliation, before recoil/drain.
-        crate::hooks::ability_on_faint(state, side, log);
+        // it from — before Destiny Bond's retaliation, before recoil/drain. Skipped if the attacker
+        // already left mid-move: Moxie's own handler went with it.
+        if !attacker_switched_mid_move {
+            crate::hooks::ability_on_faint(state, side, log);
+        }
         // Destiny Bond: the fallen defender takes its attacker down too, unless that attacker is
         // already gone (a Struggle recoil, say, that finished itself off on the very same hit).
         if state.sides[other].active_pokemon().volatiles.contains_key("DESTINY_BOND")
@@ -2605,6 +2758,14 @@ fn apply_damage(
     }
     // Once for the whole move, against the total: a multi-hit drain heals on the sum, not per blow.
     recoil_and_drain(state, side, the_move, total_dealt, log);
+    // `ON_ACTION_RESOLVE`, emitted from exactly this point in the Python: after recoil/drain, once
+    // for the whole move rather than once per hit. Skipped if the attacker already left mid-move,
+    // same reason as Moxie above: Life Orb's own handler is a bus subscription too.
+    if !attacker_switched_mid_move {
+        crate::hooks::life_orb_recoil(state, side, total_dealt, log);
+    }
+    // Un-pin: whoever Red Card actually sent out is who the rest of the turn (and the game) sees.
+    state.sides[side].active = attacker_active_after_hits;
     Ok(())
 }
 
@@ -3033,6 +3194,12 @@ pub fn apply_stage_changes_from(
     }
     if dropped > 0 {
         retaliate_drops(state, target_side, dropped, log);
+        // Eject Pack: armed here, drained by `resolve_eject_pack` once the action that triggered
+        // this finishes resolving — not switched out on the spot, since the Python's own
+        // `_resolve_eject_packs` runs once per completed action, after this function returns.
+        if state.sides[target_side].active_pokemon().item == "EJECT_PACK" {
+            state.sides[target_side].active_mut().eject_pending = true;
+        }
     }
 }
 

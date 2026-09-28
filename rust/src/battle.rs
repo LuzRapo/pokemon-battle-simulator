@@ -203,6 +203,13 @@ pub struct Pokemon {
     /// Whether the current `paradox_boost` came from Booster Energy rather than the field — a
     /// booster-sourced boost outlives the field condition ending, a field-sourced one does not.
     pub paradox_from_booster: bool,
+    /// The slot a Choice item has locked this Pokemon into, once it has used a move while holding
+    /// one. `None` until the first such move, cleared on switch-out.
+    pub choice_locked_move: Option<usize>,
+    /// Eject Pack: armed by `apply_stage_changes_from` the moment an opponent's move actually drops
+    /// one of this Pokemon's stats, and drained (whether or not the switch actually happens) by
+    /// `resolve_eject_pack` right after the action that armed it finishes resolving.
+    pub eject_pending: bool,
 }
 
 /// A pre-Transform form, restored on switch-out. Mirrors `models.pokemon.FormSnapshot` exactly —
@@ -351,6 +358,8 @@ impl Pokemon {
             flash_fire_active: false,
             paradox_boost: None,
             paradox_from_booster: false,
+            choice_locked_move: None,
+            eject_pending: false,
         })
     }
 
@@ -483,6 +492,12 @@ pub struct Side {
     /// scheme `future_sight_attacker` already uses. Popped and restored on that Pokemon's next
     /// switch-out; a no-op for every Pokemon that never transformed, which is nearly all of them.
     pub transforms: BTreeMap<usize, FormSnapshot>,
+    /// Eject Button: armed (with `SelfSwitchPending` already logged and the item already consumed)
+    /// the instant a hit lands, but the actual switch waits for `resolve_pending_switch` — called
+    /// once per completed action, same as Eject Pack's own deferred switch — so a move's own
+    /// `DamageDealt` summary and any of its other completion events still log under the Pokemon
+    /// that is, for the moment, still standing.
+    pub needs_switch: bool,
 }
 
 impl Side {
@@ -503,6 +518,7 @@ impl Side {
             future_sight_attacker: None,
             future_sight_move: None,
             transforms: BTreeMap::new(),
+            needs_switch: false,
         }
     }
 

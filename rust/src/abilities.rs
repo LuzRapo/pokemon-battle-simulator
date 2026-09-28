@@ -110,6 +110,7 @@ const OVERLORD_POWER_4096: [i64; 6] = [4096, 4506, 4915, 5325, 5734, 6144];
 pub fn apply_damage_calc(
     state: &State,
     attacker_side: usize,
+    attacker_registered: bool,
     calc: &Calc,
     payload: &mut Payload,
 ) -> Option<crate::items::Consumed> {
@@ -123,11 +124,22 @@ pub fn apply_damage_calc(
         .iter()
         .any(|side| side.active_pokemon().ability == "AURA_BREAK");
     for side in order {
+        // Red Card, mid-multi-hit: once the attacker's own side has switched, its ability (and,
+        // below, its item) stop contributing for the rest of this move — `_execute_switch`
+        // unregisters the departing Pokemon's bus handlers the instant it leaves, and a later hit's
+        // `ON_DAMAGE_CALC` simply never reaches them again, stale `context.actor` reference or not.
+        // The defender is never who Red Card switches, so its own half is never touched by this.
+        if side == attacker_side && !attacker_registered {
+            continue;
+        }
         let pokemon = state.sides[side].active_pokemon();
         handle(&pokemon.ability, pokemon, side == attacker_side, broken, calc, payload);
     }
     let mut consumed = None;
     for side in order {
+        if side == attacker_side && !attacker_registered {
+            continue;
+        }
         let pokemon = state.sides[side].active_pokemon();
         if let Some(eaten) = crate::items::on_damage_calc(pokemon, side, side == attacker_side, calc, payload) {
             consumed = Some(eaten);

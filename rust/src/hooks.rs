@@ -330,11 +330,14 @@ pub const PORTED_ABILITIES: [&str; 20] = [
 ];
 
 /// Items implemented here, on top of the damage-calc ones.
-pub const PORTED_ITEMS: [&str; 9] = [
+pub const PORTED_ITEMS: [&str; 12] = [
+    "EJECT_BUTTON",
     "ELECTRIC_SEED",
     "GRASSY_SEED",
+    "LIFE_ORB",
     "MISTY_SEED",
     "PSYCHIC_SEED",
+    "RED_CARD",
     "ROCKY_HELMET",
     "SITRUS_BERRY",
     "STARF_BERRY",
@@ -564,6 +567,28 @@ fn item_after_hit(
                 apply_stage_changes(state, side, &stages, "weakness_policy", log);
             }
         }
+        // Eject Button: announced and consumed the instant a hit lands, but the actual switch waits
+        // — `side.needs_switch` only gets read once the whole action has finished resolving, so a
+        // single-hit move's own `DamageDealt` summary still logs under the Pokemon that is, for the
+        // moment, still standing. `turn::resolve_pending_switches` performs the switch itself, once
+        // per completed action.
+        "EJECT_BUTTON" if hit.dealt > 0 => {
+            let active = state.sides[side].active;
+            let has_bench =
+                (0..state.sides[side].team.len()).any(|index| index != active && !state.sides[side].team[index].fainted());
+            if has_bench {
+                consume(state, side);
+                let nickname = state.sides[side].active_pokemon().nickname.clone();
+                log.push(Event::SelfSwitchPending { side: side as i32, pokemon: nickname });
+                state.sides[side].needs_switch = true;
+            }
+        }
+        // Red Card: drags the *attacker* out instead, at random — the same draw Whirlwind/Roar/
+        // Dragon Tail already take, reused rather than reimplemented.
+        "RED_CARD" if hit.dealt > 0 && !state.sides[other].active_pokemon().fainted() => {
+            consume(state, side);
+            crate::turn::force_random_switch(state, other, db, tape, log)?;
+        }
         _ => {}
     }
     Ok(())
@@ -600,6 +625,26 @@ fn consume(state: &mut State, side: usize) {
     pokemon.last_consumed_item = pokemon.item.clone();
     pokemon.item = "NONE".to_string();
     pokemon.item_consumed = true;
+}
+
+/// Life Orb's own `ON_ACTION_RESOLVE`: a tenth of its holder's max HP, once for the whole move
+/// (against the summed multi-hit total, not per blow), skipped on a miss, a fainted holder, or
+/// Magic Guard — the same guard every other indirect-damage site already asks.
+pub fn life_orb_recoil(state: &mut State, side: usize, total_dealt: i32, log: &mut Log) {
+    if state.sides[side].active_pokemon().item != "LIFE_ORB" {
+        return;
+    }
+    if total_dealt <= 0
+        || state.sides[side].active_pokemon().fainted()
+        || crate::inline::ignores_indirect_damage(state.sides[side].active_pokemon())
+    {
+        return;
+    }
+    let pokemon = state.sides[side].active_mut();
+    let chip = std::cmp::max(1, pokemon.totals.hp / 10);
+    pokemon.take_damage(chip);
+    let nickname = pokemon.nickname.clone();
+    log.push(Event::ItemChipDamage { side: side as i32, pokemon: nickname, item: "LIFE_ORB".to_string(), amount: chip });
 }
 
 /// `ON_SWITCH_IN`, for whoever has just arrived on this side.

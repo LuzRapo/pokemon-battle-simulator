@@ -2610,6 +2610,355 @@ def test_terrain_seed_fires_for_a_pokemon_that_never_switched_in(tmp_path: Path)
 
 
 @needs_rust
+def test_choice_items_lock_the_first_move_used_and_never_re_set(tmp_path: Path) -> None:
+    """Choice Band/Scarf/Specs: the same redirect Encore/rampage/charge already use at the top of
+    `resolve_move`, checked first of the four -- locked onto whatever slot actually got used the
+    moment `choice_locked_move` is still `None`, and never re-set after. A chooser that tries to
+    switch to the second slot on turn two still gets the first move's name back, and the item itself
+    is never consumed by any of this.
+
+    Vacuity-checked directly: skipping the redirect (leaving the lock recorded but never read) let
+    the second turn's `MoveUsed` say "Growl" -- a plain digest/event mismatch against the Python's
+    own forced "Tackle".
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.CHOICE_BAND,
+            nature=Nature.HARDY, moves=["Tackle", "Growl"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+
+    def try_switch_moves(state, side_index):  # type: ignore[no-untyped-def]
+        if side_index == 1:
+            return Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+        slot = MoveSlot.FIRST if state.turn == 0 else MoveSlot.SECOND
+        return Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=slot)
+
+    scenario, expected = record((team_a, team_b), try_switch_moves, seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    second_turn_moves = [e["move"] for e in expected[1]["events"] if e["type"] == "MoveUsed" and e["side"] == 0]
+    assert second_turn_moves == ["Tackle"], second_turn_moves
+    a0_digest = expected[1]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "CHOICE_BAND", a0_digest
+
+
+@needs_rust
+def test_focus_sash_survives_an_otherwise_lethal_hit_from_full_hp(tmp_path: Path) -> None:
+    """Focus Sash: the same full-HP clamp Sturdy already has in `apply_damage`'s hit loop, checked
+    first -- historically the sash is consumed in preference to the ability, which is why the Python
+    binds it above the `ABILITY` band rather than beside it. A level 1 Rhydon has too little HP for
+    anything else to matter, so a level 50 Machamp's Earthquake -- guaranteed to hit and super
+    effective against Ground/Rock -- overkills it every single time regardless of the damage roll.
+
+    Vacuity-checked directly: forcing the clamp's own condition to `false` turned this into a plain
+    digest mismatch -- this engine's `DamageDealt` for a fainting blow where Python's own
+    `SurvivedAtOneHp` (cause `"focus_sash"`) already clamped it.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=1, ability=Ability.NONE, item=Item.FOCUS_SASH,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Earthquake"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "SurvivedAtOneHp" and e["cause"] == "focus_sash" for e in events), events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["hp"] == 1 and a0_digest["item"] == "NONE", a0_digest
+
+
+@needs_rust
+def test_life_orb_boosts_damage_and_chips_its_holder(tmp_path: Path) -> None:
+    """Life Orb: ~1.3x on `final_mods_4096` for every hit, unconditional on category -- verified by
+    the differential comparison itself, since a wrong multiplier is a wrong `DamageDealt` -- plus a
+    tenth of its holder's own max HP back at it, once for the whole move, logged as `ItemChipDamage`
+    and never consuming the orb itself. Tackle's 100% accuracy keeps the hit itself deterministic.
+
+    Vacuity-checked directly: removing the `ON_ACTION_RESOLVE` chip left this engine's trace one
+    event short of the Python's own `ItemChipDamage` -- a plain event-count mismatch.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.LIFE_ORB,
+            nature=Nature.HARDY, moves=["Tackle"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Golem", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    chip = next((e for e in events if e["type"] == "ItemChipDamage" and e["item"] == "LIFE_ORB"), None)
+    assert chip is not None and chip["pokemon"] == "A0", events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "LIFE_ORB", a0_digest
+
+
+@needs_rust
+def test_eject_button_switches_out_only_after_the_move_finishes_resolving(tmp_path: Path) -> None:
+    """Eject Button: announced and its item consumed the instant a hit lands, but the actual switch
+    waits for `resolve_pending_switches` -- called once per completed action -- so a single-hit
+    move's own `DamageDealt` summary still logs under the Pokemon that is, for the moment, still
+    standing. Tackle's 100% accuracy makes the hit itself deterministic.
+
+    Vacuity-checked directly: switching immediately instead of deferring reordered `Switched` ahead
+    of `DamageDealt` -- a plain event-order mismatch against the Python's own later resolution.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.EJECT_BUTTON,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        PokemonSpec(
+            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Tackle"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    types = [e["type"] for e in events]
+    assert "SelfSwitchPending" in types and "Switched" in types and "DamageDealt" in types, events
+    assert types.index("DamageDealt") < types.index("Switched"), events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "NONE", a0_digest
+
+
+@needs_rust
+def test_eject_pack_switches_out_after_an_opponent_inflicted_drop(tmp_path: Path) -> None:
+    """Eject Pack: armed by `apply_stage_changes_from` the instant an opponent's move actually drops
+    one of the holder's stats, then drained -- logged and consumed only now -- by
+    `resolve_pending_switches` once the triggering action finishes. Growl's 100% accuracy and 100%
+    probability keep the drop itself deterministic.
+
+    Vacuity-checked directly: never arming the flag left this engine's trace missing the
+    `SelfSwitchPending`/`Switched` pair entirely -- a plain event-count mismatch.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.EJECT_PACK,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        PokemonSpec(
+            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Growl"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    types = [e["type"] for e in events]
+    assert "StatStageChanged" in types and "SelfSwitchPending" in types and "Switched" in types, events
+    assert types.index("StatStageChanged") < types.index("SelfSwitchPending") < types.index("Switched"), events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "NONE", a0_digest
+
+
+@needs_rust
+def test_red_card_forces_the_attacker_out(tmp_path: Path) -> None:
+    """Red Card: the same random-bench draw Whirlwind/Roar/Dragon Tail already take
+    (`turn::force_random_switch`), reused rather than reimplemented, but dragging the *attacker*
+    out instead of the move's own target. Tackle's 100% accuracy makes the hit itself deterministic.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Tackle"],
+        ),
+        PokemonSpec(
+            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.RED_CARD,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    switched = [e for e in events if e["type"] == "Switched"]
+    assert switched and switched[0]["side"] == 0 and switched[0]["withdrew"] == "A0", events
+    b0_digest = expected[0]["state"]["sides"][1]["team"][0]
+    assert b0_digest["item"] == "NONE", b0_digest
+
+
+@needs_rust
+def test_red_card_forced_switch_still_lets_the_original_attacker_finish_its_own_move(tmp_path: Path) -> None:
+    """The bug a 3000-battle sweep found once Red Card existed: Superpower's own Attack/Defense drop
+    applies to its user *after* the hit lands, and the Python computes it against the same plain
+    `attacker` object reference `_apply_damage` captured at the top of the function -- a reference
+    Red Card's own forced switch (synchronous, mid-hit) does not invalidate. `turn::apply_damage` and
+    `turn::resolve_move` both now pin `side`'s active back to that original index for everything
+    past the switch that is still a direct procedural read of "the attacker" (this drop among them,
+    plus recoil, drain and Destiny Bond), restoring the real destination only once each function is
+    done needing the original. Without the pin, Rhydon's own switch left `side`'s active pointing at
+    its own replacement, and Superpower's drop landed there instead of on the Machamp that was
+    actually still fighting.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.RED_CARD,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        PokemonSpec(
+            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Superpower"],
+        ),
+        PokemonSpec(
+            species="Tauros", nickname="B1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "Switched" and e["side"] == 1 for e in events), events
+    drops = [e for e in events if e["type"] == "StatStageChanged" and e["pokemon"] == "B0"]
+    assert len(drops) == 2, events  # Superpower's own Attack and Defense drop, still landing on B0
+
+
+@needs_rust
+def test_red_card_mid_multi_hit_stops_the_departed_attackers_own_ability(tmp_path: Path) -> None:
+    """The second bug the same sweep found: Tough Claws' own damage-calc contribution is a bus
+    subscription, and `_execute_switch` unregisters the departing Pokemon's handlers the instant it
+    leaves -- a stale `attacker` object reference does not save a subscription that has already been
+    torn down. So a second hit of the same multi-hit move, after Red Card has already forced the
+    attacker's own side to switch on the first hit, gets no Tough Claws boost at all, even though the
+    damage formula otherwise still reads the original (pinned) attacker's stats for that hit.
+    `apply_damage_calc` takes an `attacker_registered` flag for exactly this, flipped the instant
+    `apply_damage`'s own hit loop first sees `side`'s active move.
+
+    This is the one place the fix silences a bus contribution instead of pinning it — everything
+    else pins. Confirmed by the differential comparison against the Python's own trace, which is
+    what would show a damage mismatch on the second hit if this ever regressed.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.RED_CARD,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        PokemonSpec(
+            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Kangaskhan", nickname="B0", level=50, ability=Ability.TOUGH_CLAWS, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Double Iron Bash"],
+        ),
+        PokemonSpec(
+            species="Tauros", nickname="B1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "Switched" and e["side"] == 1 for e in events), events
+    assert any(e["type"] == "MultiHitSummary" and e["hits"] == 2 for e in events), events
+
+
+@needs_rust
+def test_a_pivots_own_switch_is_deferred_behind_a_lower_indexed_side(tmp_path: Path) -> None:
+    """A third bug the same sweep found: U-turn's own self-switch was still wired as an immediate,
+    inline call in `resolve_move` -- pre-dating this whole batch, just never visible before, since
+    nothing else ever competed with it for switch ordering. The Python arms it exactly like Eject
+    Button (`side.needs_switch = True` plus a `SelfSwitchPending` log, in `_execute_move` itself),
+    and the actual switch waits for `_resolve_pending_switches`, which walks side 0 then side 1 --
+    not the order the two flags were armed in. So a defender's Eject Button, armed first
+    chronologically (from `on_after_hit`, before the pivot's own check at the end of the same
+    function), still resolves *after* the pivot's own switch when the pivot is on side 0: index
+    order, not arming order. U-turn's 100% accuracy keeps the hit itself deterministic.
+
+    Vacuity-checked directly: reverting the pivot's own switch to an immediate call reordered the two
+    `Switched` events -- a plain event-order mismatch against the Python's own side-0-then-side-1
+    resolution.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.EJECT_BUTTON,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        PokemonSpec(
+            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["U-turn"],
+        ),
+        PokemonSpec(
+            species="Tauros", nickname="B1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    switches = [e for e in events if e["type"] == "Switched"]
+    assert [s["side"] for s in switches] == [0, 1], events
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

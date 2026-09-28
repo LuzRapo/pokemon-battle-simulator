@@ -96,10 +96,15 @@ pub const PORTED_ABILITIES: [&str; 71] = [
 ];
 
 /// Items implemented at their inline sites.
-pub const PORTED_ITEMS: [&str; 12] = [
+pub const PORTED_ITEMS: [&str; 17] = [
     "CHESTO_BERRY",
+    "CHOICE_BAND",
+    "CHOICE_SCARF",
+    "CHOICE_SPECS",
     "CUSTAP_BERRY",
     "DAMP_ROCK",
+    "EJECT_PACK",
+    "FOCUS_SASH",
     "HEAT_ROCK",
     "ICY_ROCK",
     "LEPPA_BERRY",
