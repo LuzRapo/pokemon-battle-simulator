@@ -23,7 +23,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from battle_sim.database.loader import get_all_moves, get_all_species
+from battle_sim.database.loader import get_all_moves, get_all_species, get_all_z_moves
 from battle_sim.mechanics.abilities import ABILITY_BINDERS
 from battle_sim.mechanics.items import ITEM_BINDERS
 from battle_sim.models.type_matchups import TYPE_CHART
@@ -226,14 +226,20 @@ def export(directory: Path) -> dict[str, int]:
     directory.mkdir(parents=True, exist_ok=True)
     moves = {move_id: move_json(move) for move_id, move in sorted(get_all_moves().items())}
     species = {name: species_json(entry) for name, entry in sorted(get_all_species().items())}
+    # Z-moves are deliberately kept out of `get_all_moves()` (a Z-move is never an ordinary move
+    # slot), so they need their own export the same shape serves: `zmoves.z_move_for` needs the
+    # generic templates' placeholder power (to recognise them as generic) and the signature
+    # crystals' real power/type/category, and this is the one function that already knows how to
+    # write a `Move` out.
+    z_moves = {crystal_id: move_json(move) for crystal_id, move in sorted(get_all_z_moves().items())}
     (directory / "rules.json").write_text(
         json.dumps({"schema": SCHEMA_VERSION} | rules_json(), indent=1, sort_keys=True)
     )
-    for name, payload in (("moves", moves), ("species", species)):
+    for name, payload in (("moves", moves), ("species", species), ("zmoves", z_moves)):
         (directory / f"{name}.json").write_text(
             json.dumps({"schema": SCHEMA_VERSION, name: payload}, indent=1, sort_keys=True)
         )
-    return {"moves": len(moves), "species": len(species), "types": len(Type)}
+    return {"moves": len(moves), "species": len(species), "zmoves": len(z_moves), "types": len(Type)}
 
 
 def main() -> None:

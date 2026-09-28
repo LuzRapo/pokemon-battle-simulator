@@ -221,6 +221,16 @@ struct SpeciesFile {
     species: HashMap<String, Species>,
 }
 
+/// A Z-Crystal's id (already `Database::normalize_id`'d, same as every other lookup key this file
+/// hands out) -> the Z-move it unleashes. Deliberately separate from `moves.json` the same reason
+/// Python's `get_all_z_moves()` is separate from `get_all_moves()` — a Z-move is never an ordinary
+/// move slot. The 18 generic type Z-moves carry placeholder power (1) and a `category` that ignores
+/// whichever base move triggers them; `zmoves::z_move_for` supplies both from the base move.
+#[derive(Debug, Deserialize)]
+struct ZMovesFile {
+    zmoves: HashMap<String, Move>,
+}
+
 #[derive(Debug, Deserialize)]
 struct RulesFile {
     coded_moves: Vec<String>,
@@ -270,6 +280,8 @@ pub struct ItemGatedForme {
 pub struct Database {
     pub moves: HashMap<String, Move>,
     pub species: HashMap<String, Species>,
+    /// Crystal id (`Database::normalize_id`'d) -> the Z-move it unleashes. See `ZMovesFile`.
+    pub z_moves: HashMap<String, Move>,
     /// Moves whose power is computed from the board rather than read from the data — Revenge,
     /// Gyro Ball, Weather Ball and the rest. Exported by Python rather than listed here, because a
     /// second copy of this list is a second thing to keep in step.
@@ -295,11 +307,14 @@ impl Database {
             serde_json::from_str(&read("moves.json")?).map_err(|e| format!("moves.json: {e}"))?;
         let species: SpeciesFile =
             serde_json::from_str(&read("species.json")?).map_err(|e| format!("species.json: {e}"))?;
+        let z_moves: ZMovesFile =
+            serde_json::from_str(&read("zmoves.json")?).map_err(|e| format!("zmoves.json: {e}"))?;
         let rules: RulesFile =
             serde_json::from_str(&read("rules.json")?).map_err(|e| format!("rules.json: {e}"))?;
         Ok(Database {
             moves: moves.moves,
             species: species.species,
+            z_moves: z_moves.zmoves,
             coded_moves: rules.coded_moves.into_iter().collect(),
             live_abilities: rules.live_abilities.into_iter().collect(),
             live_items: rules.live_items.into_iter().collect(),

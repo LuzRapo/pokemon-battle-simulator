@@ -25,7 +25,13 @@ use crate::tape::Tape;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
-    Move { slot: usize },
+    Move {
+        slot: usize,
+        /// Unleash this slot's move through the held Z-Crystal, once per battle — `action.z_move`
+        /// in Python's own `Action`. Same slot, same PP, resolved through the crystal's upgrade
+        /// rather than as a separate action type.
+        z_move: bool,
+    },
     Switch { to: usize },
 }
 
@@ -107,7 +113,7 @@ fn order_actions(
         let mut in_bracket_jump = 0;
         let priority = match &actions[side] {
             Action::Switch { .. } => 0,
-            Action::Move { slot } => {
+            Action::Move { slot, .. } => {
                 // `the_move` borrows `db`, not the active Pokemon, so it stays valid across the
                 // several fresh `active_pokemon()` re-borrows below — `bracket_jump` needs `state`
                 // by mutable reference, for Custap Berry's own consumption, which an `actor`
@@ -499,7 +505,7 @@ pub fn step(
         state.sides[side].acted_this_turn = false;
         // What this side picked, so Sucker Punch can ask whether an attack is still coming.
         state.sides[side].chosen_move = match &actions[side] {
-            Action::Move { slot } => {
+            Action::Move { slot, .. } => {
                 state.sides[side].active_pokemon().moves.get(*slot).cloned()
             }
             Action::Switch { .. } => None,
@@ -572,7 +578,7 @@ pub fn step(
                     on_switch_in(state, side, &mut log);
                 }
             }
-            Action::Move { slot } => {
+            Action::Move { slot, z_move } => {
                 // Whether the *chosen* move melts its own user free, decided before anything is
                 // rolled: Flame Wheel, Sacred Fire and Scald thaw and go off anyway, with no 20%
                 // check taken. The Python reads the chosen move here too, so a Struggle
@@ -588,7 +594,7 @@ pub fn step(
                     actor.status == Status::Sleep && move_in_slot(actor, *slot, db)?.name == "Sleep Talk"
                 };
                 if can_act(state, side, defrosting, sleep_talking, tape, &mut log)? {
-                    resolve_move(state, side, *slot, sleep_talking, db, tape, &mut log)?
+                    resolve_move(state, side, *slot, *z_move, sleep_talking, db, tape, &mut log)?
                 } else {
                     // A skipped turn breaks the consecutive-Protect chain.
                     state.sides[side].active_mut().protect_streak = 0;
@@ -1028,10 +1034,12 @@ fn targets_defender(effect: &Effect, the_move: &Move) -> bool {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // reads against the Python's own `_execute_move`, one argument per thing it reads
 fn resolve_move(
     state: &mut State,
     side: usize,
     slot: usize,
+    z_move: bool,
     sleep_talking: bool,
     db: &Database,
     tape: &mut Tape,
@@ -1144,6 +1152,25 @@ fn resolve_move(
             log.push(Event::PpRestored { side: side as i32, pokemon: nickname, the_move: the_move.name.clone() });
         }
     }
+    // `action.z_move`: spent after the base move's own PP is paid — a Z-move costs the slot it
+    // upgrades, not extra. The slot keeps its own move for logging: every `MoveUsed` name is read
+    // as a move that fills a slot, and a Z-move name fills none. `unleashed_as` carries the Z-move's
+    // own name through to whichever `MoveUsed` below actually fires, so it reads as one move
+    // becoming its Z-move, not two.
+    let mut unleashed_as: Option<String> = None;
+    let the_move = if z_move && !state.sides[side].has_used_z_move {
+        let attacker_item = state.sides[side].active_pokemon().item.clone();
+        match crate::zmoves::z_move_for(&attacker_item, &the_move, db) {
+            Some(upgraded) => {
+                unleashed_as = Some(upgraded.name.clone());
+                state.sides[side].has_used_z_move = true;
+                Move { name: the_move.name.clone(), ..upgraded }
+            }
+            None => the_move,
+        }
+    } else {
+        the_move
+    };
     // Taunt: after PP is spent, before the move is announced. A status move turned aside here still
     // cost its user the point, which is the whole reason this sits after the PP-spend block above
     // rather than before it, unlike Disable's check.
@@ -1167,7 +1194,7 @@ fn resolve_move(
         side: side as i32,
         pokemon: state.sides[side].active_pokemon().nickname.clone(),
         the_move: the_move.name.clone(),
-        unleashed_as: None,
+        unleashed_as,
     });
     // Locked in on the first move used while holding one — never re-set once `Some`, and using
     // whatever slot was actually used (Struggle included), same as the Python's own `action.move`
@@ -3426,7 +3453,7 @@ mod tests {
 
     #[test]
     fn switches_resolve_before_moves() {
-        assert!(category_of(&Action::Switch { to: 1 }) < category_of(&Action::Move { slot: 0 }));
+        assert!(category_of(&Action::Switch { to: 1 }) < category_of(&Action::Move { slot: 0, z_move: false }));
     }
 
     #[test]

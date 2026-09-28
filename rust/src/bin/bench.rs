@@ -39,7 +39,7 @@ fn parse_action(named: &str, side: &Side) -> Option<Action> {
     match kind {
         "move" => {
             let (slot_name, _) = rest.split_once(':')?;
-            SLOT_NAMES.iter().position(|s| *s == slot_name).map(|slot| Action::Move { slot })
+            SLOT_NAMES.iter().position(|s| *s == slot_name).map(|slot| Action::Move { slot, z_move: false })
         }
         "switch" => side.team.iter().position(|p| p.nickname == rest).map(|to| Action::Switch { to }),
         _ => None,

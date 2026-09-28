@@ -1256,6 +1256,149 @@ def test_delta_stream_cuts_a_flying_types_weaknesses_to_neutral(tmp_path: Path) 
 
 
 @needs_rust
+def test_a_generic_z_crystal_upgrades_a_same_type_move_by_the_power_table(tmp_path: Path) -> None:
+    """Groundium Z on a Ground move: the Z-move's own name and type come from the crystal's
+    template, but its power is Earthquake's own 100 read through the fixed Gen 7 table (180), and
+    its accuracy is unconditional — no draw for it at all, which the tape agreeing on drawn count
+    without a fourth probability is what actually proves rather than merely the digest."""
+    team_a = [
+        PokemonSpec(
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.GROUNDIUM_Z,
+            nature=Nature.HARDY,
+            moves=["Earthquake"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
+        )
+    ]
+
+    def choose(state, side_index):
+        if side_index == 0:
+            return next(a for a in legal_actions(state, 0) if a.z_move)
+        return next(iter(legal_actions(state, 1)))
+
+    scenario, expected = record((team_a, team_b), choose, seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    used = next(e for e in expected[0]["events"] if e["type"] == "MoveUsed" and e["side"] == 0)
+    assert used["move"] == "Earthquake" and used["unleashed_as"] == "Tectonic Rage", expected[0]["events"]
+    # The crystal is spent as a *resource*, not as an item: never removed from the holder, same as
+    # a Mega Stone or Primal orb (`is_fused_to` refuses to let either be taken at all).
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "GROUNDIUM_Z", a0_digest
+
+
+@needs_rust
+def test_a_signature_z_crystal_ignores_the_power_table_entirely(tmp_path: Path) -> None:
+    """Aloraichium Z on Thunderbolt: Stoked Sparksurfer, at its own real 175 power (not derived from
+    Thunderbolt's 90 at all), carrying its own guaranteed paralysis — proving the whole effects list
+    comes from the crystal's template, not just a power number."""
+    team_a = [
+        PokemonSpec(
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.ALORAICHIUM_Z,
+            nature=Nature.HARDY,
+            moves=["Thunderbolt"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
+        )
+    ]
+
+    def choose(state, side_index):
+        if side_index == 0:
+            return next(a for a in legal_actions(state, 0) if a.z_move)
+        return next(iter(legal_actions(state, 1)))
+
+    paralyzed = 0
+    for seed in range(20):
+        scenario, expected = record((team_a, team_b), choose, seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"seed {seed}"
+        used = next(e for e in expected[0]["events"] if e["type"] == "MoveUsed" and e["side"] == 0)
+        assert used["move"] == "Thunderbolt" and used["unleashed_as"] == "Stoked Sparksurfer", expected[0]["events"]
+        if any(e["type"] == "StatusInflicted" and e.get("status") == "PARALYSIS" for e in expected[0]["events"]):
+            paralyzed += 1
+
+    assert paralyzed == 20, "Stoked Sparksurfer's own paralysis is supposed to be guaranteed"
+
+
+@needs_rust
+def test_a_z_move_only_unleashes_once_per_battle(tmp_path: Path) -> None:
+    """`legal_actions` itself stops offering the Z-move variant once `has_used_z_move` is set, so
+    the once-per-battle gate is exercised end to end: turn 1's own choice of "the Z-move if one is
+    offered" finds none on offer any more and falls back to the ordinary move, which both engines
+    have to agree resolves as plain Earthquake, `unleashed_as` and all."""
+    team_a = [
+        PokemonSpec(
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.GROUNDIUM_Z,
+            nature=Nature.HARDY,
+            moves=["Earthquake"],
+        )
+    ]
+    team_b = [
+        # Flying-type: naturally immune to Earthquake/Tectonic Rage, so it survives to a second
+        # turn regardless of how hard a 180-power hit lands — this test cares about the once-per-
+        # battle gate, not about staging a fair fight.
+        PokemonSpec(
+            species="Zapdos",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
+        )
+    ]
+
+    def choose(state, side_index):
+        if side_index != 0:
+            return next(iter(legal_actions(state, 1)))
+        options = legal_actions(state, 0)
+        return next((a for a in options if a.z_move), options[0])
+
+    scenario, expected = record((team_a, team_b), choose, seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    first = next(e for e in expected[0]["events"] if e["type"] == "MoveUsed" and e["side"] == 0)
+    second = next(e for e in expected[1]["events"] if e["type"] == "MoveUsed" and e["side"] == 0)
+    assert first["unleashed_as"] == "Tectonic Rage", expected[0]["events"]
+    assert second["move"] == "Earthquake" and second["unleashed_as"] is None, expected[1]["events"]
+    a0_digest = expected[1]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "GROUNDIUM_Z", a0_digest
+
+
+@needs_rust
 def test_trick_room_inverts_the_speed_sort(tmp_path: Path) -> None:
     """The four pseudo-weather rooms. Gravity, Magic Room and Wonder Room have no gameplay effect
     anywhere in this codebase beyond standing up and ticking down — a deliberate simplification,

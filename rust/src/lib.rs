@@ -22,3 +22,4 @@ pub mod power;
 pub mod stats;
 pub mod tape;
 pub mod turn;
+pub mod zmoves;

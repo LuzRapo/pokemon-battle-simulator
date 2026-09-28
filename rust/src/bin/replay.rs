@@ -48,10 +48,13 @@ fn draws(raw: &[serde_json::Value]) -> Vec<Draw> {
 fn parse_action(named: &str, side: &Side) -> Result<Action, String> {
     let (kind, rest) = named.split_once(':').ok_or_else(|| format!("malformed action {named:?}"))?;
     match kind {
-        "move" => {
-            // "move:THIRD:Power Whip" — the slot decides, and the name is carried alongside so a
-            // scenario stays readable and so a mismatch between the two is caught rather than
-            // trusted. Two slots can hold the same move once a short set has been padded.
+        // "move:THIRD:Power Whip" / "zmove:THIRD:Power Whip" — the slot decides, and the name is
+        // carried alongside so a scenario stays readable and so a mismatch between the two is
+        // caught rather than trusted. Two slots can hold the same move once a short set has been
+        // padded. A Z-move is a flag on this same action in Python (`action.z_move`), not a
+        // different action type — the base moves in `zmoves::SIGNATURE_BASES` are ordinary moves,
+        // playable on that basis, that also happen to be unleashable through a held crystal.
+        "move" | "zmove" => {
             let (slot_name, move_name) = rest
                 .split_once(':')
                 .ok_or_else(|| format!("action {named:?} does not name a slot"))?;
@@ -61,7 +64,7 @@ fn parse_action(named: &str, side: &Side) -> Result<Action, String> {
                 .ok_or_else(|| format!("no slot called {slot_name:?}"))?;
             let actor = side.active_pokemon();
             match actor.moves.get(slot) {
-                Some(found) if found == move_name => Ok(Action::Move { slot }),
+                Some(found) if found == move_name => Ok(Action::Move { slot, z_move: kind == "zmove" }),
                 Some(found) => Err(format!("slot {slot_name} holds {found:?}, not {move_name:?}")),
                 None => Err(format!("{} has no slot {slot_name}", actor.nickname)),
             }
@@ -72,10 +75,6 @@ fn parse_action(named: &str, side: &Side) -> Result<Action, String> {
             .position(|p| p.nickname == rest)
             .map(|to| Action::Switch { to })
             .ok_or_else(|| format!("nobody on this side is called {rest:?}")),
-        // "zmove:..." lands here. Z-moves are a different action rather than a different move,
-        // which is what makes the base moves in `zmoves._SIGNATURE_BASES` — Psychic, Stone Edge,
-        // Giga Impact — ordinary when used normally, and playable on that basis.
-        "zmove" => Err(format!("{named:?} is a Z-move, which is not ported")),
         other => Err(format!("unsupported action kind {other:?}")),
     }
 }

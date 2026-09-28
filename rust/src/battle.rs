@@ -504,6 +504,9 @@ pub struct Side {
     /// Ultra Burst, Necrozma's own once-per-battle. Kept apart from `has_mega_evolved` because a
     /// side may do both in the same battle — they are different Pokemon, or different turns.
     pub has_ultra_bursted: bool,
+    /// Z-move, once per battle per side — the crystal is spent after one use, but never removed
+    /// from the holder (Z-Crystals are permanently fused, same as a Mega Stone).
+    pub has_used_z_move: bool,
 }
 
 impl Side {
@@ -527,6 +530,7 @@ impl Side {
             needs_switch: false,
             has_mega_evolved: false,
             has_ultra_bursted: false,
+            has_used_z_move: false,
         }
     }
 

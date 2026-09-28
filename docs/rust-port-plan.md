@@ -789,13 +789,26 @@ a different forme-swap shape (HP-triggered, no item — belongs with section 4's
 abilities, Stance Change/Zen Mode/Schooling/Shields Down, not this one), and Multitype/RKS
 System/Arceus-plates/memories (needed for Arceus, extremely common in the same corpus) are next.
 
-**Z-Moves — not started.** A Z-move is a flag on the ordinary move action in Python
-(`z_move: bool` on the existing `USE_MOVE` action, same slot, same PP), not a new action type, so
-`step()` doesn't need `legal_actions` ported to execute one — only `Action::Move` needs the flag and
-`replay.rs`'s `parse_action` needs to stop refusing `"zmove:"`. `battle_sim/zmoves.py` (131 lines) is
-a generic type-crystal power-tier table plus 15 hand-mapped signature crystals; status-move Z-effects
-are not modelled in Python either (preserve that gap). `has_used_z_move`, once per battle per side,
-never consumes the crystal itself (permanently fused, same as a Mega Stone).
+**Z-Moves — done.** A Z-move is a flag on the ordinary move action in Python (`z_move: bool` on the
+existing `USE_MOVE` action, same slot, same PP), not a new action type, so `step()` needed no
+`legal_actions` port to execute one — `Action::Move` gained the flag, and `replay.rs`'s
+`parse_action` now builds it for `"zmove:"` the same way it already did for `"move:"`. Z-move data
+itself needed a new export: `get_all_z_moves()` is deliberately kept out of `get_all_moves()` (a
+Z-move is never an ordinary move slot), so `rust/src/zmoves.rs` reads a new `rust/data/zmoves.json`
+(same `Move` shape as `moves.json`, via the same `move_json()`) rather than needing any move data of
+its own. `zmoves::z_move_for` mirrors `battle_sim/zmoves.py` exactly: a generic crystal (recognised
+by its own placeholder power, not by type — signature crystals share types with generic ones) takes
+its power from the fixed 9-band table keyed on the *base* move's power, its category/contact from the
+base move, and everything else from the crystal's own template; a signature crystal (15 hand-mapped
+pairings, not derivable from data) is just its own template with accuracy forced to never miss —
+including any secondary effect it carries (Aloraichium Z's Stoked Sparksurfer always paralyzes).
+Status-move Z-effects are not modelled in Python either (preserved, not fixed). `has_used_z_move`,
+once per battle per side, never consumes the crystal itself (permanently fused, same as a Mega
+Stone) — and `legal_actions` itself stops offering the Z-move variant once used, so the gate is
+exercised end to end rather than merely defended against in `step()`. Three dedicated tests
+(generic, signature, once-per-battle), all vacuity-checked (DIVERGED, not a quiet pass, with the
+substitution disabled); a targeted 1300-battle sweep across every generic type used in the corpus
+plus all 15 signature crystals plus a mismatched-type control (0 diverged); broad sweeps unaffected.
 
 **Multitype/RKS System/plates — not started.** Simpler than Mega Evolution: not a forme swap at
 all, just a live `Item -> Type` table the ability reads continuously (`_bind_item_type_shifter` in
@@ -832,10 +845,10 @@ Section 5 (147 items left) is one, mostly following section 4's abilities in to 
 plumbing (Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega
 stones).
 Section 7 (Z-moves/megas/formes) is in scope (see its own write-up): Mega Evolution/Primal
-Reversion/Ultra Burst and the Shadow Tag/Arena Trap/Magnet Pull no-ops are done; Z-Moves and
-Multitype/RKS System/plates are next, each sized closer to a single batch than a full session since
-the forme-swap primitive and the data export both already exist. Integration (section 8) is last,
-one session plus whatever the AI re-validation turns up.
+Reversion/Ultra Burst, Z-Moves, and the Shadow Tag/Arena Trap/Magnet Pull no-ops are done;
+Multitype/RKS System/plates is next, sized closer to a single batch than a full session since it
+needs no new hook, just an existing on-demand type-override function and an existing item table.
+Integration (section 8) is last, one session plus whatever the AI re-validation turns up.
 
 The tail is not uniform: absorption abilities and formes are each a small architecture change, and
 the butler's revival mechanic has no reference outside this codebase.
