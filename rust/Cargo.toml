@@ -3,9 +3,26 @@ name = "pokemon_engine"
 version = "0.1.0"
 edition = "2021"
 
+# `cdylib` is only ever loaded by Python, via the `python` feature below; `rlib` is what the
+# `replay`/`bench`/`statcheck` binaries and the test suite link against, and is built regardless.
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rand = "0.8"
+# `abi3-py312` builds one extension that loads on Python 3.12+ (the project's floor), rather than
+# one per interpreter minor version. Optional, and gated behind the `python` feature below: nothing
+# else in this crate touches `pyo3`, so `python.rs` is the only file whose compilation this feature
+# controls -- the three binaries build exactly the same with or without it. On by default because a
+# `python3` interpreter is always present in a project that is itself a Python package; turn it off
+# with `--no-default-features` on a machine where that is not true.
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py312"], optional = true }
+
+[features]
+default = ["python"]
+python = ["dep:pyo3"]
 
 [profile.release]
 opt-level = 3

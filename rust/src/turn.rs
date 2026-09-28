@@ -15,7 +15,7 @@
 //! volatiles, no residuals. Anything outside that raises `Unsupported` rather than guessing, so a
 //! scenario that wanders out of the ported subset fails loudly instead of diverging quietly.
 
-use crate::battle::{FormSnapshot, Pokemon, Side, State, Status};
+use crate::battle::{FormSnapshot, Pokemon, Side, State, Status, SLOT_NAMES};
 use crate::abilities::{apply_damage_calc, Calc};
 use crate::damage::{calculate_hit, Payload, Rolls};
 use crate::hooks::{on_after_hit, on_switch_in, Hit};
@@ -386,6 +386,43 @@ pub fn ported_items() -> &'static std::collections::HashSet<&'static str> {
         all.extend(crate::items::PORTED_TYPE_ONLY_PLATES);
         all
     })
+}
+
+/// "move:SLOT:Name" / "zmove:SLOT:Name" / "switch:Nickname", resolved against who is actually out —
+/// the one parser `bin/replay.rs` and `python.rs` both drive a battle from, so a scenario or a
+/// self-play action string means exactly one thing everywhere it is read.
+pub fn parse_action(named: &str, side: &Side) -> Result<Action, String> {
+    let (kind, rest) = named.split_once(':').ok_or_else(|| format!("malformed action {named:?}"))?;
+    match kind {
+        // "move:THIRD:Power Whip" / "zmove:THIRD:Power Whip" — the slot decides, and the name is
+        // carried alongside so a scenario stays readable and so a mismatch between the two is
+        // caught rather than trusted. Two slots can hold the same move once a short set has been
+        // padded. A Z-move is a flag on this same action in Python (`action.z_move`), not a
+        // different action type — the base moves in `zmoves::SIGNATURE_BASES` are ordinary moves,
+        // playable on that basis, that also happen to be unleashable through a held crystal.
+        "move" | "zmove" => {
+            let (slot_name, move_name) = rest
+                .split_once(':')
+                .ok_or_else(|| format!("action {named:?} does not name a slot"))?;
+            let slot = SLOT_NAMES
+                .iter()
+                .position(|s| *s == slot_name)
+                .ok_or_else(|| format!("no slot called {slot_name:?}"))?;
+            let actor = side.active_pokemon();
+            match actor.moves.get(slot) {
+                Some(found) if found == move_name => Ok(Action::Move { slot, z_move: kind == "zmove" }),
+                Some(found) => Err(format!("slot {slot_name} holds {found:?}, not {move_name:?}")),
+                None => Err(format!("{} has no slot {slot_name}", actor.nickname)),
+            }
+        }
+        "switch" => side
+            .team
+            .iter()
+            .position(|p| p.nickname == rest)
+            .map(|to| Action::Switch { to })
+            .ok_or_else(|| format!("nobody on this side is called {rest:?}")),
+        other => Err(format!("unsupported action kind {other:?}")),
+    }
 }
 
 /// Why this Pokemon cannot be played, if it cannot.

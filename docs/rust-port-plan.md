@@ -832,13 +832,56 @@ cluster has any `step()`-level effect to port.
 
 ### 8. Integration — after parity
 
-1. Decide the interface. PyO3 in-process is the obvious one (the search calls `step` millions of
-   times; a subprocess per call is hopeless). `rust/src/lib.rs` is already a library crate.
-2. The search needs `legal_actions` too, which currently lives only in Python
-   (`engine/choices.py`) — it reads locks, traps, charges and `needs_switch`.
-3. Swap the search over behind a flag, then re-run the AI validation (mirror-match win rate) to
-   confirm the engine change did not move play strength.
-4. Keep the differential running in CI against the Python for as long as both exist.
+**Minimal PyO3 bridge — done.** `rust/src/python.rs` (behind the `python` Cargo feature, on by
+default — see its own comment in `Cargo.toml` for why) exposes exactly the surface `bin/replay.rs`
+already drives: `Database::load`, build a `State` from a scenario's teams, `step()` one turn against
+a pair of canonical action strings, read back the log and a digest. `rust/src/turn.rs::parse_action`
+and the new `rust/src/digest.rs` were lifted out of `bin/replay.rs` first so the binary and the
+bridge share one implementation of both rather than two copies drifting apart — `bin/replay.rs`
+itself is otherwise unchanged. `Refusal::Unported`/`Refusal::Diverged` cross the boundary as two
+distinct Python exception types (`pokemon_engine_rs.Unported`/`.Diverged`), not a bare
+`RuntimeError`, preserving the exit-2-vs-3 distinction the rest of this project has never let blur.
+Verified by extending the differential harness exactly as planned: `tests/test_python_bridge.py`
+drives the bridge with a `differential.record()` scenario's own tape/actions and calls the same
+`compare()` every other test in this project trusts — 10/10 seeds agree with the subprocess `replay`
+path bit for bit, including `drawn` (the per-turn draw count). Two more tests confirm the exception
+mapping itself is load-bearing (vacuity-checked by collapsing both back to `PyRuntimeError` and
+confirming both tests go red).
+
+**A load-bearing gap this phase's own design turned up, and closed: `Tape` could not generate its
+own randomness.** Every existing binary (`replay`, `bench`, `statcheck`) and every differential test
+replays a tape *recorded by a prior Python run* — there has never been a code path in this engine
+that draws fresh randomness, because nothing needed one until self-play did. Self-play has no Python
+run alongside to have recorded a tape from, so this is not a bridge detail but a real, previously
+invisible hole in "ready to self-train." Closed additively: `Tape::live(seed)` (`rust/src/tape.rs`)
+adds a `StdRng` behind the exact same `probability()`/`integer(low, high)` pair every call site in
+the engine already uses — no call site anywhere else changed. The one thing that had to be gotten
+right: `integer`'s bounds are dead weight in replay mode (the recorded value returns regardless of
+what a caller claims), so nothing enforced that every call site's `low`/`high` actually describes a
+half-open `[low, high)` range the way `random.randrange` does — confirmed call site by call site
+against what each one's real-games range should be (`tape.integer(85, 101)` for the 85–100 damage
+roll, `tape.integer(4, 6)` for a 4–5-turn trap, `tape.integer(2, 6)` for 2–5-turn confusion, and so
+on) before trusting live mode to generate correct values rather than merely in-range ones. Four
+dedicated tests in `tape.rs` (unit range, bounds respected, a live tape never touches the replay
+path, two same-seeded live tapes agree) plus `test_live_mode_plays_a_whole_battle_with_no_python_rng`
+in the bridge test, which runs a full battle on `Tape::live` alone — zero `Scenario`, zero
+`record()`, zero recorded draws anywhere in that test — until a lead faints or 50 turns pass,
+confirming `drawn() > 0` so the test cannot silently pass without exercising the RNG at all.
+
+**Still missing before an unattended self-play loop can actually run — flagged, not built, and not
+part of what "minimal bridge" ever meant:** `legal_actions` (`battle_sim/engine/choices.py`) reads
+Python's own `BattleState`/`SideState` dataclasses directly — locks, traps, charges, `needs_switch` —
+and has no way to ask a Rust `State` the same question. A Rust-driven battle therefore still needs
+something on the Python side to rebuild enough of a `BattleState` from this bridge's own
+`Battle.digest()` after every turn (fainted, HP, PP, volatiles, stat stages, items — everything the
+digest already reports) so `legal_actions` keeps working without Python re-simulating the turn
+itself. That is genuinely the next concrete step, not a Rust-port gap — matches the same
+carve-out this plan has already made for a Rust-native `legal_actions` itself, which stays exactly as
+out of scope as it always was (Python decides; Rust only executes, fast).
+
+Once that glue exists: swap the search over behind a flag, re-run the AI validation (mirror-match
+win rate) to confirm the engine change did not move play strength, and keep the differential running
+against the Python for as long as both exist.
 
 ## Known gap: cross-side switch-in ability ordering
 
@@ -882,10 +925,12 @@ stones).
 Section 7 (Z-moves/megas/formes) is done: Mega Evolution/Primal Reversion/Ultra Burst, Z-Moves,
 Multitype/RKS System/plates, and the Shadow Tag/Arena Trap/Magnet Pull no-ops are all in the tree
 and verified — see each one's own write-up above, and the cross-side switch-in-ordering gap one of
-them surfaced (a pre-existing issue, not fixed as part of any of these batches). Integration
-(section 8) is what is left, one session plus whatever the AI re-validation turns up — plus, now,
-the ordering gap above if it turns out to matter once `legal_actions` and real AI play exercise
-switch-ins far more than this port's own sweeps have.
+them surfaced (a pre-existing issue, not fixed as part of any of these batches). Section 8's minimal
+PyO3 bridge is done too, including a live-RNG mode `Tape` never had before now — see its own
+write-up above. What is left of section 8 is the Python-side `BattleState`-from-digest glue
+`legal_actions` needs to run against a Rust-driven battle, then the AI re-validation — plus, still,
+the ordering gap above if it turns out to matter once real AI play exercises switch-ins far more
+than this port's own sweeps have.
 
 The tail is not uniform: absorption abilities and formes are each a small architecture change, and
 the butler's revival mechanic has no reference outside this codebase.

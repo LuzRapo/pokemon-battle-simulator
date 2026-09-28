@@ -11,10 +11,11 @@
 //! honest thing it can do while most of the game is unported, and the harness may skip it. A 3 is a
 //! real disagreement and must fail the run.
 
-use pokemon_engine::battle::{Pokemon, Side, Spec, State, SLOT_NAMES, STAGE_NAMES};
+use pokemon_engine::battle::{Pokemon, Side, Spec, State};
 use pokemon_engine::data::Database;
+use pokemon_engine::digest;
 use pokemon_engine::tape::{Draw, Tape};
-use pokemon_engine::turn::{step, unsupported_pokemon, Action};
+use pokemon_engine::turn::{parse_action, step, unsupported_pokemon};
 use serde::Deserialize;
 use serde_json::json;
 use std::path::Path;
@@ -42,80 +43,6 @@ fn draws(raw: &[serde_json::Value]) -> Vec<Draw> {
             }
         })
         .collect()
-}
-
-/// "move:Tackle" / "switch:Onix", resolved against who is actually out.
-fn parse_action(named: &str, side: &Side) -> Result<Action, String> {
-    let (kind, rest) = named.split_once(':').ok_or_else(|| format!("malformed action {named:?}"))?;
-    match kind {
-        // "move:THIRD:Power Whip" / "zmove:THIRD:Power Whip" — the slot decides, and the name is
-        // carried alongside so a scenario stays readable and so a mismatch between the two is
-        // caught rather than trusted. Two slots can hold the same move once a short set has been
-        // padded. A Z-move is a flag on this same action in Python (`action.z_move`), not a
-        // different action type — the base moves in `zmoves::SIGNATURE_BASES` are ordinary moves,
-        // playable on that basis, that also happen to be unleashable through a held crystal.
-        "move" | "zmove" => {
-            let (slot_name, move_name) = rest
-                .split_once(':')
-                .ok_or_else(|| format!("action {named:?} does not name a slot"))?;
-            let slot = SLOT_NAMES
-                .iter()
-                .position(|s| *s == slot_name)
-                .ok_or_else(|| format!("no slot called {slot_name:?}"))?;
-            let actor = side.active_pokemon();
-            match actor.moves.get(slot) {
-                Some(found) if found == move_name => Ok(Action::Move { slot, z_move: kind == "zmove" }),
-                Some(found) => Err(format!("slot {slot_name} holds {found:?}, not {move_name:?}")),
-                None => Err(format!("{} has no slot {slot_name}", actor.nickname)),
-            }
-        }
-        "switch" => side
-            .team
-            .iter()
-            .position(|p| p.nickname == rest)
-            .map(|to| Action::Switch { to })
-            .ok_or_else(|| format!("nobody on this side is called {rest:?}")),
-        other => Err(format!("unsupported action kind {other:?}")),
-    }
-}
-
-fn pokemon_digest(p: &Pokemon) -> serde_json::Value {
-    json!({
-        "nickname": p.nickname,
-        "species": p.species_name,
-        "hp": p.hp,
-        "max_hp": p.totals.hp,
-        "status": p.status.name(),
-        "status_turns": p.status_turns,
-        "fainted": p.fainted(),
-        "item": p.item,
-        "item_consumed": p.item_consumed,
-        "ability": p.ability,
-        "types": p.types.iter().flatten().collect::<Vec<_>>(),
-        "stages": STAGE_NAMES.iter().map(|s| (s.to_string(), json!(p.stage(s))))
-            .collect::<serde_json::Map<String, serde_json::Value>>(),
-        "volatiles": p.volatiles,
-        "pp": p.pp,
-        "lives_used": p.lives_used,
-        "made_last_stand": p.made_last_stand,
-    })
-}
-
-fn state_digest(state: &State) -> serde_json::Value {
-    json!({
-        "turn": state.turn,
-        "outcome": state.outcome.map(|o| o.name()),
-        "weather": state.field.weather,
-        "weather_turns_left": state.field.weather_turns_left,
-        "terrain": state.field.terrain,
-        "terrain_turns_left": state.field.terrain_turns_left,
-        "sides": state.sides.iter().map(|side| json!({
-            "active": serde_json::Value::Null,
-            "team": side.team.iter().map(pokemon_digest).collect::<Vec<_>>(),
-            "hazards": side.hazards,
-            "screens": side.screens,
-        })).collect::<Vec<_>>(),
-    })
 }
 
 /// A set as a sorted list, so `--ported` reads the same way twice running.
@@ -222,7 +149,7 @@ fn main() {
         turns.push(json!({
             "actions": pair,
             "events": log.entries,
-            "state": state_digest(&state),
+            "state": digest::state(&state),
             // How far into the tape this engine has read. The Python writes the same number, so a
             // turn where the two took a different count of draws is caught at that turn rather
             // than whenever the mismatch happens to change the kind of number being asked for.
