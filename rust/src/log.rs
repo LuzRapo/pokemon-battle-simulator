@@ -161,6 +161,12 @@ pub enum Event {
         pokemon: String,
         forme: String,
     },
+    /// Multitype / RKS System: the holder's type tracks its held Plate/Memory (Normal with none).
+    TypeChanged {
+        side: i32,
+        pokemon: String,
+        new_type: String,
+    },
     ScreenSet {
         side: i32,
         screen: String,

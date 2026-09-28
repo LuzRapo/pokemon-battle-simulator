@@ -369,6 +369,7 @@ pub fn ported_abilities() -> &'static std::collections::HashSet<&'static str> {
         all.extend(crate::inline::PORTED_ABILITIES);
         all.extend(crate::hooks::PORTED_RESIDUAL_ABILITIES);
         all.extend(crate::power::PORTED_ATE_ABILITIES);
+        all.extend(crate::hooks::PORTED_TYPE_SHIFTER_ABILITIES);
         all.extend(PORTED_NO_STEP_EFFECT_ABILITIES);
         all
     })
@@ -381,6 +382,8 @@ pub fn ported_items() -> &'static std::collections::HashSet<&'static str> {
         all.extend(crate::hooks::PORTED_ITEMS);
         all.extend(crate::inline::PORTED_ITEMS);
         all.extend(crate::hooks::PORTED_RESIDUAL_ITEMS);
+        all.extend(crate::hooks::PORTED_RKS_MEMORIES);
+        all.extend(crate::items::PORTED_TYPE_ONLY_PLATES);
         all
     })
 }
@@ -815,6 +818,7 @@ fn residuals(state: &mut State, db: &Database, tape: &mut Tape, log: &mut Log) -
     for side in 0..2 {
         if !state.sides[side].active_pokemon().fainted() {
             crate::hooks::evaluate_paradox(state, side, log);
+            crate::hooks::sync_type_from_item(state, side, log);
         }
     }
     for side in 0..2 {

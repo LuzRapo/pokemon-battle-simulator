@@ -290,6 +290,76 @@ pub fn evaluate_paradox(state: &mut State, side: usize, log: &mut Log) {
     }
 }
 
+/// `_MULTITYPE_PLATES`.
+const MULTITYPE_PLATES: [(&str, &str); 17] = [
+    ("FIST_PLATE", "FIGHTING"),
+    ("SKY_PLATE", "FLYING"),
+    ("TOXIC_PLATE", "POISON"),
+    ("EARTH_PLATE", "GROUND"),
+    ("STONE_PLATE", "ROCK"),
+    ("INSECT_PLATE", "BUG"),
+    ("SPOOKY_PLATE", "GHOST"),
+    ("IRON_PLATE", "STEEL"),
+    ("FLAME_PLATE", "FIRE"),
+    ("SPLASH_PLATE", "WATER"),
+    ("MEADOW_PLATE", "GRASS"),
+    ("ZAP_PLATE", "ELECTRIC"),
+    ("MIND_PLATE", "PSYCHIC"),
+    ("ICICLE_PLATE", "ICE"),
+    ("DRACO_PLATE", "DRAGON"),
+    ("DREAD_PLATE", "DARK"),
+    ("PIXIE_PLATE", "FAIRY"),
+];
+
+/// `_RKS_SYSTEM_MEMORIES`.
+const RKS_SYSTEM_MEMORIES: [(&str, &str); 17] = [
+    ("FIGHTING_MEMORY", "FIGHTING"),
+    ("FLYING_MEMORY", "FLYING"),
+    ("POISON_MEMORY", "POISON"),
+    ("GROUND_MEMORY", "GROUND"),
+    ("ROCK_MEMORY", "ROCK"),
+    ("BUG_MEMORY", "BUG"),
+    ("GHOST_MEMORY", "GHOST"),
+    ("STEEL_MEMORY", "STEEL"),
+    ("FIRE_MEMORY", "FIRE"),
+    ("WATER_MEMORY", "WATER"),
+    ("GRASS_MEMORY", "GRASS"),
+    ("ELECTRIC_MEMORY", "ELECTRIC"),
+    ("PSYCHIC_MEMORY", "PSYCHIC"),
+    ("ICE_MEMORY", "ICE"),
+    ("DRAGON_MEMORY", "DRAGON"),
+    ("DARK_MEMORY", "DARK"),
+    ("FAIRY_MEMORY", "FAIRY"),
+];
+
+/// `_bind_item_type_shifter`: Multitype / RKS System, the holder's type tracking its held
+/// Plate/Memory live (Normal with none). Synced on switch-in and re-checked every residual tick
+/// (called from the exact same two sites `evaluate_paradox` is, `ON_RESIDUAL`'s own emit reaching
+/// every handler on the bus regardless of whose turn it is) so a Knock Off or Trick mid-battle —
+/// rare, since `is_fused_to` refuses to take the plate itself away, but not impossible for the item
+/// to arrive some other way — reverts or swaps the type rather than leaving it stale.
+pub const PORTED_TYPE_SHIFTER_ABILITIES: [&str; 2] = ["MULTITYPE", "RKS_SYSTEM"];
+
+pub fn sync_type_from_item(state: &mut State, side: usize, log: &mut Log) {
+    let pokemon = state.sides[side].active_pokemon();
+    let table: &[(&str, &str)] = match pokemon.ability.as_str() {
+        "MULTITYPE" => &MULTITYPE_PLATES,
+        "RKS_SYSTEM" => &RKS_SYSTEM_MEMORIES,
+        _ => return,
+    };
+    if pokemon.fainted() {
+        return;
+    }
+    let wanted = table.iter().find(|(item, _)| *item == pokemon.item).map_or("NORMAL", |(_, t)| t);
+    if pokemon.types.first() == Some(&Some(wanted.to_string())) && pokemon.types.get(1) == Some(&None) {
+        return;
+    }
+    let pokemon = state.sides[side].active_mut();
+    pokemon.types = vec![Some(wanted.to_string()), None];
+    let nickname = pokemon.nickname.clone();
+    log.push(Event::TypeChanged { side: side as i32, pokemon: nickname, new_type: wanted.to_string() });
+}
+
 /// `ON_TURN_START`: emitted once per turn, before actions are ordered — before `order_actions`
 /// reads `effective_speed`, which is the entire reason this exists rather than leaving Paradox
 /// abilities to `ON_SWITCH_IN` and `ON_RESIDUAL` alone. Visited in `registered_at` order, the same
@@ -344,6 +414,29 @@ pub const PORTED_ITEMS: [&str; 13] = [
     "STARF_BERRY",
     "WEAKNESS_POLICY",
     "WIKI_BERRY",
+];
+
+/// The seventeen RKS System memories. Unlike a plate, a memory has no damage-calc effect of its own
+/// in the Python (`mechanics/items.py` binds none of them) — its only job is `sync_type_from_item`
+/// reading it, so it lives here rather than in `items.rs`'s damage-calc table.
+pub const PORTED_RKS_MEMORIES: [&str; 17] = [
+    "BUG_MEMORY",
+    "DARK_MEMORY",
+    "DRAGON_MEMORY",
+    "ELECTRIC_MEMORY",
+    "FAIRY_MEMORY",
+    "FIGHTING_MEMORY",
+    "FIRE_MEMORY",
+    "FLYING_MEMORY",
+    "GHOST_MEMORY",
+    "GRASS_MEMORY",
+    "GROUND_MEMORY",
+    "ICE_MEMORY",
+    "POISON_MEMORY",
+    "PSYCHIC_MEMORY",
+    "ROCK_MEMORY",
+    "STEEL_MEMORY",
+    "WATER_MEMORY",
 ];
 
 /// `_SPORE_STATUSES`, and the draw that picks from it.
@@ -746,6 +839,8 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
     // `_bind_paradox` registers its own `ON_SWITCH_IN` handler separately from the match above,
     // rather than as one more arm in it.
     evaluate_paradox(state, side, log);
+    // `_bind_item_type_shifter` does too, at the same priority.
+    sync_type_from_item(state, side, log);
     // `_bind_terrain_seed`'s own `ON_SWITCH_IN` binding, at `EventPriority.ITEM` (1000) — after
     // every ability above it including Paradox's own 2000 — so a Pokemon that both sets and eats
     // its own seed (Electric Surge holding Electric Seed) still sees the terrain it just set, on

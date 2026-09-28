@@ -20,13 +20,13 @@ to this doc; per invariant 2 the batch now belongs on the "done" side.
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 178 | 220 (81%) |
-| items | 71 | 193 |
+| abilities | 180 | 220 (82%) |
+| items | 105 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
 The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
 a release build for this update:
-`{"abilities":{"live":220,"ported":178},"items":{"live":193,"ported":71},"moves":{"playable":843,
+`{"abilities":{"live":220,"ported":180},"items":{"live":193,"ported":105},"moves":{"playable":843,
 "refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
 row above.
 
@@ -810,11 +810,21 @@ exercised end to end rather than merely defended against in `step()`. Three dedi
 substitution disabled); a targeted 1300-battle sweep across every generic type used in the corpus
 plus all 15 signature crystals plus a mismatched-type control (0 diverged); broad sweeps unaffected.
 
-**Multitype/RKS System/plates — not started.** Simpler than Mega Evolution: not a forme swap at
-all, just a live `Item -> Type` table the ability reads continuously (`_bind_item_type_shifter` in
-Python). Fits into whatever on-demand type-override function Roost's temporary type removal already
-uses in Rust, plus adding the plates' 1.2x same-type boost to `items.rs`'s existing type-booster
-table (`power.rs::plate_type` already has the Judgment-type-selection half).
+**Multitype/RKS System/plates — done.** Simpler than Mega Evolution turned out to be exactly right:
+not a forme swap at all, just `hooks::sync_type_from_item` permanently mutating `pokemon.types` in
+place — mirroring Python's own `_bind_item_type_shifter` closely enough that it needed the *same*
+two call sites Paradox already has (`ON_SWITCH_IN` and the Paradox-priority slot of the residual
+pass), not a query-time override the way Roost's is. Judgment's own type-selection (`power::
+plate_type`) already existed from an earlier batch; only the ordinary 1.2x same-type boost was new,
+and a sweep caught a real gap while adding it: only six of the seventeen plates
+(Iron/Earth/Spooky/Pixie/Splash/Stone) have a `_bind_type_boost` binder registered in
+`mechanics/items.py` today — the other eleven are live items with a real type-tracking effect but no
+damage boost *in Python*, so Rust ported exactly that split rather than "correctly" boosting all
+seventeen (`items::PORTED_TYPE_ONLY_PLATES` names the eleven, `hooks::PORTED_RKS_MEMORIES` the
+seventeen Memories, which have no boost binder for any of them). Three dedicated tests, all
+vacuity-checked separately (the type-sync and the damage boost are independent code paths and each
+needed its own check); a targeted 1300-battle sweep across every plate and memory, Arceus and
+Silvally alike, including the no-item control (0 diverged).
 
 **Trapping cluster (Arena Trap/Shadow Tag/Magnet Pull) — done, see above; Ghost/Shed-Shell escape
 and the rest of `legal_actions`** — genuinely deferred to section 8, since nothing else in this
@@ -830,6 +840,31 @@ cluster has any `step()`-level effect to port.
    confirm the engine change did not move play strength.
 4. Keep the differential running in CI against the Python for as long as both exist.
 
+## Known gap: cross-side switch-in ability ordering
+
+Found by a broad sweep during the Multitype/RKS System/plates batch (seed 870 of a 8000-battle
+status+abilities+switches run) — not caused by that batch, which is otherwise clean, but newly
+reachable once it landed (the scenario needed a Pokemon holding an RKS System Memory *not* on an
+RKS System Pokemon, previously refused outright as an unported item).
+
+`turn::step`'s `_send_out_leads` (`turn.rs:524-536`) sorts the two leads by descending
+`effective_speed` once, then runs each one's entire `on_switch_in` before starting the other's — the
+comment there ("the slower weather-setter's weather is the one that stands") is itself the
+documented intent. Python's own event bus does not work this way for a switch-in ability: `ON_
+SWITCH_IN` handlers from *both* leads sit on the same bus, sorted by `(priority, registered_at)`
+globally, not "everything from the faster Pokemon, then everything from the slower one." The sweep's
+own case: a slow Golem's Protosynthesis (Booster Energy, no speed dependency) and a fast Tauros's
+Electric Surge both fire on turn 0 — Python logs the Golem's `ParadoxActivated` before the Tauros's
+`TerrainSetByAbility` (registration order — side 0 registers before side 1), Rust logs them in speed
+order instead (Tauros first, since it's faster). Both engines agree on *what* happens, only the
+*order* of these two specific log lines differs, so nothing about the ultimate board state actually
+diverges here — but `compare()` is event-for-event, correctly refusing to treat that as a pass.
+
+Not fixed here: a real fix needs `on_switch_in`'s per-side dispatch restructured into the same kind
+of single, priority-sorted pass across both sides that `apply_damage_calc`'s own two-entry walk
+already uses — a own investigation and batch, not a one-line change, and not part of what this
+batch's own tests exercise. Flagged so it is not lost, not fixed opportunistically mid-batch.
+
 ## Rough sizing
 
 Sections 1–3 are done. Section 6's first four hooks — `ON_BEFORE_MOVE`, `ON_FAINT`,
@@ -844,11 +879,13 @@ forme-swap primitive rather than being one-liners in isolation — call it a ses
 Section 5 (147 items left) is one, mostly following section 4's abilities in to reuse their
 plumbing (Multitype/plates, RKS System/memories, primal weather/primal orbs, Mega Evolution/mega
 stones).
-Section 7 (Z-moves/megas/formes) is in scope (see its own write-up): Mega Evolution/Primal
-Reversion/Ultra Burst, Z-Moves, and the Shadow Tag/Arena Trap/Magnet Pull no-ops are done;
-Multitype/RKS System/plates is next, sized closer to a single batch than a full session since it
-needs no new hook, just an existing on-demand type-override function and an existing item table.
-Integration (section 8) is last, one session plus whatever the AI re-validation turns up.
+Section 7 (Z-moves/megas/formes) is done: Mega Evolution/Primal Reversion/Ultra Burst, Z-Moves,
+Multitype/RKS System/plates, and the Shadow Tag/Arena Trap/Magnet Pull no-ops are all in the tree
+and verified — see each one's own write-up above, and the cross-side switch-in-ordering gap one of
+them surfaced (a pre-existing issue, not fixed as part of any of these batches). Integration
+(section 8) is what is left, one session plus whatever the AI re-validation turns up — plus, now,
+the ordering gap above if it turns out to matter once `legal_actions` and real AI play exercise
+switch-ins far more than this port's own sweeps have.
 
 The tail is not uniform: absorption abilities and formes are each a small architecture change, and
 the butler's revival mechanic has no reference outside this codebase.

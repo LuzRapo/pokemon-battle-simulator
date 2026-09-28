@@ -1399,6 +1399,118 @@ def test_a_z_move_only_unleashes_once_per_battle(tmp_path: Path) -> None:
 
 
 @needs_rust
+def test_multitype_tracks_a_held_plate_and_boosts_judgment_by_it(tmp_path: Path) -> None:
+    """Arceus + Iron Plate: Multitype's own type-sync (`sync_type_from_item`, checked on switch-in
+    and every residual tick) makes it Steel-type, which both selects Judgment's type (`power::
+    plate_type`, an independent table Multitype's own tracking has to agree with) and earns the
+    plate's ordinary 1.2x same-type boost on that same hit — two separate mechanisms reading the
+    same held item, which only a real battle can prove still agree with each other."""
+    team_a = [
+        PokemonSpec(
+            species="Arceus",
+            nickname="A0",
+            level=50,
+            ability=Ability.MULTITYPE,
+            item=Item.IRON_PLATE,
+            nature=Nature.HARDY,
+            moves=["Judgment"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    type_changed = next(e for e in expected[0]["events"] if e["type"] == "TypeChanged")
+    assert type_changed["pokemon"] == "A0" and type_changed["new_type"] == "STEEL", expected[0]["events"]
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["types"] == ["STEEL"] and a0_digest["ability"] == "MULTITYPE", a0_digest
+
+
+@needs_rust
+def test_multitype_with_no_plate_stays_normal_and_never_logs_a_change(tmp_path: Path) -> None:
+    """No plate held: Arceus is already Normal-typed at baseline, so `sync_type_from_item`'s own
+    guard (only log and mutate when the wanted type actually differs) means no `TypeChanged` fires
+    at all — the quiet case, and the one a sloppier port would get backwards."""
+    team_a = [
+        PokemonSpec(
+            species="Arceus",
+            nickname="A0",
+            level=50,
+            ability=Ability.MULTITYPE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Judgment"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    assert not any(e["type"] == "TypeChanged" for e in expected[0]["events"]), expected[0]["events"]
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["types"] == ["NORMAL"], a0_digest
+
+
+@needs_rust
+def test_rks_system_tracks_a_held_memory_the_same_way_multitype_does(tmp_path: Path) -> None:
+    """Silvally + Fire Memory: the same `sync_type_from_item` table-lookup, keyed on RKS System
+    instead of Multitype and a different 17-item table — proving the shared function actually reads
+    which ability it is rather than always reaching for Multitype's own plates."""
+    team_a = [
+        PokemonSpec(
+            species="Silvally",
+            nickname="A0",
+            level=50,
+            ability=Ability.RKS_SYSTEM,
+            item=Item.FIRE_MEMORY,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    type_changed = next(e for e in expected[0]["events"] if e["type"] == "TypeChanged")
+    assert type_changed["pokemon"] == "A0" and type_changed["new_type"] == "FIRE", expected[0]["events"]
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["types"] == ["FIRE"], a0_digest
+
+
+@needs_rust
 def test_trick_room_inverts_the_speed_sort(tmp_path: Path) -> None:
     """The four pseudo-weather rooms. Gravity, Magic Room and Wonder Room have no gameplay effect
     anywhere in this codebase beyond standing up and ticking down — a deliberate simplification,

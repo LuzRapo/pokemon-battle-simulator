@@ -3,8 +3,19 @@
 //! Same contract as `abilities.rs`, and the same discipline: only items whose whole behaviour is
 //! `ON_DAMAGE_CALC`, and which the Python does not also read inline somewhere outside
 //! `mechanics/items.py`. Choice Band and Choice Specs are absent for that reason — they also lock
-//! their holder into a move, which lives in the move flow — as are the plates, which double as
-//! Judgment's type selector, and the Griseous Orb, which forces a forme.
+//! their holder into a move, which lives in the move flow — as is the Griseous Orb, which forces a
+//! forme. The plates are a near miss — they also double as Judgment's type selector — but that half
+//! already lives in `power::plate_type`, a query the Judgment case reads independently, so their
+//! ordinary 1.2x boost (`_bind_type_boost`, the same binder Black Glasses/Miracle Seed/etc. use)
+//! joins `TYPE_BOOSTERS` below like any other. Only six of the seventeen plates actually have that
+//! binder registered in `mechanics/items.py` today (Iron/Earth/Spooky/Pixie/Splash/Stone) — the
+//! other eleven are real, live items (Multitype/RKS reads them for the type-tracking half in
+//! `hooks::sync_type_from_item`) that this reference engine simply has not wired up a damage boost
+//! for yet. A generic `_bind_type_boost(item, type)` one-liner per plate would be trivial to add on
+//! the Python side, but that is a Python change, not a Rust-port one — ported here exactly as
+//! Python currently stands (a real divergence was caught by a sweep exactly this way: Rust boosted
+//! all seventeen, Python only six, and `compare()` reported the extra 1.2x as a plain wrong number
+//! with nothing in the trace to explain it).
 //!
 //! Items fire after *every* ability on the field, not just their holder's: the bus sorts by
 //! priority first, and `EventPriority.ITEM` is half `ABILITY`. Within the items it is registration
@@ -15,15 +26,17 @@ use crate::damage::Payload;
 use crate::log::{Event, Log};
 
 /// Every item implemented here.
-pub const PORTED: [&str; 21] = [
+pub const PORTED: [&str; 27] = [
     "ADAMANT_CRYSTAL",
     "ASSAULT_VEST",
     "BLACK_GLASSES",
     "CHOPLE_BERRY",
     "COLBUR_BERRY",
     "CORNERSTONE_MASK",
+    "EARTH_PLATE",
     "EVIOLITE",
     "EXPERT_BELT",
+    "IRON_PLATE",
     "LUSTROUS_GLOBE",
     "MEOWFREDS_MONOCLE",
     "METAL_COAT",
@@ -31,27 +44,57 @@ pub const PORTED: [&str; 21] = [
     "MUSCLE_BAND",
     "MYSTIC_WATER",
     "NEVER_MELT_ICE",
+    "PIXIE_PLATE",
     "SHUCA_BERRY",
     "SILK_SCARF",
     "SILVER_POWDER",
     "SOUL_DEW",
+    "SPLASH_PLATE",
+    "SPOOKY_PLATE",
+    "STONE_PLATE",
     "WELLSPRING_MASK",
     "WISE_GLASSES",
+];
+
+/// The eleven plates with no damage-boost binder in Python yet — Multitype/RKS's own type-tracking
+/// in `hooks::sync_type_from_item` is their entire effect on this engine today, same shape as
+/// `hooks::PORTED_RKS_MEMORIES`.
+pub const PORTED_TYPE_ONLY_PLATES: [&str; 11] = [
+    "DRACO_PLATE",
+    "DREAD_PLATE",
+    "FIST_PLATE",
+    "FLAME_PLATE",
+    "ICICLE_PLATE",
+    "INSECT_PLATE",
+    "MEADOW_PLATE",
+    "MIND_PLATE",
+    "SKY_PLATE",
+    "TOXIC_PLATE",
+    "ZAP_PLATE",
 ];
 
 /// `MONOCLE_POWER_CAP` / `MONOCLE_MOD_4096`: Technician in an item, and not from the games.
 const MONOCLE_POWER_CAP: i32 = 60;
 const MONOCLE_MOD_4096: i64 = 6144;
 
-/// The 1.2x type boosters: item, and the type it boosts.
-const TYPE_BOOSTERS: [(&str, &str); 7] = [
+/// The 1.2x type boosters: item, and the type it boosts. Of the seventeen plates
+/// (`_MULTITYPE_PLATES` in the Python, which `hooks::sync_type_from_item` also reads for
+/// Multitype's own type-tracking), only these six join the six standalone boosters here — see
+/// `PORTED_TYPE_ONLY_PLATES` for why the other eleven do not.
+const TYPE_BOOSTERS: [(&str, &str); 13] = [
     ("BLACK_GLASSES", "DARK"),
+    ("EARTH_PLATE", "GROUND"),
+    ("IRON_PLATE", "STEEL"),
     ("METAL_COAT", "STEEL"),
     ("MIRACLE_SEED", "GRASS"),
     ("MYSTIC_WATER", "WATER"),
     ("NEVER_MELT_ICE", "ICE"),
+    ("PIXIE_PLATE", "FAIRY"),
     ("SILK_SCARF", "NORMAL"),
     ("SILVER_POWDER", "BUG"),
+    ("SPLASH_PLATE", "WATER"),
+    ("SPOOKY_PLATE", "GHOST"),
+    ("STONE_PLATE", "ROCK"),
 ];
 
 /// Soul Dew and the Origin orbs: item, the line that may hold it, and the two types it boosts.
