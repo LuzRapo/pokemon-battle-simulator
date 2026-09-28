@@ -155,6 +155,7 @@ pub fn calculate_hit(
     } else {
         let bypass = defender.effective_bypass(&attacker.ability, &the_move.move_type);
         let natural = db.effectiveness_bypassing(&the_move.move_type, &defender.battle_types(), &bypass);
+        let natural = crate::power::strong_winds_negation(natural, &the_move.move_type, defender, &field.weather, db);
         crate::power::effectiveness_override(&the_move.name, defender, natural, db)
     };
     if type_multiplier == 0.0 {

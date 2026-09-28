@@ -532,9 +532,437 @@
   "ZAP_PLATE",
   "ZERAORITE"
  ],
+ "mega_formes": [
+  {
+   "base_species": "venusaur",
+   "forme": "Venusaur-Mega",
+   "item": "VENUSAURITE"
+  },
+  {
+   "base_species": "charizard",
+   "forme": "Charizard-Mega-X",
+   "item": "CHARIZARDITE_X"
+  },
+  {
+   "base_species": "charizard",
+   "forme": "Charizard-Mega-Y",
+   "item": "CHARIZARDITE_Y"
+  },
+  {
+   "base_species": "blastoise",
+   "forme": "Blastoise-Mega",
+   "item": "BLASTOISINITE"
+  },
+  {
+   "base_species": "beedrill",
+   "forme": "Beedrill-Mega",
+   "item": "BEEDRILLITE"
+  },
+  {
+   "base_species": "pidgeot",
+   "forme": "Pidgeot-Mega",
+   "item": "PIDGEOTITE"
+  },
+  {
+   "base_species": "raichu",
+   "forme": "Raichu-Mega-X",
+   "item": "RAICHUNITE_X"
+  },
+  {
+   "base_species": "raichu",
+   "forme": "Raichu-Mega-Y",
+   "item": "RAICHUNITE_Y"
+  },
+  {
+   "base_species": "clefable",
+   "forme": "Clefable-Mega",
+   "item": "CLEFABLITE"
+  },
+  {
+   "base_species": "alakazam",
+   "forme": "Alakazam-Mega",
+   "item": "ALAKAZITE"
+  },
+  {
+   "base_species": "slowbro",
+   "forme": "Slowbro-Mega",
+   "item": "SLOWBRONITE"
+  },
+  {
+   "base_species": "gengar",
+   "forme": "Gengar-Mega",
+   "item": "GENGARITE"
+  },
+  {
+   "base_species": "kangaskhan",
+   "forme": "Kangaskhan-Mega",
+   "item": "KANGASKHANITE"
+  },
+  {
+   "base_species": "starmie",
+   "forme": "Starmie-Mega",
+   "item": "STARMINITE"
+  },
+  {
+   "base_species": "pinsir",
+   "forme": "Pinsir-Mega",
+   "item": "PINSIRITE"
+  },
+  {
+   "base_species": "gyarados",
+   "forme": "Gyarados-Mega",
+   "item": "GYARADOSITE"
+  },
+  {
+   "base_species": "aerodactyl",
+   "forme": "Aerodactyl-Mega",
+   "item": "AERODACTYLITE"
+  },
+  {
+   "base_species": "dragonite",
+   "forme": "Dragonite-Mega",
+   "item": "DRAGONINITE"
+  },
+  {
+   "base_species": "mewtwo",
+   "forme": "Mewtwo-Mega-X",
+   "item": "MEWTWONITE_X"
+  },
+  {
+   "base_species": "mewtwo",
+   "forme": "Mewtwo-Mega-Y",
+   "item": "MEWTWONITE_Y"
+  },
+  {
+   "base_species": "ampharos",
+   "forme": "Ampharos-Mega",
+   "item": "AMPHAROSITE"
+  },
+  {
+   "base_species": "steelix",
+   "forme": "Steelix-Mega",
+   "item": "STEELIXITE"
+  },
+  {
+   "base_species": "scizor",
+   "forme": "Scizor-Mega",
+   "item": "SCIZORITE"
+  },
+  {
+   "base_species": "heracross",
+   "forme": "Heracross-Mega",
+   "item": "HERACRONITE"
+  },
+  {
+   "base_species": "houndoom",
+   "forme": "Houndoom-Mega",
+   "item": "HOUNDOOMINITE"
+  },
+  {
+   "base_species": "tyranitar",
+   "forme": "Tyranitar-Mega",
+   "item": "TYRANITARITE"
+  },
+  {
+   "base_species": "sceptile",
+   "forme": "Sceptile-Mega",
+   "item": "SCEPTILITE"
+  },
+  {
+   "base_species": "blaziken",
+   "forme": "Blaziken-Mega",
+   "item": "BLAZIKENITE"
+  },
+  {
+   "base_species": "swampert",
+   "forme": "Swampert-Mega",
+   "item": "SWAMPERTITE"
+  },
+  {
+   "base_species": "gardevoir",
+   "forme": "Gardevoir-Mega",
+   "item": "GARDEVOIRITE"
+  },
+  {
+   "base_species": "sableye",
+   "forme": "Sableye-Mega",
+   "item": "SABLENITE"
+  },
+  {
+   "base_species": "mawile",
+   "forme": "Mawile-Mega",
+   "item": "MAWILITE"
+  },
+  {
+   "base_species": "aggron",
+   "forme": "Aggron-Mega",
+   "item": "AGGRONITE"
+  },
+  {
+   "base_species": "medicham",
+   "forme": "Medicham-Mega",
+   "item": "MEDICHAMITE"
+  },
+  {
+   "base_species": "manectric",
+   "forme": "Manectric-Mega",
+   "item": "MANECTITE"
+  },
+  {
+   "base_species": "sharpedo",
+   "forme": "Sharpedo-Mega",
+   "item": "SHARPEDONITE"
+  },
+  {
+   "base_species": "camerupt",
+   "forme": "Camerupt-Mega",
+   "item": "CAMERUPTITE"
+  },
+  {
+   "base_species": "altaria",
+   "forme": "Altaria-Mega",
+   "item": "ALTARIANITE"
+  },
+  {
+   "base_species": "banette",
+   "forme": "Banette-Mega",
+   "item": "BANETTITE"
+  },
+  {
+   "base_species": "chimecho",
+   "forme": "Chimecho-Mega",
+   "item": "CHIMECHITE"
+  },
+  {
+   "base_species": "absol",
+   "forme": "Absol-Mega",
+   "item": "ABSOLITE"
+  },
+  {
+   "base_species": "absol",
+   "forme": "Absol-Mega-Z",
+   "item": "ABSOLITE_Z"
+  },
+  {
+   "base_species": "glalie",
+   "forme": "Glalie-Mega",
+   "item": "GLALITITE"
+  },
+  {
+   "base_species": "salamence",
+   "forme": "Salamence-Mega",
+   "item": "SALAMENCITE"
+  },
+  {
+   "base_species": "metagross",
+   "forme": "Metagross-Mega",
+   "item": "METAGROSSITE"
+  },
+  {
+   "base_species": "latias",
+   "forme": "Latias-Mega",
+   "item": "LATIASITE"
+  },
+  {
+   "base_species": "latios",
+   "forme": "Latios-Mega",
+   "item": "LATIOSITE"
+  },
+  {
+   "base_species": "kyogre",
+   "forme": "Kyogre-Primal",
+   "item": "BLUE_ORB"
+  },
+  {
+   "base_species": "groudon",
+   "forme": "Groudon-Primal",
+   "item": "RED_ORB"
+  },
+  {
+   "base_species": "staraptor",
+   "forme": "Staraptor-Mega",
+   "item": "STARAPTITE"
+  },
+  {
+   "base_species": "lopunny",
+   "forme": "Lopunny-Mega",
+   "item": "LOPUNNITE"
+  },
+  {
+   "base_species": "garchomp",
+   "forme": "Garchomp-Mega",
+   "item": "GARCHOMPITE"
+  },
+  {
+   "base_species": "garchomp",
+   "forme": "Garchomp-Mega-Z",
+   "item": "GARCHOMPITE_Z"
+  },
+  {
+   "base_species": "lucario",
+   "forme": "Lucario-Mega",
+   "item": "LUCARIONITE"
+  },
+  {
+   "base_species": "lucario",
+   "forme": "Lucario-Mega-Z",
+   "item": "LUCARIONITE_Z"
+  },
+  {
+   "base_species": "abomasnow",
+   "forme": "Abomasnow-Mega",
+   "item": "ABOMASITE"
+  },
+  {
+   "base_species": "gallade",
+   "forme": "Gallade-Mega",
+   "item": "GALLADITE"
+  },
+  {
+   "base_species": "froslass",
+   "forme": "Froslass-Mega",
+   "item": "FROSLASSITE"
+  },
+  {
+   "base_species": "heatran",
+   "forme": "Heatran-Mega",
+   "item": "HEATRANITE"
+  },
+  {
+   "base_species": "darkrai",
+   "forme": "Darkrai-Mega",
+   "item": "DARKRANITE"
+  },
+  {
+   "base_species": "emboar",
+   "forme": "Emboar-Mega",
+   "item": "EMBOARITE"
+  },
+  {
+   "base_species": "audino",
+   "forme": "Audino-Mega",
+   "item": "AUDINITE"
+  },
+  {
+   "base_species": "scolipede",
+   "forme": "Scolipede-Mega",
+   "item": "SCOLIPITE"
+  },
+  {
+   "base_species": "scrafty",
+   "forme": "Scrafty-Mega",
+   "item": "SCRAFTINITE"
+  },
+  {
+   "base_species": "eelektross",
+   "forme": "Eelektross-Mega",
+   "item": "EELEKTROSSITE"
+  },
+  {
+   "base_species": "chandelure",
+   "forme": "Chandelure-Mega",
+   "item": "CHANDELURITE"
+  },
+  {
+   "base_species": "chesnaught",
+   "forme": "Chesnaught-Mega",
+   "item": "CHESNAUGHTITE"
+  },
+  {
+   "base_species": "delphox",
+   "forme": "Delphox-Mega",
+   "item": "DELPHOXITE"
+  },
+  {
+   "base_species": "greninja",
+   "forme": "Greninja-Mega",
+   "item": "GRENINJITE"
+  },
+  {
+   "base_species": "meowstic",
+   "forme": "Meowstic-M-Mega",
+   "item": "MEOWSTICITE"
+  },
+  {
+   "base_species": "meowsticf",
+   "forme": "Meowstic-F-Mega",
+   "item": "MEOWSTICITE"
+  },
+  {
+   "base_species": "malamar",
+   "forme": "Malamar-Mega",
+   "item": "MALAMARITE"
+  },
+  {
+   "base_species": "barbaracle",
+   "forme": "Barbaracle-Mega",
+   "item": "BARBARACITE"
+  },
+  {
+   "base_species": "dragalge",
+   "forme": "Dragalge-Mega",
+   "item": "DRAGALGITE"
+  },
+  {
+   "base_species": "hawlucha",
+   "forme": "Hawlucha-Mega",
+   "item": "HAWLUCHANITE"
+  },
+  {
+   "base_species": "diancie",
+   "forme": "Diancie-Mega",
+   "item": "DIANCITE"
+  },
+  {
+   "base_species": "crabominable",
+   "forme": "Crabominable-Mega",
+   "item": "CRABOMINITE"
+  },
+  {
+   "base_species": "golisopod",
+   "forme": "Golisopod-Mega",
+   "item": "GOLISOPITE"
+  },
+  {
+   "base_species": "drampa",
+   "forme": "Drampa-Mega",
+   "item": "DRAMPANITE"
+  },
+  {
+   "base_species": "magearna",
+   "forme": "Magearna-Mega",
+   "item": "MAGEARNITE"
+  },
+  {
+   "base_species": "magearnaoriginal",
+   "forme": "Magearna-Original-Mega",
+   "item": "MAGEARNITE"
+  },
+  {
+   "base_species": "zeraora",
+   "forme": "Zeraora-Mega",
+   "item": "ZERAORITE"
+  },
+  {
+   "base_species": "falinks",
+   "forme": "Falinks-Mega",
+   "item": "FALINKSITE"
+  },
+  {
+   "base_species": "glimmora",
+   "forme": "Glimmora-Mega",
+   "item": "GLIMMORANITE"
+  },
+  {
+   "base_species": "baxcalibur",
+   "forme": "Baxcalibur-Mega",
+   "item": "BAXCALIBRITE"
+  }
+ ],
  "move_gated_formes": [
   {
    "base_species": "rayquaza",
+   "forme": "Rayquaza-Mega",
    "move": "dragonascent"
   }
  ],
@@ -1022,5 +1450,17 @@
   "DARK",
   "STEEL",
   "FAIRY"
+ ],
+ "ultra_burst_formes": [
+  {
+   "base_species": "necrozmaduskmane",
+   "forme": "Necrozma-Ultra",
+   "item": "ULTRANECROZIUM_Z"
+  },
+  {
+   "base_species": "necrozmadawnwings",
+   "forme": "Necrozma-Ultra",
+   "item": "ULTRANECROZIUM_Z"
+  }
  ]
 }

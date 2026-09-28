@@ -473,6 +473,20 @@ fn move_name_type() -> &'static str {
     "ICE" // Freeze-Dry is the only entry in the table
 }
 
+/// Delta Stream's whole reason for existing: while its strong winds blow, whatever would be super
+/// effective against a Flying type is cut back to neutral — most of why the format's best Pokemon
+/// is its best Pokemon, since without it a Dragon/Flying's 2x Ice, Rock and Electric weaknesses
+/// stand untouched. Applied to the *natural* multiplier, before `effectiveness_override`, exactly
+/// where the Python's own `type_effectiveness` applies it — a dual type's other half is untouched,
+/// so Flying/Ground under Ice takes the negation on Flying's own 2x and still eats Ground's neutral.
+pub fn strong_winds_negation(multiplier: f64, move_type: &str, defender: &Pokemon, weather: &str, db: &Database) -> f64 {
+    if weather != "STRONG_WINDS" || !defender.battle_types().iter().flatten().any(|t| t == "FLYING") {
+        return multiplier;
+    }
+    let against_flying = db.effectiveness(move_type, &[Some("FLYING".to_string()), None]);
+    if against_flying > 1.0 { multiplier / against_flying } else { multiplier }
+}
+
 /// `_SCREEN_BREAKERS`: these take the opponent's screens down before they hit.
 pub const SCREEN_BREAKERS: [&str; 3] = ["Psychic Fangs", "Raging Bull", "Brick Break"];
 

@@ -74,7 +74,8 @@ def move_json(move: Any) -> dict[str, Any]:
 
 
 def species_json(species: Any) -> dict[str, Any]:
-    from battle_sim.teams import item_from_showdown
+    from battle_sim.teams import ability_from_showdown, item_from_showdown
+    from battle_sim.utils import Ability
 
     out = {f.name: _plain(getattr(species, f.name)) for f in fields(species)}
     # `required_item` is Showdown's display name ("Charizardite X"); Rust never needs to parse a
@@ -86,6 +87,12 @@ def species_json(species: Any) -> dict[str, Any]:
     # asked, on either engine.
     item = item_from_showdown(species.required_item) if species.required_item else None
     out["fused_item"] = item.name if item is not None else None
+    # A forme-swap (Mega Evolution, Primal Reversion, Ultra Burst) needs the *new* forme's ability
+    # in this engine's own name, same reasoning as `fused_item`: a second engine applying the swap
+    # should not need a Showdown-name-to-enum table of its own just to read it off. `None` for a
+    # species with no ability at all (`regular_abilities` empty) or one Python does not model.
+    ability = ability_from_showdown(species.regular_abilities[0]) if species.regular_abilities else Ability.NONE
+    out["regular_ability"] = ability.name if ability is not Ability.NONE else None
     return out
 
 
@@ -174,7 +181,8 @@ def rules_json() -> dict[str, Any]:
     Exported for the same reason as the rest — a hand-copied type chart in a second language is a
     transcription error waiting to change one matchup by a factor of two, silently, forever.
     """
-    from battle_sim.formes import _forme_by_base_and_move  # noqa: SLF001 -- the whole point is to export it
+    # noqa: SLF001 -- the whole point of this block is to export these
+    from battle_sim.formes import _ULTRA_BURST, _forme_by_base_and_item, _forme_by_base_and_move
 
     abilities, items = live_behaviour()
     return {
@@ -184,7 +192,27 @@ def rules_json() -> dict[str, Any]:
         # Mega Rayquaza needs no item at all — gated on knowing Dragon Ascent instead, the one
         # entry `_forme_by_base_and_move` has ever needed. Not a `live_items` fact, since nothing
         # here is an item; a Pokemon matching one of these pairs auto-Mega-Evolves regardless.
-        "move_gated_formes": [{"base_species": base, "move": move} for base, move in _forme_by_base_and_move()],
+        # (Bug fixed here: this used to iterate the dict's keys only — `for base, move in dict` —
+        # and threw the forme name away, so a second engine could see *that* a pairing exists but
+        # never *what it reaches*. `.items()` keeps both.)
+        "move_gated_formes": [
+            {"base_species": base, "move": move, "forme": forme}
+            for (base, move), forme in _forme_by_base_and_move().items()
+        ],
+        # The stone/orb-driven table `mega_forme` reads first, and the two-entry Ultra Burst
+        # pairing it checks before that (`_ULTRA_BURST`'s own docstring explains why those two
+        # cannot join the generic table). Together with `move_gated_formes` above, these three
+        # exports are the whole of `mega_forme`'s decision — a second engine needs no copy of
+        # `_forme_by_base_and_item`'s own filtering (`_is_transformed_forme`, `_is_playable`,
+        # `_source_forme`) to reach the same answer, only the table it already produced.
+        "mega_formes": [
+            {"base_species": base, "item": item.name, "forme": forme}
+            for (base, item), forme in _forme_by_base_and_item().items()
+        ],
+        "ultra_burst_formes": [
+            {"base_species": species, "item": item.name, "forme": forme}
+            for (species, item), forme in _ULTRA_BURST.items()
+        ],
         "types": [t.name for t in Type],
         "type_chart": {
             attacker.name: {defender.name: TYPE_CHART[attacker].get(defender, 1.0) for defender in Type}

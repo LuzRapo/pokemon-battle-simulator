@@ -35,6 +35,13 @@ pub struct Species {
     /// `is_fused_to`, which asks it of every forme sharing a base species, not just this one.
     #[serde(default)]
     pub fused_item: Option<String>,
+    /// This forme's first regular ability, already in this engine's own name — `None` if it has
+    /// none listed or Python does not model it. Read by a forme swap (Mega Evolution, Primal
+    /// Reversion, Ultra Burst) to know what ability the new forme hands over, and by `formes`'s own
+    /// playability check to refuse a swap into an ability this engine has not ported, rather than
+    /// silently handing out one nothing will ever dispatch.
+    #[serde(default)]
+    pub regular_ability: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -221,6 +228,10 @@ struct RulesFile {
     live_items: Vec<String>,
     #[serde(default)]
     move_gated_formes: Vec<MoveGatedForme>,
+    #[serde(default)]
+    mega_formes: Vec<ItemGatedForme>,
+    #[serde(default)]
+    ultra_burst_formes: Vec<ItemGatedForme>,
     types: Vec<String>,
     type_chart: HashMap<String, HashMap<String, f64>>,
     natures: HashMap<String, NatureEffect>,
@@ -236,6 +247,22 @@ pub struct MoveGatedForme {
     pub base_species: String,
     #[serde(rename = "move")]
     pub move_name: String,
+    /// The forme this pairing reaches — Python's own export used to throw this away (it iterated
+    /// `_forme_by_base_and_move()`'s *keys* only), which was fine while nothing here read it and
+    /// silently wrong the day something needed to.
+    pub forme: String,
+}
+
+/// `_forme_by_base_and_item` (`mega_formes`) and `_ULTRA_BURST` (`ultra_burst_formes`): the same
+/// shape, one row per (base species, held item) pairing and the forme it reaches. Both are already
+/// filtered by Python's own `_is_transformed_forme`/`_is_playable`/`_source_forme` at export time —
+/// `formes::mega_forme` does not re-derive any of that, only adds the one filter Python's own
+/// playability check cannot know about: whether *this* engine has ported the forme's ability yet.
+#[derive(Debug, Deserialize)]
+pub struct ItemGatedForme {
+    pub base_species: String,
+    pub item: String,
+    pub forme: String,
 }
 
 /// Every table the engine needs, loaded once.
@@ -252,6 +279,8 @@ pub struct Database {
     pub live_abilities: std::collections::HashSet<String>,
     pub live_items: std::collections::HashSet<String>,
     pub move_gated_formes: Vec<MoveGatedForme>,
+    pub mega_formes: Vec<ItemGatedForme>,
+    pub ultra_burst_formes: Vec<ItemGatedForme>,
     pub types: Vec<String>,
     pub type_chart: HashMap<String, HashMap<String, f64>>,
     pub natures: HashMap<String, NatureEffect>,
@@ -275,6 +304,8 @@ impl Database {
             live_abilities: rules.live_abilities.into_iter().collect(),
             live_items: rules.live_items.into_iter().collect(),
             move_gated_formes: rules.move_gated_formes,
+            mega_formes: rules.mega_formes,
+            ultra_burst_formes: rules.ultra_burst_formes,
             types: rules.types,
             type_chart: rules.type_chart,
             natures: rules.natures,

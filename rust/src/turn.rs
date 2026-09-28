@@ -336,6 +336,15 @@ pub const PORTED_CODED_KINDS: [&str; 25] = [
     "TRANSFORM",
 ];
 
+/// Shadow Tag / Arena Trap / Magnet Pull. Confirmed by reading `battle_sim/` end to end: these
+/// three are registered nowhere except `battle_sim/engine/choices.py`'s `_trapped()` — no
+/// damage-calc hook, no switch hook, nothing. Their entire effect is restricting which switches
+/// `legal_actions` offers, which `step()` never consults for any action (Move and Switch are not
+/// re-validated for legality either) — so there is genuinely no dispatch code for these to join
+/// anywhere else. Ported here, with nothing behind them, rather than left refusing every Dugtrio/
+/// Gothitelle/Magnezone team that fields one and never switches into a position where it matters.
+const PORTED_NO_STEP_EFFECT_ABILITIES: [&str; 3] = ["SHADOW_TAG", "ARENA_TRAP", "MAGNET_PULL"];
+
 /// Everything this engine has implemented, gathered from the modules that implement it so a name
 /// cannot be claimed in one place and missing from the other.
 ///
@@ -354,6 +363,7 @@ pub fn ported_abilities() -> &'static std::collections::HashSet<&'static str> {
         all.extend(crate::inline::PORTED_ABILITIES);
         all.extend(crate::hooks::PORTED_RESIDUAL_ABILITIES);
         all.extend(crate::power::PORTED_ATE_ABILITIES);
+        all.extend(PORTED_NO_STEP_EFFECT_ABILITIES);
         all
     })
 }
@@ -378,20 +388,24 @@ pub fn unsupported_pokemon(pokemon: &Pokemon, db: &Database) -> Option<String> {
     if db.live_abilities.contains(&pokemon.ability) && !ported_abilities().contains(pokemon.ability.as_str()) {
         return Some(format!("{} has {}, which is not ported", pokemon.nickname, pokemon.ability));
     }
-    if db.live_items.contains(&pokemon.item) && !ported_items().contains(pokemon.item.as_str()) {
+    // A Mega Stone, Primal orb or Ultranecrozium Z is `live` (Python's own `mega_stones()` union)
+    // but will never appear in `ported_items()` — Mega Evolution is a whole feature, not an item
+    // effect, so it is recognised here by table membership instead. Held for no reason at all
+    // (a Mega Stone on a Pikachu) it is simply inert, exactly as the Python plays it.
+    let holds_forme_item = db.mega_formes.iter().any(|f| f.item == pokemon.item)
+        || db.ultra_burst_formes.iter().any(|f| f.item == pokemon.item);
+    if db.live_items.contains(&pokemon.item) && !ported_items().contains(pokemon.item.as_str()) && !holds_forme_item {
         return Some(format!("{} is holding {}, which is not ported", pokemon.nickname, pokemon.item));
     }
-    // `_forme_by_base_and_move`: Mega Rayquaza needs no item at all, just Dragon Ascent in its
-    // moveset — so this cannot be caught by the item check above, live or otherwise. Mega
-    // Evolution itself is still unported, so a Pokemon that would trigger it is refused rather
-    // than quietly staying in its base forme all battle.
-    let key = Database::normalize_id(&pokemon.species_name);
-    if db
-        .move_gated_formes
-        .iter()
-        .any(|g| g.base_species == key && pokemon.moves.iter().any(|m| Database::normalize_id(m) == g.move_name))
+    // This Pokemon's item or moveset would transform it per the game's own rules (a Mega Stone, a
+    // Primal orb, Ultranecrozium Z on the right Necrozma, or Rayquaza knowing Dragon Ascent), but
+    // `formes::mega_forme` refuses to actually do it — the target forme's own ability is not
+    // ported yet. Refused here rather than left quietly sitting in its base forme all battle,
+    // which would be a different Pokemon from the one Python is playing turn for turn.
+    if crate::formes::wants_to_transform(&pokemon.species_name, &pokemon.item, &pokemon.moves, db)
+        && crate::formes::mega_forme(&pokemon.species_name, &pokemon.item, &pokemon.moves, db).is_none()
     {
-        return Some(format!("{} would Mega Evolve, which is not ported", pokemon.nickname));
+        return Some(format!("{} would transform into a forme this engine has not ported", pokemon.nickname));
     }
     None
 }
@@ -515,6 +529,9 @@ pub fn step(
     // which is the entire reason a Paradox ability needs this hook and not just `ON_SWITCH_IN` and
     // `ON_RESIDUAL`.
     crate::hooks::ability_on_turn_start(state, &mut log);
+    // `_resolve_mega_evolution`: same reasoning, same placement — a Mega Evolution's new Speed has
+    // to be visible before `order_actions` reads it below.
+    crate::formes::resolve_forme_changes(state, &actions, db, &mut log);
     // Who chose each action, by team slot. A Pokemon dragged out by Roar before it acted takes its
     // queued move with it — resolving the slot anyway means the replacement uses whatever happens
     // to be in that slot, which is a different move belonging to a different Pokemon.
@@ -1319,6 +1336,8 @@ fn resolve_move(
         let defender = state.sides[other].active_pokemon();
         let bypass = defender.effective_bypass(&attacker_ability, &the_move.move_type);
         let natural = db.effectiveness_bypassing(&the_move.move_type, &defender.battle_types(), &bypass);
+        let natural =
+            crate::power::strong_winds_negation(natural, &the_move.move_type, defender, &state.field.weather, db);
         crate::power::effectiveness_override(&the_move.name, defender, natural, db)
     };
     // The immunity gate is for *damaging* moves only, exactly as the Python writes it. Charge is
@@ -2548,6 +2567,8 @@ fn resolve_future_sight(state: &mut State, side: usize, db: &Database, tape: &mu
     let defender = state.sides[side].active_pokemon();
     let bypass = defender.effective_bypass(&attacker_ability, &the_move.move_type);
     let effectiveness = db.effectiveness_bypassing(&the_move.move_type, &defender.battle_types(), &bypass);
+    let effectiveness =
+        crate::power::strong_winds_negation(effectiveness, &the_move.move_type, defender, &state.field.weather, db);
     let nickname = defender.nickname.clone();
     log.push(Event::FutureAttackLands { side: side as i32, pokemon: nickname, the_move: the_move.name.clone() });
     // `_stopped_before_any_hit`: normally asked by the caller before `_apply_damage` is even

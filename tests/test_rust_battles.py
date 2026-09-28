@@ -110,9 +110,7 @@ def _status_and_stage_move_names() -> list[str]:
     return sorted(
         move.name
         for move in get_all_moves().values()
-        if move.name not in coded
-        and not _attached(move)
-        and all(ported(move, effect) for effect in move.effects)
+        if move.name not in coded and not _attached(move) and all(ported(move, effect) for effect in move.effects)
     )
 
 
@@ -139,10 +137,22 @@ def _still_unported(kind: str, enum: type) -> str:
     this test was written against Intimidate and started failing the day Intimidate landed, which
     is a test that stops testing rather than one that fails honestly.
     """
-    live = set(json.loads((DATA / "rules.json").read_text())[f"live_{kind}"])
+    rules = json.loads((DATA / "rules.json").read_text())
+    live = set(rules[f"live_{kind}"])
+    if kind == "items":
+        # A Mega Stone/Primal orb/Ultranecrozium Z is *conditionally* refused now — only if the
+        # forme it reaches has an unported ability — so it cannot answer "is this always refused"
+        # the way an ordinary item name can. `test_a_mega_stone_reaching_an_unported_ability_is_
+        # refused_not_played_wrong` exercises that conditional case directly instead.
+        forme_items = {row["item"] for row in rules["mega_formes"]} | {
+            row["item"] for row in rules["ultra_burst_formes"]
+        }
+        live -= forme_items
     remaining = sorted(name for name in live - set(PORTED[kind]) if name in enum.__members__)
     assert remaining, f"every live {kind[:-1]} is ported; this test needs rewriting"
     return remaining[0]
+
+
 PLAIN_MOVES = _plain_move_names()
 STATUS_MOVES = _status_and_stage_move_names()
 
@@ -338,9 +348,10 @@ def test_the_ported_volatiles_actually_land_in_the_swept_battles() -> None:
 
 def _inflicts(effect: object, volatile: str) -> bool:
     """A move effect that lands this particular volatile."""
-    return type(effect).__name__ == "InflictStatusEffect" and getattr(
-        getattr(effect, "status", None), "name", None
-    ) == volatile
+    return (
+        type(effect).__name__ == "InflictStatusEffect"
+        and getattr(getattr(effect, "status", None), "name", None) == volatile
+    )
 
 
 def _moves_where(predicate) -> list[str]:  # type: ignore[no-untyped-def]
@@ -368,9 +379,7 @@ def _moves_where(predicate) -> list[str]:  # type: ignore[no-untyped-def]
         ("TrapSqueezed", lambda e: _inflicts(e, "PARTIALLY_TRAPPED")),
     ],
 )
-def test_the_rarer_move_classes_agree_when_the_teams_are_built_for_them(
-    event: str, predicate, tmp_path: Path
-) -> None:
+def test_the_rarer_move_classes_agree_when_the_teams_are_built_for_them(event: str, predicate, tmp_path: Path) -> None:
     """Multi-hit, drain and recoil, drawn deliberately rather than hoped for.
 
     Eleven of the slice's 578 moves drain or recoil, so a random draw finds them rarely enough that
@@ -423,9 +432,23 @@ def test_charge_moves_actually_charge_and_agree(tmp_path: Path) -> None:
     the charging turn *and* the release turn certain to appear, on both sides of the reach rule.
     """
     charges = [
-        "Fly", "Bounce", "Dig", "Dive", "Sky Drop", "Phantom Force", "Shadow Force", "Solar Beam",
-        "Solar Blade", "Meteor Beam", "Electro Shot", "Freeze Shock", "Geomancy", "Ice Burn",
-        "Razor Wind", "Skull Bash", "Sky Attack",
+        "Fly",
+        "Bounce",
+        "Dig",
+        "Dive",
+        "Sky Drop",
+        "Phantom Force",
+        "Shadow Force",
+        "Solar Beam",
+        "Solar Blade",
+        "Meteor Beam",
+        "Electro Shot",
+        "Freeze Shock",
+        "Geomancy",
+        "Ice Burn",
+        "Razor Wind",
+        "Skull Bash",
+        "Sky Attack",
     ]
     reachers = ["Earthquake", "Surf", "Gust", "Thunder"]
 
@@ -618,9 +641,7 @@ def test_destiny_bond_takes_its_attacker_down_too(tmp_path: Path) -> None:
         assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
         divergence = compare(expected, theirs)
         assert divergence is None, f"seed {seed}\n{divergence}"
-        double_faints += sum(
-            sum(1 for e in turn["events"] if e["type"] == "Fainted") >= 2 for turn in expected
-        )
+        double_faints += sum(sum(1 for e in turn["events"] if e["type"] == "Fainted") >= 2 for turn in expected)
 
     assert double_faints > 0, "no turn ever fainted both sides at once"
 
@@ -672,9 +693,7 @@ def test_identify_bypasses_a_ghost_or_dark_immunity(tmp_path: Path) -> None:
         assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
         divergence = compare(expected, theirs)
         assert divergence is None, f"seed {seed}\n{divergence}"
-        landed += sum(
-            1 for turn in expected for e in turn["events"] if e["type"] == "DamageDealt" and e["side"] == 1
-        )
+        landed += sum(1 for turn in expected for e in turn["events"] if e["type"] == "DamageDealt" and e["side"] == 1)
 
     assert landed > 0, "an identified Sableye never actually took damage from the bypassed type"
 
@@ -731,14 +750,24 @@ def test_sleep_talk_calls_a_real_move_through_the_sleep(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Gyarados", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Spore"],
+            species="Gyarados",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Spore"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Gyarados", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Sleep Talk", "Roost", "King's Shield", "Tackle"],
+            species="Gyarados",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Sleep Talk", "Roost", "King's Shield", "Tackle"],
         )
     ]
 
@@ -768,14 +797,24 @@ def test_roost_grounds_its_user_for_the_rest_of_the_turn(tmp_path: Path) -> None
     """
     team_a = [
         PokemonSpec(
-            species="Gyarados", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Earthquake"],
+            species="Gyarados",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Earthquake"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Gyarados", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Roost"],
+            species="Gyarados",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Roost"],
         )
     ]
 
@@ -811,8 +850,21 @@ def test_the_first_batch_of_coded_moves_fire_and_agree(tmp_path: Path) -> None:
     chip, at 300/300 red against a dedicated Gengar-vs-Machamp matchup.
     """
     pool = [
-        "Rest", "Moonlight", "Pain Split", "Strength Sap", "Belly Drum", "Haze", "Court Change",
-        "Curse", "Tidy Up", "Perish Song", "Heal Bell", "Take Heart", "Tackle", "Substitute", "Screech",
+        "Rest",
+        "Moonlight",
+        "Pain Split",
+        "Strength Sap",
+        "Belly Drum",
+        "Haze",
+        "Court Change",
+        "Curse",
+        "Tidy Up",
+        "Perish Song",
+        "Heal Bell",
+        "Take Heart",
+        "Tackle",
+        "Substitute",
+        "Screech",
     ]
 
     def team(rng: random.Random) -> list[PokemonSpec]:
@@ -868,14 +920,24 @@ def test_item_and_ability_manipulation_moves_fire_and_agree(tmp_path: Path) -> N
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.LEFTOVERS,
-            nature=Nature.HARDY, moves=["Knock Off", "Trick", "Skill Swap", "Role Play"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.LEFTOVERS,
+            nature=Nature.HARDY,
+            moves=["Knock Off", "Trick", "Skill Swap", "Role Play"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.SITRUS_BERRY,
-            nature=Nature.HARDY, moves=["Knock Off", "Trick", "Entrainment", "Worry Seed"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.SITRUS_BERRY,
+            nature=Nature.HARDY,
+            moves=["Knock Off", "Trick", "Entrainment", "Worry Seed"],
         )
     ]
 
@@ -897,19 +959,300 @@ def test_item_and_ability_manipulation_moves_fire_and_agree(tmp_path: Path) -> N
 
 
 @needs_rust
-def test_a_mega_stone_holder_is_refused_not_played_wrong(tmp_path: Path) -> None:
-    """The regression `test_item_and_ability_manipulation_moves_fire_and_agree` names: a Pokemon
-    holding a Mega Stone must be refused, not silently kept in its base forme all battle."""
+def test_a_mega_stone_reaching_an_unported_ability_is_refused_not_played_wrong(tmp_path: Path) -> None:
+    """Mega Evolution itself is ported now (see the forme-swap batch), but only for a forme whose
+    own ability this engine has implemented — Sableye-Mega's Magic Bounce is not one of them yet.
+    A Pokemon that would reach an unplayed-out forme must still be refused, not silently left
+    sitting in its base forme all battle, which is a different Pokemon from the one Python plays."""
     team = [
         PokemonSpec(
-            species="Garchomp", nickname="A0", level=50, ability=Ability.NONE, item=Item.GARCHOMPITE,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Sableye",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.SABLENITE,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         )
     ]
     rng = random.Random(32000)
     scenario, _ = record((team, team), _chooser(rng), seed=1, max_turns=4)
     theirs = _rust_trace(scenario, tmp_path)
-    assert isinstance(theirs, str) and "GARCHOMPITE" in theirs, theirs
+    assert isinstance(theirs, str) and "not ported" in theirs, theirs
+
+
+@needs_rust
+def test_mega_evolution_changes_stats_ability_and_this_turns_speed_order(tmp_path: Path) -> None:
+    """The same matchup `battle_sim/tests/test_mega.py::test_the_new_speed_decides_this_turn_s_order`
+    and `::test_mega_rewires_the_new_forme_s_ability` use: Aerodactyl is 130 base Speed and its Mega
+    is 150; Accelgor sits between at 145, so the mega has to resolve *before* `order_actions` reads
+    speed for this same turn to have Aerodactyl move first, and its ability has to follow the forme
+    from Pressure to Tough Claws for the differential to agree on damage at all.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Aerodactyl",
+            nickname="A0",
+            level=50,
+            ability=Ability.PRESSURE,
+            item=Item.AERODACTYLITE,
+            nature=Nature.HARDY,
+            moves=["Rock Slide"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Accelgor",
+            nickname="B0",
+            level=50,
+            ability=Ability.HYDRATION,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Bug Buzz"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    forme = next(e for e in events if e["type"] == "FormeChanged")
+    assert forme["pokemon"] == "A0" and forme["forme"] == "Aerodactyl-Mega", events
+    assert events.index(forme) < next(i for i, e in enumerate(events) if e["type"] == "MoveUsed"), events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["ability"] == "TOUGH_CLAWS", a0_digest
+    # Aerodactyl moved first despite Accelgor's own 145 > Aerodactyl's base 130 — only true if the
+    # mega's 150 was what `order_actions` actually sorted on. (A Tough-Claws Rock Slide from a mega
+    # with a stat boost this large one-shots Accelgor, which is why B0 never gets its own MoveUsed.)
+    first_move = next(e for e in events if e["type"] == "MoveUsed")
+    assert first_move["pokemon"] == "A0", events
+
+
+@needs_rust
+def test_switching_out_forfeits_mega_evolution_that_turn(tmp_path: Path) -> None:
+    """A side that chose to switch does not Mega Evolve — the two are mutually exclusive in one
+    turn. Aerodactyl starts on the bench, switches in on turn 1 (a switch turn: no mega yet, and it
+    is not even the active Pokemon on turn 0 to be checked at all), and only Mega Evolves on turn 2,
+    once it is already active and chooses to attack instead."""
+    team_a = [
+        PokemonSpec(
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Earthquake"],
+        ),
+        PokemonSpec(
+            species="Aerodactyl",
+            nickname="A1",
+            level=50,
+            ability=Ability.PRESSURE,
+            item=Item.AERODACTYLITE,
+            nature=Nature.HARDY,
+            moves=["Rock Slide"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
+        )
+    ]
+
+    def choose(state, side_index):
+        if side_index == 0 and state.turn == 1:
+            return next(a for a in legal_actions(state, 0) if a.action is ActionType.SWITCH_OUT)
+        return next(a for a in legal_actions(state, side_index) if a.action is ActionType.USE_MOVE)
+
+    scenario, expected = record((team_a, team_b), choose, seed=0, max_turns=3)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    assert not any(e["type"] == "FormeChanged" for turn in expected[:2] for e in turn["events"]), expected[:2]
+    assert any(e["type"] == "FormeChanged" for e in expected[2]["events"]), expected[2]["events"]
+
+
+@needs_rust
+def test_ultra_burst_changes_type_along_with_stats_and_ability(tmp_path: Path) -> None:
+    """Necrozma-Dusk-Mane + Ultranecrozium Z reaches Necrozma-Ultra, the one pairing that changes
+    type (Psychic/Steel to Psychic/Dragon) as well as ability (Prism Armor to Neuroforce) — the
+    pairing `_ULTRA_BURST` exists for specifically, since it cannot be derived from `base_species`
+    the way an ordinary Mega Stone's forme can (plain Necrozma shares the same base species and
+    must not Ultra Burst)."""
+    team_a = [
+        PokemonSpec(
+            species="Necrozma-Dusk-Mane",
+            nickname="A0",
+            level=50,
+            ability=Ability.PRISM_ARMOR,
+            item=Item.ULTRANECROZIUM_Z,
+            nature=Nature.HARDY,
+            moves=["Sunsteel Strike"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    forme = next(e for e in expected[0]["events"] if e["type"] == "FormeChanged")
+    assert forme["forme"] == "Necrozma-Ultra", expected[0]["events"]
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["ability"] == "NEUROFORCE", a0_digest
+
+
+@needs_rust
+def test_mega_rayquaza_is_gated_on_dragon_ascent_not_an_item(tmp_path: Path) -> None:
+    """The one move-gated forme in Gen 7: no Mega Stone at all, just knowing Dragon Ascent. Also
+    the only Mega whose ability sets its own weather (`Delta Stream`/`STRONG_WINDS`), exercising
+    `apply_weather_from_ability`'s second call site — the switch-in binder fired long before this
+    mid-turn forme swap and never saw an ability that could set anything."""
+    team_a = [
+        PokemonSpec(
+            species="Rayquaza",
+            nickname="A0",
+            level=50,
+            ability=Ability.AIR_LOCK,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Dragon Ascent"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    forme = next(e for e in events if e["type"] == "FormeChanged")
+    assert forme["forme"] == "Rayquaza-Mega", events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["ability"] == "DELTA_STREAM", a0_digest
+    assert expected[0]["state"]["weather"] == "STRONG_WINDS", expected[0]["state"]
+
+
+@needs_rust
+def test_primal_reversion_sets_its_own_weather_which_an_ordinary_move_can_still_override(tmp_path: Path) -> None:
+    """Groudon + Red Orb reaches Groudon-Primal and Desolate Land sets Harsh Sunlight — but this
+    engine, like the Python it mirrors, does not make that weather immune to an ordinary setter
+    afterward (the Python's own comments call this out as unmodelled, not a bug to fix here), so a
+    later Rain Dance from the other side displaces it to plain rain rather than being refused."""
+    team_a = [
+        PokemonSpec(
+            species="Groudon",
+            nickname="A0",
+            level=50,
+            ability=Ability.DROUGHT,
+            item=Item.RED_ORB,
+            nature=Nature.HARDY,
+            moves=["Splash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash", "Rain Dance"],
+        )
+    ]
+
+    def choose(state, side_index):
+        options = [a for a in legal_actions(state, side_index) if a.action is ActionType.USE_MOVE]
+        if side_index == 1:
+            wanted = "Rain Dance" if state.turn == 1 else "Splash"
+            return next(a for a in options if state.sides[1].active_pokemon.moves[a.move].name == wanted)
+        return options[0]
+
+    scenario, expected = record((team_a, team_b), choose, seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    turn0 = expected[0]["events"]
+    forme = next(e for e in turn0 if e["type"] == "FormeChanged")
+    assert forme["forme"] == "Groudon-Primal", turn0
+    # Two `WeatherSetByAbility` events land this same turn: the lead's own switch-in Drought sets
+    # ordinary sun first, and only once the mid-turn Primal Reversion hands over Desolate Land does
+    # the second one — `apply_weather_from_ability`'s whole reason for a second call site — displace
+    # it to Harsh Sunlight. Both are correct, expected Python behaviour, not a double-fire bug.
+    weather_events = [e for e in turn0 if e["type"] == "WeatherSetByAbility"]
+    assert [e["ability"] for e in weather_events] == ["DROUGHT", "DESOLATE_LAND"], turn0
+    assert expected[0]["state"]["weather"] == "HARSH_SUN", expected[0]["state"]
+    assert expected[1]["state"]["weather"] == "RAIN", expected[1]["state"]
+
+
+@needs_rust
+def test_delta_stream_cuts_a_flying_types_weaknesses_to_neutral(tmp_path: Path) -> None:
+    """Rayquaza-Mega's whole defensive identity: an Ice-type move against its Dragon/Flying typing
+    is 4x without Delta Stream (2x Dragon-half, 2x Flying-half) and 2x with it (Flying's own half
+    cut to neutral, Dragon's left standing). Mega Evolution resolves before a single move is
+    ordered, so even this first turn's hit already sees the post-mega Rayquaza — there is no
+    "before" state to compare against within one battle.
+
+    The log only distinguishes "super" (>=2x) from "resisted" (<=0.5x), not the exact multiplier,
+    so what actually proves the negation happened — as opposed to both engines agreeing on some
+    other wrong number — is `compare()` itself: Python's own recorded trace already carries the
+    negated (halved) damage number, and a Rust that computed the un-negated 4x hit instead would
+    diverge from it, not silently agree.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rayquaza",
+            nickname="A0",
+            level=50,
+            ability=Ability.AIR_LOCK,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Dragon Ascent"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Dewgong",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Ice Beam"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    effectiveness = next(e for e in expected[0]["events"] if e["type"] == "Effectiveness")
+    assert effectiveness["level"] == "super", expected[0]["events"]
 
 
 @needs_rust
@@ -923,14 +1266,24 @@ def test_trick_room_inverts_the_speed_sort(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Dewgong", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Trick Room", "Tackle"],
+            species="Dewgong",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Trick Room", "Tackle"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Golem", nickname="B0", level=1, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Tackle", "Trick Room"],
+            species="Golem",
+            nickname="B0",
+            level=1,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Tackle", "Trick Room"],
         )
     ]
 
@@ -960,11 +1313,17 @@ def test_two_rooms_fading_together_log_in_cast_order_not_alphabetical(tmp_path: 
     `Side::screens`, the same shape) are `OrderedCounts` now, not `BTreeMap`, for exactly this
     reason. Both cast orders are exercised here since the pool doesn't favour either.
     """
+
     def team(first: str, second: str) -> list[PokemonSpec]:
         return [
             PokemonSpec(
-                species="Rhydon", nickname="P0", level=50, ability=Ability.NONE, item=Item.NONE,
-                nature=Nature.HARDY, moves=[first, second, "Tackle"],
+                species="Rhydon",
+                nickname="P0",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[first, second, "Tackle"],
             )
         ]
 
@@ -1106,8 +1465,13 @@ def test_transform_copies_the_target_and_reverts_on_switch_out(tmp_path: Path) -
     def team(rng: random.Random, pool: list[str]) -> list[PokemonSpec]:
         return [
             PokemonSpec(
-                species=species, nickname=f"P{index}", level=50, ability=Ability.NONE, item=Item.NONE,
-                nature=Nature.HARDY, moves=[rng.choice(pool), rng.choice(pool)],
+                species=species,
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool), rng.choice(pool)],
             )
             for index, species in enumerate(["Rhydon", "Rhydon"])
         ]
@@ -1118,8 +1482,13 @@ def test_transform_copies_the_target_and_reverts_on_switch_out(tmp_path: Path) -
         team_a = team(rng, pool_a)
         team_b = [
             PokemonSpec(
-                species="Machamp", nickname=f"P{index}", level=50, ability=Ability.NONE, item=Item.NONE,
-                nature=Nature.HARDY, moves=[rng.choice(pool_b), rng.choice(pool_b)],
+                species="Machamp",
+                nickname=f"P{index}",
+                level=50,
+                ability=Ability.NONE,
+                item=Item.NONE,
+                nature=Nature.HARDY,
+                moves=[rng.choice(pool_b), rng.choice(pool_b)],
             )
             for index in range(2)
         ]
@@ -1151,8 +1520,13 @@ def test_priority_abilities_reorder_moves_and_agree(tmp_path: Path) -> None:
 
     def mon(species: str, nickname: str, ability: Ability, moves: list[str]) -> PokemonSpec:
         return PokemonSpec(
-            species=species, nickname=nickname, level=50, ability=ability, item=Item.NONE,
-            nature=Nature.HARDY, moves=moves,
+            species=species,
+            nickname=nickname,
+            level=50,
+            ability=ability,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=moves,
         )
 
     # (team_a, team_b, which side the ability should put first)
@@ -1201,14 +1575,24 @@ def test_surge_surfer_and_unburden_double_speed_and_agree(tmp_path: Path) -> Non
     # doubled 110 already outruns Kangaskhan on the very first turn.
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.SURGE_SURFER, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.SURGE_SURFER,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Kangaskhan", nickname="B0", level=50, ability=Ability.ELECTRIC_SURGE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Kangaskhan",
+            nickname="B0",
+            level=50,
+            ability=Ability.ELECTRIC_SURGE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         )
     ]
     surge_surfer_moved_first = 0
@@ -1228,14 +1612,24 @@ def test_surge_surfer_and_unburden_double_speed_and_agree(tmp_path: Path) -> Non
     # Off lands turn one (it is faster), and from turn two on Rhydon's doubled 80 outruns it.
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.UNBURDEN, item=Item.LEFTOVERS,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.UNBURDEN,
+            item=Item.LEFTOVERS,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Knock Off"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Knock Off"],
         )
     ]
     unburden_moved_first_after_the_knock_off = 0
@@ -1268,14 +1662,24 @@ def test_quick_draw_occasionally_wins_the_bracket_and_agrees(tmp_path: Path) -> 
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.QUICK_DRAW, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.QUICK_DRAW,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Tauros", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Tauros",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         )
     ]
     rhydon_moved_first = 0
@@ -1313,14 +1717,24 @@ def test_sturdy_survives_an_otherwise_lethal_hit_from_full_hp(tmp_path: Path) ->
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=1, ability=Ability.STURDY, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=1,
+            ability=Ability.STURDY,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Earthquake"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Earthquake"],
         )
     ]
     sturdy_saves = 0
@@ -1340,8 +1754,13 @@ def test_sturdy_survives_an_otherwise_lethal_hit_from_full_hp(tmp_path: Path) ->
 
 def _mon(species: str, nickname: str, ability: Ability, moves: list[str]) -> PokemonSpec:
     return PokemonSpec(
-        species=species, nickname=nickname, level=50, ability=ability, item=Item.NONE,
-        nature=Nature.HARDY, moves=moves,
+        species=species,
+        nickname=nickname,
+        level=50,
+        ability=ability,
+        item=Item.NONE,
+        nature=Nature.HARDY,
+        moves=moves,
     )
 
 
@@ -1677,12 +2096,12 @@ def test_type_absorbing_abilities_cancel_the_move_and_agree(tmp_path: Path) -> N
         assert compare(expected, theirs) is None, f"{ability}"
         chip_turn, absorb_turn = expected[0]["events"], expected[1]["events"]
         assert any(e["type"] == "DamageDealt" for e in chip_turn), f"{ability}: Tackle never chipped it\n{chip_turn}"
-        assert any(
-            e["type"] == "AbsorbHealed" and e["ability"] == ability for e in absorb_turn
-        ), f"{ability}: never healed off a hit it should have absorbed\n{absorb_turn}"
-        assert not any(
-            e["type"] == "DamageDealt" for e in absorb_turn
-        ), f"{ability}: the absorbed move should never have landed\n{absorb_turn}"
+        assert any(e["type"] == "AbsorbHealed" and e["ability"] == ability for e in absorb_turn), (
+            f"{ability}: never healed off a hit it should have absorbed\n{absorb_turn}"
+        )
+        assert not any(e["type"] == "DamageDealt" for e in absorb_turn), (
+            f"{ability}: the absorbed move should never have landed\n{absorb_turn}"
+        )
 
         full_hp_attacker = [_mon("Rhydon", "A0", Ability.NONE, [move])]
         full_hp_defender = [_mon(species, "B0", Ability[ability], ["Splash"])]
@@ -1693,9 +2112,9 @@ def test_type_absorbing_abilities_cancel_the_move_and_agree(tmp_path: Path) -> N
         assert not isinstance(theirs, str), f"{ability} (full HP) was refused: {theirs}"
         assert compare(expected, theirs) is None, f"{ability} (full HP)"
         events = expected[0]["events"]
-        assert any(
-            e["type"] == "AbsorbBlocked" and e["ability"] == ability for e in events
-        ), f"{ability}: should report AbsorbBlocked at full HP\n{events}"
+        assert any(e["type"] == "AbsorbBlocked" and e["ability"] == ability for e in events), (
+            f"{ability}: should report AbsorbBlocked at full HP\n{events}"
+        )
 
     boost_style = [
         ("MOTOR_DRIVE", "Thunder Shock", "SPEED", "motor_drive"),
@@ -1767,6 +2186,7 @@ def test_flash_fire_activates_once_and_boosts_fire_moves_afterward(tmp_path: Pat
     a no-op multiplier (4096, i.e. 1x) turned turn 3 into a plain digest mismatch instead -- the
     boosted `DamageDealt` this test asserts against a flat, unboosted one.
     """
+
     # Scripted rather than round-robin: Gengar (A0) has to sit still on Splash for the first two
     # turns to be the one *receiving* Rhydon's Ember, then switch to dishing its own out boosted --
     # a plain round-robin would have both sides attacking every turn and no way to tell "the
@@ -1855,8 +2275,13 @@ def test_moxie_beast_boost_and_soul_heart_boost_after_a_ko(tmp_path: Path) -> No
     logged) where Python still raises the stat.
     """
     weak_target = PokemonSpec(
-        species="Machamp", nickname="B0", level=1, ability=Ability.NONE, item=Item.NONE,
-        nature=Nature.HARDY, moves=["Splash"],
+        species="Machamp",
+        nickname="B0",
+        level=1,
+        ability=Ability.NONE,
+        item=Item.NONE,
+        nature=Nature.HARDY,
+        moves=["Splash"],
     )
     cases = [
         (Ability.MOXIE, "Tauros", "Tackle", "ATTACK", "moxie"),
@@ -1890,8 +2315,13 @@ def test_ko_boosting_abilities_dont_fire_from_a_fixed_damage_faint(tmp_path: Pat
     fixed-damage path has nothing to trigger it.
     """
     weak_target = PokemonSpec(
-        species="Machamp", nickname="B0", level=1, ability=Ability.NONE, item=Item.NONE,
-        nature=Nature.HARDY, moves=["Splash"],
+        species="Machamp",
+        nickname="B0",
+        level=1,
+        ability=Ability.NONE,
+        item=Item.NONE,
+        nature=Nature.HARDY,
+        moves=["Splash"],
     )
     attacker = [_mon("Tauros", "A0", Ability.MOXIE, ["Seismic Toss"])]
     scenario, expected = record((attacker, [weak_target]), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -1982,8 +2412,13 @@ def test_regenerator_and_natural_cure_dont_fire_on_a_fainted_switch(tmp_path: Pa
     """
     team_a = [
         PokemonSpec(
-            species="Golem", nickname="A0", level=1, ability=Ability.REGENERATOR, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A0",
+            level=1,
+            ability=Ability.REGENERATOR,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         _mon("Rhydon", "A1", Ability.NONE, ["Splash"]),
     ]
@@ -2125,9 +2560,9 @@ def test_toxic_debris_and_thermal_exchange_react_to_being_hit(tmp_path: Path) ->
     assert not isinstance(theirs, str), f"Toxic Debris was refused: {theirs}"
     assert compare(expected, theirs) is None, "Toxic Debris"
     events = expected[0]["events"]
-    assert any(
-        e["type"] == "HazardSet" and e["side"] == 0 and e["hazard"] == "TOXIC_SPIKES" for e in events
-    ), f"Toxic Debris never scattered a layer\n{events}"
+    assert any(e["type"] == "HazardSet" and e["side"] == 0 and e["hazard"] == "TOXIC_SPIKES" for e in events), (
+        f"Toxic Debris never scattered a layer\n{events}"
+    )
 
     fire_attacker = [_mon("Machamp", "A0", Ability.NONE, ["Ember"])]
     thermal_holder = [_mon("Rhydon", "B0", Ability.THERMAL_EXCHANGE, ["Splash"])]
@@ -2342,14 +2777,24 @@ def test_quick_claw_occasionally_wins_the_bracket_and_consumes_itself(tmp_path: 
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.QUICK_CLAW,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.QUICK_CLAW,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Tauros", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Tauros",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         )
     ]
     rhydon_moved_first = 0
@@ -2382,14 +2827,24 @@ def test_custap_berry_guarantees_the_bracket_under_a_quarter_hp(tmp_path: Path) 
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.CUSTAP_BERRY,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.CUSTAP_BERRY,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Tauros", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Dragon Rage"],
+            species="Tauros",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Dragon Rage"],
         )
     ]
 
@@ -2415,14 +2870,24 @@ def test_leppa_berry_restores_pp_when_a_move_runs_dry(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Golem", nickname="A0", level=50, ability=Ability.NONE, item=Item.LEPPA_BERRY,
-            nature=Nature.HARDY, moves=["Cross Chop"],
+            species="Golem",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.LEPPA_BERRY,
+            nature=Nature.HARDY,
+            moves=["Cross Chop"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Gengar", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Gengar",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
 
@@ -2454,14 +2919,24 @@ def test_chesto_and_lum_berry_cure_their_status_on_the_spot(tmp_path: Path) -> N
     """
     attacker = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Spore"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Spore"],
         )
     ]
     chesto_holder = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.CHESTO_BERRY,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.CHESTO_BERRY,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((attacker, chesto_holder), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2476,14 +2951,24 @@ def test_chesto_and_lum_berry_cure_their_status_on_the_spot(tmp_path: Path) -> N
 
     thunder_wave_attacker = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Thunder Wave"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Thunder Wave"],
         )
     ]
     lum_holder = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.LUM_BERRY,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.LUM_BERRY,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     cured = 0
@@ -2511,14 +2996,24 @@ def test_weather_rocks_extend_the_duration_to_eight_turns(tmp_path: Path) -> Non
     """
     setter = [
         PokemonSpec(
-            species="Kangaskhan", nickname="A0", level=50, ability=Ability.DROUGHT, item=Item.HEAT_ROCK,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Kangaskhan",
+            nickname="A0",
+            level=50,
+            ability=Ability.DROUGHT,
+            item=Item.HEAT_ROCK,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     target = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((setter, target), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2529,8 +3024,13 @@ def test_weather_rocks_extend_the_duration_to_eight_turns(tmp_path: Path) -> Non
 
     mover = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.HEAT_ROCK,
-            nature=Nature.HARDY, moves=["Sunny Day"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.HEAT_ROCK,
+            nature=Nature.HARDY,
+            moves=["Sunny Day"],
         )
     ]
     scenario, expected = record((mover, target), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2549,14 +3049,24 @@ def test_terrain_seeds_boost_a_stat_the_instant_their_terrain_is_up(tmp_path: Pa
     """
     holder = [
         PokemonSpec(
-            species="Kangaskhan", nickname="A0", level=50, ability=Ability.ELECTRIC_SURGE,
-            item=Item.ELECTRIC_SEED, nature=Nature.HARDY, moves=["Splash"],
+            species="Kangaskhan",
+            nickname="A0",
+            level=50,
+            ability=Ability.ELECTRIC_SURGE,
+            item=Item.ELECTRIC_SEED,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     target = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((holder, target), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2588,14 +3098,24 @@ def test_terrain_seed_fires_for_a_pokemon_that_never_switched_in(tmp_path: Path)
     """
     setter = [
         PokemonSpec(
-            species="Kangaskhan", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Electric Terrain"],
+            species="Kangaskhan",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Electric Terrain"],
         )
     ]
     seed_holder = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.ELECTRIC_SEED,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.ELECTRIC_SEED,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((setter, seed_holder), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2623,14 +3143,24 @@ def test_choice_items_lock_the_first_move_used_and_never_re_set(tmp_path: Path) 
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.CHOICE_BAND,
-            nature=Nature.HARDY, moves=["Tackle", "Growl"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.CHOICE_BAND,
+            nature=Nature.HARDY,
+            moves=["Tackle", "Growl"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
 
@@ -2664,14 +3194,24 @@ def test_focus_sash_survives_an_otherwise_lethal_hit_from_full_hp(tmp_path: Path
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=1, ability=Ability.NONE, item=Item.FOCUS_SASH,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=1,
+            ability=Ability.NONE,
+            item=Item.FOCUS_SASH,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Earthquake"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Earthquake"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2696,14 +3236,24 @@ def test_life_orb_boosts_damage_and_chips_its_holder(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.LIFE_ORB,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.LIFE_ORB,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Golem", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2729,18 +3279,33 @@ def test_eject_button_switches_out_only_after_the_move_finishes_resolving(tmp_pa
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.EJECT_BUTTON,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.EJECT_BUTTON,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         PokemonSpec(
-            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2767,18 +3332,33 @@ def test_eject_pack_switches_out_after_an_opponent_inflicted_drop(tmp_path: Path
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.EJECT_PACK,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.EJECT_PACK,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         PokemonSpec(
-            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Growl"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Growl"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2801,18 +3381,33 @@ def test_red_card_forces_the_attacker_out(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Tackle"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Tackle"],
         ),
         PokemonSpec(
-            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     team_b = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.RED_CARD,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.RED_CARD,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2841,22 +3436,42 @@ def test_red_card_forced_switch_still_lets_the_original_attacker_finish_its_own_
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.RED_CARD,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.RED_CARD,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         PokemonSpec(
-            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Superpower"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Superpower"],
         ),
         PokemonSpec(
-            species="Tauros", nickname="B1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Tauros",
+            nickname="B1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2886,22 +3501,42 @@ def test_red_card_mid_multi_hit_stops_the_departed_attackers_own_ability(tmp_pat
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.RED_CARD,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.RED_CARD,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         PokemonSpec(
-            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     team_b = [
         PokemonSpec(
-            species="Kangaskhan", nickname="B0", level=50, ability=Ability.TOUGH_CLAWS, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Double Iron Bash"],
+            species="Kangaskhan",
+            nickname="B0",
+            level=50,
+            ability=Ability.TOUGH_CLAWS,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Double Iron Bash"],
         ),
         PokemonSpec(
-            species="Tauros", nickname="B1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Tauros",
+            nickname="B1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -2927,22 +3562,42 @@ def test_red_card_mid_multi_hit_stops_the_departed_attackers_own_after_hit_react
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.RED_CARD,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.RED_CARD,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         PokemonSpec(
-            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     team_b = [
         PokemonSpec(
-            species="Kangaskhan", nickname="B0", level=50, ability=Ability.POISON_TOUCH, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Arm Thrust"],
+            species="Kangaskhan",
+            nickname="B0",
+            level=50,
+            ability=Ability.POISON_TOUCH,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Arm Thrust"],
         ),
         PokemonSpec(
-            species="Tauros", nickname="B1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Tauros",
+            nickname="B1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     checked = 0
@@ -2978,22 +3633,42 @@ def test_eject_pack_and_a_pivots_own_switch_both_arm_before_either_executes(tmp_
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Parting Shot"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Parting Shot"],
         ),
         PokemonSpec(
-            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     team_b = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.EJECT_PACK,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.EJECT_PACK,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         PokemonSpec(
-            species="Tauros", nickname="B1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Tauros",
+            nickname="B1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3028,22 +3703,42 @@ def test_a_pivots_own_switch_is_deferred_behind_a_lower_indexed_side(tmp_path: P
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.EJECT_BUTTON,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.EJECT_BUTTON,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         PokemonSpec(
-            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["U-turn"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["U-turn"],
         ),
         PokemonSpec(
-            species="Tauros", nickname="B1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Tauros",
+            nickname="B1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3069,18 +3764,33 @@ def test_a_forced_switch_satisfies_its_own_targets_pending_eject(tmp_path: Path)
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.EJECT_BUTTON,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.EJECT_BUTTON,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         PokemonSpec(
-            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Dragon Tail"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Dragon Tail"],
         )
     ]
     checked_a_hit = 0
@@ -3117,22 +3827,42 @@ def test_a_phazing_moves_own_force_switch_sees_the_real_board_not_the_stale_atta
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Circle Throw"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Circle Throw"],
         ),
         PokemonSpec(
-            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="A1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     team_b = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.RED_CARD,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.RED_CARD,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         PokemonSpec(
-            species="Kangaskhan", nickname="B1", level=50, ability=Ability.INTIMIDATE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Kangaskhan",
+            nickname="B1",
+            level=50,
+            ability=Ability.INTIMIDATE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
     checked_a_hit = 0
@@ -3161,18 +3891,33 @@ def test_heavy_duty_boots_blocks_an_entry_hazard(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Golem", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Stealth Rock", "Splash"],
+            species="Golem",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Stealth Rock", "Splash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
         PokemonSpec(
-            species="Rhydon", nickname="B1", level=50, ability=Ability.NONE, item=Item.HEAVY_DUTY_BOOTS,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B1",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.HEAVY_DUTY_BOOTS,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         ),
     ]
 
@@ -3203,14 +3948,24 @@ def test_the_drives_change_techno_blasts_type(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.DOUSE_DRIVE,
-            nature=Nature.HARDY, moves=["Techno Blast"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.DOUSE_DRIVE,
+            nature=Nature.HARDY,
+            moves=["Techno Blast"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Golem", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3228,14 +3983,24 @@ def test_booster_energy_activates_paradox_without_the_field_condition(tmp_path: 
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.PROTOSYNTHESIS, item=Item.BOOSTER_ENERGY,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.PROTOSYNTHESIS,
+            item=Item.BOOSTER_ENERGY,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3258,14 +4023,24 @@ def test_punching_glove_boosts_punching_moves_without_making_them_contact(tmp_pa
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.PUNCHING_GLOVE,
-            nature=Nature.HARDY, moves=["Mach Punch"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.PUNCHING_GLOVE,
+            nature=Nature.HARDY,
+            moves=["Mach Punch"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Golem", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Golem",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3284,14 +4059,24 @@ def test_terrain_extender_stretches_the_terrain_to_eight_turns(tmp_path: Path) -
     """
     team_a = [
         PokemonSpec(
-            species="Kangaskhan", nickname="A0", level=50, ability=Ability.ELECTRIC_SURGE, item=Item.TERRAIN_EXTENDER,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Kangaskhan",
+            nickname="A0",
+            level=50,
+            ability=Ability.ELECTRIC_SURGE,
+            item=Item.TERRAIN_EXTENDER,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3311,14 +4096,24 @@ def test_light_clay_stretches_a_screen_to_eight_turns(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.LIGHT_CLAY,
-            nature=Nature.HARDY, moves=["Reflect"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.LIGHT_CLAY,
+            nature=Nature.HARDY,
+            moves=["Reflect"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3337,14 +4132,24 @@ def test_clear_amulet_blocks_an_opponent_inflicted_drop(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.CLEAR_AMULET,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.CLEAR_AMULET,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Growl"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Growl"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3367,14 +4172,24 @@ def test_white_herb_restores_a_negative_stage_the_instant_it_appears(tmp_path: P
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.WHITE_HERB,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.WHITE_HERB,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Growl"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Growl"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3395,14 +4210,24 @@ def test_adrenaline_orb_boosts_speed_off_an_intimidate_drop(tmp_path: Path) -> N
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.ADRENALINE_ORB,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.ADRENALINE_ORB,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.INTIMIDATE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.INTIMIDATE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3430,14 +4255,24 @@ def test_covert_cloak_blocks_a_secondary_effect_like_shield_dust(tmp_path: Path)
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Rock Smash"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Rock Smash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.COVERT_CLOAK,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.COVERT_CLOAK,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     cleared = 0
@@ -3471,14 +4306,24 @@ def test_loaded_dice_never_rolls_the_bottom_of_a_wide_multi_hit_range(tmp_path: 
     """
     team_a = [
         PokemonSpec(
-            species="Golem", nickname="A0", level=50, ability=Ability.NONE, item=Item.LOADED_DICE,
-            nature=Nature.HARDY, moves=["Bullet Seed"],
+            species="Golem",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.LOADED_DICE,
+            nature=Nature.HARDY,
+            moves=["Bullet Seed"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     seen_hits: set[int] = set()
@@ -3501,14 +4346,24 @@ def test_power_herb_skips_the_charging_turn(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.POWER_HERB,
-            nature=Nature.HARDY, moves=["Solar Beam"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.POWER_HERB,
+            nature=Nature.HARDY,
+            moves=["Solar Beam"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3530,14 +4385,24 @@ def test_mental_herb_cures_taunt_the_instant_it_lands(tmp_path: Path) -> None:
     """
     team_a = [
         PokemonSpec(
-            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.MENTAL_HERB,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.MENTAL_HERB,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Taunt"],
+            species="Machamp",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Taunt"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3560,14 +4425,24 @@ def test_mirror_herb_copies_the_opponents_own_self_raise(tmp_path: Path) -> None
     """
     team_a = [
         PokemonSpec(
-            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
-            nature=Nature.HARDY, moves=["Swords Dance"],
+            species="Machamp",
+            nickname="A0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.NONE,
+            nature=Nature.HARDY,
+            moves=["Swords Dance"],
         )
     ]
     team_b = [
         PokemonSpec(
-            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.MIRROR_HERB,
-            nature=Nature.HARDY, moves=["Splash"],
+            species="Rhydon",
+            nickname="B0",
+            level=50,
+            ability=Ability.NONE,
+            item=Item.MIRROR_HERB,
+            nature=Nature.HARDY,
+            moves=["Splash"],
         )
     ]
     scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
@@ -3635,12 +4510,22 @@ def test_a_pokemon_on_the_bench_is_checked_too(tmp_path: Path) -> None:
     unported = _still_unported("abilities", Ability)
     rng = random.Random(4)
     plain = PokemonSpec(
-        species="Rhydon", nickname="P0", level=50, ability=Ability.NONE, item=Item.NONE,
-        nature=Nature.HARDY, moves=["Earthquake", "Rock Slide"],
+        species="Rhydon",
+        nickname="P0",
+        level=50,
+        ability=Ability.NONE,
+        item=Item.NONE,
+        nature=Nature.HARDY,
+        moves=["Earthquake", "Rock Slide"],
     )
     benched = PokemonSpec(
-        species="Rhydon", nickname="P1", level=50, ability=Ability[unported], item=Item.NONE,
-        nature=Nature.HARDY, moves=["Earthquake", "Rock Slide"],
+        species="Rhydon",
+        nickname="P1",
+        level=50,
+        ability=Ability[unported],
+        item=Item.NONE,
+        nature=Nature.HARDY,
+        moves=["Earthquake", "Rock Slide"],
     )
     scenario, _ = record(([plain, benched], [plain, benched]), _chooser(rng), seed=4, max_turns=4)
 

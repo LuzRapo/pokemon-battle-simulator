@@ -13,6 +13,7 @@ pub mod battle;
 pub mod damage;
 pub mod data;
 pub mod field;
+pub mod formes;
 pub mod hooks;
 pub mod inline;
 pub mod items;

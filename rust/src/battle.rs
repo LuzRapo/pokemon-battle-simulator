@@ -498,6 +498,12 @@ pub struct Side {
     /// `DamageDealt` summary and any of its other completion events still log under the Pokemon
     /// that is, for the moment, still standing.
     pub needs_switch: bool,
+    /// Mega Evolution / Primal Reversion, once per battle per side. Never reset — a fresh `State`
+    /// is a fresh battle, exactly as the Python's own flag is only ever reset by starting one.
+    pub has_mega_evolved: bool,
+    /// Ultra Burst, Necrozma's own once-per-battle. Kept apart from `has_mega_evolved` because a
+    /// side may do both in the same battle — they are different Pokemon, or different turns.
+    pub has_ultra_bursted: bool,
 }
 
 impl Side {
@@ -519,6 +525,8 @@ impl Side {
             future_sight_move: None,
             transforms: BTreeMap::new(),
             needs_switch: false,
+            has_mega_evolved: false,
+            has_ultra_bursted: false,
         }
     }
 

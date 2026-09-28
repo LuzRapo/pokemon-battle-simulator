@@ -154,6 +154,13 @@ pub enum Event {
         pokemon: String,
         into: String,
     },
+    /// Mega Evolution, Primal Reversion, or Ultra Burst: `pokemon` is still the holder's own
+    /// nickname, `forme` the new species name it has permanently become for the rest of the battle.
+    FormeChanged {
+        side: i32,
+        pokemon: String,
+        forme: String,
+    },
     ScreenSet {
         side: i32,
         screen: String,

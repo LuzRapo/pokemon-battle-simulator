@@ -21,7 +21,7 @@ use crate::battle::{Pokemon, Status};
 /// move with its own log line — so porting the clause alone would be a Levitate that takes no
 /// damage and never says why. Air Balloon, Punching Glove and Choice Scarf are out for the same
 /// reason: each does more somewhere else.
-pub const PORTED_ABILITIES: [&str; 71] = [
+pub const PORTED_ABILITIES: [&str; 74] = [
     "BATTLE_ARMOR",
     "BIG_PECKS",
     "CHLOROPHYLL",
@@ -32,6 +32,11 @@ pub const PORTED_ABILITIES: [&str; 71] = [
     "COMPOUND_EYES",
     "CORROSION",
     "DEFIANT",
+    // Primal weather. Mega Rayquaza's own ability has no held item to key it to `formes.rs`'s
+    // table (it is move-gated), but it sets weather the exact same way these two do, so it rides
+    // in on this same array rather than needing one of its own.
+    "DELTA_STREAM",
+    "DESOLATE_LAND",
     "DRIZZLE",
     "DROUGHT",
     "ELECTRIC_SURGE",
@@ -61,6 +66,7 @@ pub const PORTED_ABILITIES: [&str; 71] = [
     "POISON_PUPPETEER",
     "PRANKSTER",
     "PRESSURE",
+    "PRIMORDIAL_SEA",
     "PSYCHIC_SURGE",
     "PURIFYING_SALT",
     "QUICK_DRAW",
@@ -303,12 +309,21 @@ pub fn ability_blocks_volatile(target: &Pokemon, volatile: &str) -> bool {
 }
 
 /// `ABILITY_WEATHER` and `ABILITY_TERRAIN`: what a Pokemon brings with it onto the field.
+///
+/// Desolate Land / Primordial Sea / Delta Stream are read here exactly like the ordinary four —
+/// this engine, like the Python it mirrors, does not make their weather immune to being overwritten
+/// by an ordinary weather move afterward. That is a real cartridge behaviour missing from the
+/// Python reference itself (its own comments say so), and porting it here would be a divergence
+/// from the engine this is checked against, not a fix.
 pub fn weather_from_ability(ability: &str) -> Option<&'static str> {
     Some(match ability {
         "DROUGHT" => "SUN",
         "DRIZZLE" => "RAIN",
         "SAND_STREAM" => "SANDSTORM",
         "SNOW_WARNING" => "SNOW",
+        "DESOLATE_LAND" => "HARSH_SUN",
+        "PRIMORDIAL_SEA" => "HEAVY_RAIN",
+        "DELTA_STREAM" => "STRONG_WINDS",
         _ => return None,
     })
 }

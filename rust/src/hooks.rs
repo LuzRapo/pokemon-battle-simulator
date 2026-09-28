@@ -659,6 +659,26 @@ pub fn life_orb_recoil(state: &mut State, side: usize, total_dealt: i32, log: &m
     log.push(Event::ItemChipDamage { side: side as i32, pokemon: nickname, item: "LIFE_ORB".to_string(), amount: chip });
 }
 
+/// The weather half of `ABILITY_WEATHER`/`_set_weather_from_ability` — shared between an ordinary
+/// switch-in (`on_switch_in`'s own match arm, below) and a forme swap that hands its holder a
+/// weather-setting ability mid-turn (`formes::resolve_forme_changes`), which is `turn.py`'s own
+/// `_weather_from_new_ability`: switch-in weather binders fire long before a mid-turn Mega
+/// Evolution or Primal Reversion, so without a second call site here Primal Groudon would set
+/// ordinary sun instead of Desolate Land's, and Mega Rayquaza would set no weather at all.
+pub fn apply_weather_from_ability(state: &mut State, side: usize, log: &mut Log) {
+    let ability = state.sides[side].active_pokemon().ability.clone();
+    // Nothing happens if this weather is already blowing — and nothing is logged either.
+    let Some(weather) = crate::inline::weather_from_ability(&ability) else { return };
+    if state.field.weather == weather {
+        return;
+    }
+    state.field.weather = weather.to_string();
+    let rock = crate::inline::rock_for_weather(weather);
+    state.field.weather_turns_left = if rock.is_some_and(|r| state.sides[side].active_pokemon().item == r) { 8 } else { 5 };
+    let nickname = state.sides[side].active_pokemon().nickname.clone();
+    log.push(Event::WeatherSetByAbility { side: side as i32, pokemon: nickname, ability });
+}
+
 /// `ON_SWITCH_IN`, for whoever has just arrived on this side.
 #[allow(clippy::collapsible_match)] // same reason: a draw belongs in the arm, not in the guard
 pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
@@ -692,22 +712,7 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
                 apply_stage_changes(state, side, &[(stat.to_string(), 1)], "download", log);
             }
         }
-        _ if crate::inline::weather_from_ability(&ability).is_some() => {
-            // Nothing happens if this weather is already blowing — and nothing is logged either.
-            let weather = crate::inline::weather_from_ability(&ability).expect("just checked");
-            if state.field.weather != weather {
-                state.field.weather = weather.to_string();
-                let rock = crate::inline::rock_for_weather(weather);
-                state.field.weather_turns_left =
-                    if rock.is_some_and(|r| state.sides[side].active_pokemon().item == r) { 8 } else { 5 };
-                let nickname = state.sides[side].active_pokemon().nickname.clone();
-                log.push(Event::WeatherSetByAbility {
-                    side: side as i32,
-                    pokemon: nickname,
-                    ability: ability.clone(),
-                });
-            }
-        }
+        _ if crate::inline::weather_from_ability(&ability).is_some() => apply_weather_from_ability(state, side, log),
         _ if crate::inline::terrain_from_ability(&ability).is_some() => {
             let terrain = crate::inline::terrain_from_ability(&ability).expect("just checked");
             if state.field.terrain != terrain {
