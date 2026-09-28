@@ -1411,12 +1411,14 @@ fn resolve_move(
                 // is where the substitute check lives) is ever called.
                 let attacker_ability = state.sides[side].active_pokemon().ability.clone();
                 let defender_ability = state.sides[other].active_pokemon().ability.clone();
+                let defender_item = state.sides[other].active_pokemon().item.clone();
                 let tuned = crate::inline::tune_status_secondary(
                     *is_secondary,
                     *probability,
                     at_self,
                     &attacker_ability,
                     &defender_ability,
+                    &defender_item,
                 );
                 if let Some(tuned) = tuned {
                     if !at_self && behind_substitute {
@@ -1432,18 +1434,34 @@ fn resolve_move(
                 // still runs ahead of both, for the same reason.
                 let attacker_ability = state.sides[side].active_pokemon().ability.clone();
                 let defender_ability = state.sides[other].active_pokemon().ability.clone();
+                let defender_item = state.sides[other].active_pokemon().item.clone();
                 let tuned = crate::inline::tune_stage_secondary(
                     *is_secondary,
                     *probability,
                     target,
                     &attacker_ability,
                     &defender_ability,
+                    &defender_item,
                 );
                 if let Some(tuned) = tuned {
                     if target != "SELF" && behind_substitute {
                         // no draw
                     } else {
-                        apply_stages(state, side, stages, tuned, target, tape, log)?;
+                        let fired = apply_stages(state, side, stages, tuned, target, tape, log)?;
+                        // Mirror Herb: the *opponent's* own self-raise, copied onto its holder the
+                        // instant it lands — checked against the request's own stages, unconditional
+                        // of whether any of them actually moved a clamped stat.
+                        if fired && target == "SELF" && !state.sides[other].active_pokemon().fainted() {
+                            let raises: Vec<(String, i32)> =
+                                stages.iter().filter(|(_, change)| *change > 0).cloned().collect();
+                            if !raises.is_empty() && state.sides[other].active_pokemon().item == "MIRROR_HERB" {
+                                let holder = state.sides[other].active_mut();
+                                holder.last_consumed_item = holder.item.clone();
+                                holder.item = "NONE".to_string();
+                                holder.item_consumed = true;
+                                apply_stage_changes(state, other, &raises, "seed", log);
+                            }
+                        }
                     }
                 }
             }
@@ -1463,9 +1481,12 @@ fn resolve_move(
                 log.push(Event::WeatherChanged { weather: variant.clone() });
             }
             Effect::TerrainEffect { variant, duration_turns } => {
-                // A Terrain Extender would make it eight; still refused.
                 state.field.terrain = variant.clone();
-                state.field.terrain_turns_left = duration_turns.unwrap_or(5);
+                state.field.terrain_turns_left = if state.sides[side].active_pokemon().item == "TERRAIN_EXTENDER" {
+                    8
+                } else {
+                    duration_turns.unwrap_or(5)
+                };
                 log.push(Event::TerrainChanged { terrain: variant.clone() });
                 // `_apply_field_effect` sweeps both sides' seeds itself, unconditionally, every
                 // time a terrain move resolves -- even a terrain re-set to what it already was.
@@ -1494,8 +1515,22 @@ fn resolve_move(
 
     // Phazing drags a random healthy teammate in, and it counts as something happening — so it is
     // before the "nothing happened" check, exactly where the Python puts it.
+    //
+    // Unlike everything else past a mid-move switch, this one needs the *real* board, not the
+    // pinned stale attacker: the arriving Pokemon's own `ON_SWITCH_IN` (Intimidate, entry hazards,
+    // ...) is a fresh bus read in the Python, not a direct reference through `_execute_move`'s own
+    // local variables, so it already sees whichever Pokemon Red Card actually left standing on
+    // `side`. Un-pin for the call, then re-pin — the attacker is still stale for whatever of this
+    // move's own resolution remains after it.
     if the_move.force_switch && !state.sides[other].active_pokemon().fainted() {
+        let pinned = restore_active_to.is_some();
+        if let Some(real_active) = restore_active_to {
+            state.sides[side].active = real_active;
+        }
         force_random_switch(state, other, db, tape, log)?;
+        if pinned {
+            state.sides[side].active = attacker_active_at_move_start;
+        }
     }
 
     // Nothing at all happened: every effect was skipped, most often because the target had already
@@ -1680,6 +1715,9 @@ pub(crate) fn force_random_switch(
         grant_switch_in_bonuses(state, side, log);
         on_switch_in(state, side, log);
     }
+    // The drag *is* the replacement: an Eject Button/Pack armed on the Pokemon this just dragged
+    // out does not also get to send in a second one behind it.
+    state.sides[side].needs_switch = false;
     Ok(())
 }
 
@@ -1809,8 +1847,8 @@ fn collect_damage_payload(
 ///
 /// Taken *before* the effectiveness line is logged and before any crit or damage roll, which is
 /// where the Python takes it. A fixed count — Double Kick's two, Triple Axel's three — costs no
-/// draw at all. Skill Link and Loaded Dice change the answer and are both still refused.
-fn planned_hits(the_move: &Move, attacker_ability: &str, tape: &mut Tape) -> Result<(bool, i32), Refusal> {
+/// draw at all. Skill Link always takes the top of the range, drawn from the tape not at all.
+fn planned_hits(the_move: &Move, attacker_ability: &str, attacker_item: &str, tape: &mut Tape) -> Result<(bool, i32), Refusal> {
     let span = the_move.effects.iter().find_map(|e| match e {
         Effect::DamageEffect { multi_hit, .. } => multi_hit.as_ref(),
         _ => None,
@@ -1820,10 +1858,13 @@ fn planned_hits(the_move: &Move, attacker_ability: &str, tape: &mut Tape) -> Res
     if low == high {
         return Ok((true, low));
     }
-    // Skill Link: always the top of the range, and — like Loaded Dice's own special-cased roll,
-    // an item still unported — drawn from the tape not at all rather than drawn and discarded.
     if attacker_ability == "SKILL_LINK" {
         return Ok((true, high));
+    }
+    // Loaded Dice: only on the wider 2-5 spread, a 2-4-6 style roll wouldn't even qualify — folds
+    // the distribution up to 4-or-5 rather than the plain 2-through-5 everybody else draws.
+    if attacker_item == "LOADED_DICE" && high - low >= 2 {
+        return Ok((true, tape.integer(high - 1, high + 1)?));
     }
     Ok((true, tape.integer(low, high + 1)?))
 }
@@ -1882,8 +1923,12 @@ fn apply_side_condition(
             log.push(Event::MoveFailed);
             return;
         }
-        // Light Clay would make it eight; still refused.
-        state.sides[target].screens.insert(variant.to_string(), duration_turns.unwrap_or(5));
+        let default_duration = if state.sides[side].active_pokemon().item == "LIGHT_CLAY" {
+            8
+        } else {
+            duration_turns.unwrap_or(5)
+        };
+        state.sides[target].screens.insert(variant.to_string(), default_duration);
         log.push(Event::ScreenSet { side: target as i32, screen: variant.to_string() });
         return;
     }
@@ -2134,11 +2179,11 @@ fn apply_coded(
             let nickname = attacker.nickname.clone();
             state.sides[side].pending_substitute = sub_hp;
             log.push(Event::VolatileInflicted { side: side as i32, pokemon: nickname, volatile: "SUBSTITUTE".into() });
-            // `side.needs_switch = True` plus `_resolve_pending_switches`, called right after
-            // *every* action resolves — not a later, AI-side concern the way it first looked. The
-            // replacement arrives the same instant Shed Tail does, exactly like an ordinary pivot's
-            // `send_out_replacement`, which is the call this reuses.
-            send_out_replacement(state, side, db, log);
+            // `side.needs_switch = True`, exactly like an ordinary pivot — deferred to
+            // `resolve_pending_switches`, called once per completed action, not switched here
+            // inline. Matters for the same reason the pivot fix did: a defender's own Eject Button,
+            // armed earlier this same action, still resolves in side order, not arming order.
+            state.sides[side].needs_switch = true;
         }
         "FUTURE_SIGHT" => {
             let other = 1 - side;
@@ -2521,7 +2566,8 @@ fn apply_damage(
     let attacker_active_before = state.sides[side].active;
     let mut attacker_active_after_hits = attacker_active_before;
     let attacker_ability = state.sides[side].active_pokemon().ability.clone();
-    let (is_multi_hit, planned) = planned_hits(the_move, &attacker_ability, tape)?;
+    let attacker_item = state.sides[side].active_pokemon().item.clone();
+    let (is_multi_hit, planned) = planned_hits(the_move, &attacker_ability, &attacker_item, tape)?;
     log.effectiveness(effectiveness);
     // Once for the whole move, after the hit count and the effectiveness line — which is where
     // the Python builds `hit_payload_base`. Only Magnitude notices, because only Magnitude draws.
@@ -2880,6 +2926,25 @@ fn start_rampage(state: &mut State, target_side: usize, tape: &mut Tape) -> Resu
     Ok(())
 }
 
+/// `_mental_herb_cure`: Taunt, Encore or Disable, cured the instant any of them lands — a no-op,
+/// self-guarded, for every other volatile so callers can reach for it unconditionally the way the
+/// Python's own `_apply_volatile` does.
+fn mental_herb_cure(state: &mut State, target_side: usize, volatile: &str, log: &mut Log) -> bool {
+    if !matches!(volatile, "TAUNT" | "ENCORE" | "DISABLE")
+        || state.sides[target_side].active_pokemon().item != "MENTAL_HERB"
+    {
+        return false;
+    }
+    let target = state.sides[target_side].active_mut();
+    target.last_consumed_item = target.item.clone();
+    target.item = "NONE".to_string();
+    target.item_consumed = true;
+    target.volatiles.remove(volatile);
+    let nickname = target.nickname.clone();
+    log.push(Event::StatusCleared { side: target_side as i32, pokemon: nickname, clearance: "berry".to_string() });
+    true
+}
+
 /// `_start_encore`: fails silently (no draw, no log — the move then falls through to the empty-log
 /// `MoveFailed`) with nothing to encore or an encore already running.
 fn start_encore(state: &mut State, target_side: usize, log: &mut Log) {
@@ -2892,6 +2957,9 @@ fn start_encore(state: &mut State, target_side: usize, log: &mut Log) {
     target.volatiles.insert("ENCORE".to_string(), 3);
     let nickname = target.nickname.clone();
     log.push(Event::VolatileInflicted { side: target_side as i32, pokemon: nickname, volatile: "ENCORE".into() });
+    if mental_herb_cure(state, target_side, "ENCORE", log) {
+        state.sides[target_side].active_mut().encored_slot = None;
+    }
 }
 
 /// `_start_disable`: fails silently with nothing to disable or one already in effect. Logs
@@ -2908,6 +2976,9 @@ pub fn start_disable(state: &mut State, target_side: usize, log: &mut Log) {
     target.volatiles.insert("DISABLE".to_string(), 5);
     let nickname = target.nickname.clone();
     log.push(Event::DisableApplied { side: target_side as i32, pokemon: nickname, the_move: disabled_move });
+    if mental_herb_cure(state, target_side, "DISABLE", log) {
+        state.sides[target_side].active_mut().disabled_slot = None;
+    }
 }
 
 /// `_make_substitute`: a quarter of max HP, paid up front, with its own two failure logs rather
@@ -2983,6 +3054,7 @@ fn apply_volatile(
     if volatile == "FLINCH" && state.sides[target_side].active_pokemon().ability == "STEADFAST" {
         apply_stage_changes_from(state, target_side, &[("SPEED".to_string(), 1)], "steadfast", false, log);
     }
+    mental_herb_cure(state, target_side, volatile, log);
     Ok(())
 }
 
@@ -3124,13 +3196,13 @@ fn apply_stages(
     target: &str,
     tape: &mut Tape,
     log: &mut Log,
-) -> Result<(), Refusal> {
+) -> Result<bool, Refusal> {
     if tape.probability()? >= probability {
-        return Ok(());
+        return Ok(false);
     }
     let target_side = if target == "SELF" { side } else { 1 - side };
     apply_stage_changes_from(state, target_side, stages, "move", target_side != side, log);
-    Ok(())
+    Ok(true)
 }
 
 /// `mechanics.stages.apply_stage_changes`, for the cases this engine can reach.
@@ -3143,6 +3215,10 @@ fn apply_stages(
 pub fn apply_stage_changes(state: &mut State, target_side: usize, stages: &[(String, i32)], source: &str, log: &mut Log) {
     apply_stage_changes_from(state, target_side, stages, source, false, log)
 }
+
+/// `_STAGED_STATS`: every `Stats` member but HP — the ones a stage can apply to at all.
+const _STAGED_STATS: [&str; 7] =
+    ["ATTACK", "DEFENCE", "SP_ATTACK", "SP_DEFENCE", "SPEED", "ACCURACY", "EVASION"];
 
 /// `apply_stage_changes`, with the Python's `inflicted_by_opponent` — the flag that decides whether
 /// a drop can be intercepted at all.
@@ -3194,11 +3270,40 @@ pub fn apply_stage_changes_from(
     }
     if dropped > 0 {
         retaliate_drops(state, target_side, dropped, log);
+        // Adrenaline Orb: Intimidate specifically, not any other opponent-inflicted drop — checked
+        // after retaliation, in the Python's own order, and only reached at all when the drop
+        // actually went through (a Clear Amulet/Clear Body block returns before `dropped` is ever
+        // counted).
+        if source == "intimidate" && state.sides[target_side].active_pokemon().item == "ADRENALINE_ORB" {
+            let pokemon = state.sides[target_side].active_mut();
+            pokemon.last_consumed_item = pokemon.item.clone();
+            pokemon.item = "NONE".to_string();
+            pokemon.item_consumed = true;
+            apply_stage_changes(state, target_side, &[("SPEED".to_string(), 1)], "seed", log);
+        }
         // Eject Pack: armed here, drained by `resolve_eject_pack` once the action that triggered
         // this finishes resolving — not switched out on the spot, since the Python's own
         // `_resolve_eject_packs` runs once per completed action, after this function returns.
         if state.sides[target_side].active_pokemon().item == "EJECT_PACK" {
             state.sides[target_side].active_mut().eject_pending = true;
+        }
+    }
+    // White Herb: unconditional of whether *this* call dropped anything — any stat still sitting
+    // negative, from any earlier call, is reset the moment any stage change resolves at all.
+    let holder = state.sides[target_side].active_pokemon();
+    if holder.item == "WHITE_HERB" {
+        let lowered: Vec<String> =
+            _STAGED_STATS.iter().filter(|stat| holder.stage(stat) < 0).map(|s| s.to_string()).collect();
+        if !lowered.is_empty() {
+            let pokemon = state.sides[target_side].active_mut();
+            for stat in &lowered {
+                pokemon.stages.insert(stat.clone(), 0);
+            }
+            pokemon.last_consumed_item = pokemon.item.clone();
+            pokemon.item = "NONE".to_string();
+            pokemon.item_consumed = true;
+            let nickname = pokemon.nickname.clone();
+            log.push(Event::WhiteHerbRestored { side: target_side as i32, pokemon: nickname });
         }
     }
 }
@@ -3219,6 +3324,10 @@ fn intercept_drops(
     let nickname = state.sides[target_side].active_pokemon().nickname.clone();
     if matches!(ability.as_str(), "CLEAR_BODY" | "FULL_METAL_BODY" | "WHITE_SMOKE") {
         log.push(Event::StatDropBlocked { side: target_side as i32, pokemon: nickname, ability });
+        return None;
+    }
+    if state.sides[target_side].active_pokemon().item == "CLEAR_AMULET" {
+        log.push(Event::StatDropBlockedByItem { side: target_side as i32, pokemon: nickname, item: "CLEAR_AMULET".to_string() });
         return None;
     }
     let protected = match ability.as_str() {

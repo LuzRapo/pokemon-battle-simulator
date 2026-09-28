@@ -2959,6 +2959,464 @@ def test_a_pivots_own_switch_is_deferred_behind_a_lower_indexed_side(tmp_path: P
 
 
 @needs_rust
+def test_a_forced_switch_satisfies_its_own_targets_pending_eject(tmp_path: Path) -> None:
+    """The bug the same sweep found in `force_random_switch` itself: Dragon Tail both damages its
+    target (arming Eject Button's own `needs_switch`) and then, in the Python's own order, drags
+    that same target out by force -- and `_force_random_switch` ends by setting
+    `side.needs_switch = False` itself, "the drag *is* the replacement," so the Eject Button's own
+    already-armed flag never gets to send out a *second* replacement behind the first. Dragon Tail's
+    90% accuracy makes this a seed sweep rather than a single deterministic turn.
+
+    Vacuity-checked directly: dropping the reset let a stale `needs_switch` survive the drag and
+    send a second Pokemon out behind it -- a real extra `Switched` event, not merely a mismatch.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.EJECT_BUTTON,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        PokemonSpec(
+            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Dragon Tail"],
+        )
+    ]
+    checked_a_hit = 0
+    for seed in range(20):
+        rng = random.Random(44300 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"seed {seed}"
+        events = expected[0]["events"]
+        if not any(e["type"] == "DamageDealt" and e["side"] == 0 for e in events):
+            continue
+        switches = [e for e in events if e["type"] == "Switched" and e["side"] == 0]
+        assert len(switches) == 1, (seed, events)
+        checked_a_hit += 1
+    assert checked_a_hit > 0, "Dragon Tail never once hit across 20 seeds"
+
+
+@needs_rust
+def test_a_phazing_moves_own_force_switch_sees_the_real_board_not_the_stale_attacker(tmp_path: Path) -> None:
+    """A second bug the same sweep found, in the opposite direction from every other Red Card fix
+    this batch: Circle Throw both damages its target (a Red Card holder, forcing *this* move's own
+    attacker out mid-resolution) and then, in the Python's own order, drags that same target out by
+    its own `force_switch` -- and the replacement's own `ON_SWITCH_IN` (Intimidate, here) is a fresh
+    bus read in the Python, not a direct reference through `_execute_move`'s own local variables, so
+    it already sees whichever Pokemon Red Card left standing on the attacker's side. Pinning the
+    attacker for the rest of `resolve_move` -- correct for recoil, drain, a move's own post-damage
+    self-effect -- would have this same Intimidate drop land on the *departed* attacker instead.
+    Circle Throw's 90% accuracy makes this a seed sweep rather than a single deterministic turn.
+
+    Vacuity-checked directly: leaving the attacker pinned through the `force_random_switch` call
+    landed Intimidate's drop on the wrong Pokemon -- a plain event mismatch (the wrong `pokemon`
+    name) against the Python's own drop on whoever is actually standing there.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Circle Throw"],
+        ),
+        PokemonSpec(
+            species="Golem", nickname="A1", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.RED_CARD,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+        PokemonSpec(
+            species="Kangaskhan", nickname="B1", level=50, ability=Ability.INTIMIDATE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        ),
+    ]
+    checked_a_hit = 0
+    for seed in range(20):
+        rng = random.Random(44400 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"seed {seed}"
+        events = expected[0]["events"]
+        if not any(e["type"] == "DamageDealt" and e["side"] == 1 for e in events):
+            continue
+        drop = next((e for e in events if e["type"] == "StatStageChanged" and e["source"] == "intimidate"), None)
+        assert drop is not None and drop["pokemon"] == "A1", (seed, events)
+        checked_a_hit += 1
+    assert checked_a_hit > 0, "Circle Throw never once hit across 20 seeds"
+
+
+@needs_rust
+def test_booster_energy_activates_paradox_without_the_field_condition(tmp_path: Path) -> None:
+    """Booster Energy: `evaluate_paradox`'s own already-written fallback, unblocked the moment the
+    item joins a `PORTED` array -- no weather, no terrain, just the held item consumed on switch-in.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.PROTOSYNTHESIS, item=Item.BOOSTER_ENERGY,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    activated = next((e for e in events if e["type"] == "ParadoxActivated"), None)
+    assert activated is not None and activated["from_booster"], events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "NONE", a0_digest
+
+
+@needs_rust
+def test_punching_glove_boosts_punching_moves_without_making_them_contact(tmp_path: Path) -> None:
+    """Punching Glove's other half: 1.1x on `power_mods_4096` for any punching move, unconditional
+    of category -- verified by the differential comparison, since a wrong multiplier is a wrong
+    `DamageDealt`. Its contact-negation half already lived at `makes_contact`'s own inline site
+    before this batch; Mach Punch's 100% accuracy keeps the hit itself deterministic.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.PUNCHING_GLOVE,
+            nature=Nature.HARDY, moves=["Mach Punch"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Golem", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "DamageDealt" for e in events), events
+
+
+@needs_rust
+def test_terrain_extender_stretches_the_terrain_to_eight_turns(tmp_path: Path) -> None:
+    """Terrain Extender: the same duration bump the weather rocks already have, at both places
+    terrain gets set (an ability's own switch-in, and a terrain move) -- checked here via the
+    ability path, which is deterministic on its own switch-in.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Kangaskhan", nickname="A0", level=50, ability=Ability.ELECTRIC_SURGE, item=Item.TERRAIN_EXTENDER,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    # One turn already ticked the counter down from its nominal 8, the same as the weather rocks.
+    assert expected[0]["state"]["terrain_turns_left"] == 7, expected[0]["state"]
+
+
+@needs_rust
+def test_light_clay_stretches_a_screen_to_eight_turns(tmp_path: Path) -> None:
+    """Light Clay: the caster's own held item extending Reflect/Light Screen/Aurora Veil from 5
+    turns to 8, checked at the same site the screen itself gets set. The counter itself already
+    ticks once in the same turn it's set (the field's own residual tick), so one turn in it reads
+    7, not 8 -- the same convention the weather rocks and Terrain Extender both follow.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.LIGHT_CLAY,
+            nature=Nature.HARDY, moves=["Reflect"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    a0_digest = expected[0]["state"]["sides"][0]
+    assert a0_digest["screens"]["REFLECT"] == 7, a0_digest
+
+
+@needs_rust
+def test_clear_amulet_blocks_an_opponent_inflicted_drop(tmp_path: Path) -> None:
+    """Clear Amulet: the same whole-request block Clear Body/Full Metal Body/White Smoke already
+    have in `intercept_drops`, checked as an item rather than an ability. Growl's 100% accuracy and
+    100% probability keep the drop attempt itself deterministic.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.CLEAR_AMULET,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Growl"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "StatDropBlockedByItem" and e["item"] == "CLEAR_AMULET" for e in events), events
+    assert not any(e["type"] == "StatStageChanged" for e in events), events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "CLEAR_AMULET", a0_digest
+
+
+@needs_rust
+def test_white_herb_restores_a_negative_stage_the_instant_it_appears(tmp_path: Path) -> None:
+    """White Herb: unconditional of whether the call that just ran caused a drop at all -- any stat
+    still sitting negative, from any earlier call, resets to zero the moment any stage change
+    resolves. Growl's own drop is what puts a stat negative in the first place, and the tail of the
+    very same `apply_stage_changes_from` call restores it, all on one turn.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.WHITE_HERB,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Growl"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "StatStageChanged" and e["stat"] == "ATTACK" and e["delta"] == -1 for e in events), events
+    assert any(e["type"] == "WhiteHerbRestored" and e["pokemon"] == "A0" for e in events), events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "NONE" and a0_digest["stages"]["ATTACK"] == 0, a0_digest
+
+
+@needs_rust
+def test_adrenaline_orb_boosts_speed_off_an_intimidate_drop(tmp_path: Path) -> None:
+    """Adrenaline Orb: Intimidate specifically, not any other opponent-inflicted drop -- checked
+    only once the drop has actually gone through, on the lead switch-in both sides get for free.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.ADRENALINE_ORB,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.INTIMIDATE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(
+        e["type"] == "StatStageChanged" and e["stat"] == "ATTACK" and e["source"] == "intimidate" for e in events
+    ), events
+    assert any(
+        e["type"] == "StatStageChanged" and e["stat"] == "SPEED" and e["source"] == "seed" and e["pokemon"] == "A0"
+        for e in events
+    ), events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "NONE", a0_digest
+
+
+@needs_rust
+def test_covert_cloak_blocks_a_secondary_effect_like_shield_dust(tmp_path: Path) -> None:
+    """Covert Cloak: `_blocks_secondaries`, Shield Dust or the item, either one refusing a secondary
+    the same way -- no draw at all, not even a suppressed one, since the block happens ahead of the
+    probability roll. Rock Smash's 50% Defense-drop secondary would make this a seed sweep without
+    the block; with it, the outcome is deterministic regardless of what the roll would have been.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Rock Smash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.COVERT_CLOAK,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    cleared = 0
+    for seed in range(20):
+        rng = random.Random(44100 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"seed {seed}"
+        events = expected[0]["events"]
+        assert not any(e["type"] == "StatStageChanged" for e in events), (seed, events)
+        cleared += 1
+    assert cleared == 20
+
+
+@needs_rust
+def test_loaded_dice_never_rolls_the_bottom_of_a_wide_multi_hit_range(tmp_path: Path) -> None:
+    """Loaded Dice: only on a spread of two or more between the low and high hit counts -- folds
+    the roll up to `high - 1` or `high`, so a 2-5-hit move (Bullet Seed) never lands at 2 or 3 while
+    the item is held. Machamp is the target rather than the (4x-weak) Rhydon specifically so it
+    survives all five hits on every seed -- `MultiHitSummary` reports hits *landed*, and a target
+    that faints partway through would report a short count for a reason that has nothing to do with
+    the item.
+
+    Not vacuity-checked by disabling the code and watching the differential fail: the tape replays
+    whatever integer the Python's own recording drew, and a 4-or-5 draw from the item's own narrow
+    range is *also* a valid answer to the plain 2-through-5 draw the disabled code would ask for
+    instead, so the comparator has nothing to catch. This statistical check against the Python's own
+    independently-computed distribution, across seeds the item's own narrower range actually
+    constrains, is what stands in for it.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Golem", nickname="A0", level=50, ability=Ability.NONE, item=Item.LOADED_DICE,
+            nature=Nature.HARDY, moves=["Bullet Seed"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    seen_hits: set[int] = set()
+    for seed in range(20):
+        rng = random.Random(44200 + seed)
+        scenario, expected = record((team_a, team_b), _chooser(rng), seed=seed, max_turns=1)
+        theirs = _rust_trace(scenario, tmp_path)
+        assert not isinstance(theirs, str), f"seed {seed} was refused: {theirs}"
+        assert compare(expected, theirs) is None, f"seed {seed}"
+        summary = next(e for e in expected[0]["events"] if e["type"] == "MultiHitSummary")
+        seen_hits.add(summary["hits"])
+    assert seen_hits and seen_hits.issubset({4, 5}), seen_hits
+
+
+@needs_rust
+def test_power_herb_skips_the_charging_turn(tmp_path: Path) -> None:
+    """Power Herb: consumed to fire a charge move the same turn it is chosen, checked last in
+    `_skips_charge_turn`'s own order (after the sun-skip check) -- so a Solar Beam not helped by any
+    weather still lands on turn one instead of announcing `ChargingUp`.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.POWER_HERB,
+            nature=Nature.HARDY, moves=["Solar Beam"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert not any(e["type"] == "ChargingUp" for e in events), events
+    assert any(e["type"] == "DamageDealt" for e in events), events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "NONE", a0_digest
+
+
+@needs_rust
+def test_mental_herb_cures_taunt_the_instant_it_lands(tmp_path: Path) -> None:
+    """Mental Herb: Taunt, Encore or Disable, cured the instant any of them lands -- Taunt's own
+    100% accuracy keeps this deterministic, and it reaches the cure through the same generic
+    `apply_volatile` path every other status-inflicting volatile does.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Rhydon", nickname="A0", level=50, ability=Ability.NONE, item=Item.MENTAL_HERB,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Machamp", nickname="B0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Taunt"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert any(e["type"] == "VolatileInflicted" and e["volatile"] == "TAUNT" for e in events), events
+    assert any(e["type"] == "StatusCleared" and e["clearance"] == "berry" for e in events), events
+    a0_digest = expected[0]["state"]["sides"][0]["team"][0]
+    assert a0_digest["item"] == "NONE" and "TAUNT" not in a0_digest["volatiles"], a0_digest
+
+
+@needs_rust
+def test_mirror_herb_copies_the_opponents_own_self_raise(tmp_path: Path) -> None:
+    """Mirror Herb: the opponent's own self-targeted raise, copied onto the holder the instant it
+    lands -- checked against the move's own requested stages, unconditional of whether any of them
+    actually moved a clamped stat. Swords Dance's own effect always succeeds, so the copy is
+    deterministic.
+    """
+    team_a = [
+        PokemonSpec(
+            species="Machamp", nickname="A0", level=50, ability=Ability.NONE, item=Item.NONE,
+            nature=Nature.HARDY, moves=["Swords Dance"],
+        )
+    ]
+    team_b = [
+        PokemonSpec(
+            species="Rhydon", nickname="B0", level=50, ability=Ability.NONE, item=Item.MIRROR_HERB,
+            nature=Nature.HARDY, moves=["Splash"],
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    a0_boost = next(e for e in events if e["type"] == "StatStageChanged" and e["pokemon"] == "A0")
+    assert a0_boost["stat"] == "ATTACK" and a0_boost["delta"] == 2, events
+    b0_boost = next(e for e in events if e["type"] == "StatStageChanged" and e["pokemon"] == "B0")
+    assert b0_boost["stat"] == "ATTACK" and b0_boost["delta"] == 2 and b0_boost["source"] == "seed", events
+    b0_digest = expected[0]["state"]["sides"][1]["team"][0]
+    assert b0_digest["item"] == "NONE", b0_digest
+
+
+@needs_rust
 def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     """A guard against testing nothing.
 

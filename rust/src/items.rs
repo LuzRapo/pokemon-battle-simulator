@@ -119,6 +119,12 @@ pub fn on_damage_calc(
         if item == "EXPERT_BELT" && calc.db.effectiveness(calc.move_type, &calc.defender.battle_types()) >= 2.0 {
             payload.final_mods_4096.push(4915);
         }
+        // Punching Glove's other half: its contact-negation already lives at `makes_contact`'s own
+        // inline site. 1.1x on `power_mods_4096`, unconditional of category since every punching
+        // move is physical anyway.
+        if item == "PUNCHING_GLOVE" && calc.the_move.punching {
+            payload.power_mods_4096.push(4506);
+        }
         // Choice Band / Choice Specs: 1.5x, on `final_mods_4096` like every other flat item boost
         // here. Not in `PORTED` above, nor Choice Scarf beside them — all three also lock their
         // holder into a move, which lives in the move flow (`turn::resolve_move`), not here.

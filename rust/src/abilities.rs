@@ -107,6 +107,19 @@ const OVERLORD_POWER_4096: [i64; 6] = [4096, 4506, 4915, 5325, 5734, 6144];
 /// Returns whatever wants consuming: a resist berry is eaten by the same handler that halves the
 /// hit, but this walk only holds the state by shared reference, so the eating is left to the
 /// caller rather than smuggled in behind it.
+///
+/// Known narrow gap: `attacker_registered` silences the *departed* attacker's own contribution once
+/// Red Card switches it out mid-multi-hit, but the Python's bus also lets the *replacement* start
+/// contributing as a bystander the instant it registers — the aura abilities (Tablets/Vessel/Sword/
+/// Beads of Ruin, Aura Break, Dark Aura, Fairy Aura) check "is not the actor", not "is the current
+/// defender/attacker", so a replacement holding one of those would weaken or strengthen the stale
+/// attacker's remaining hits in the Python's own trace. This walk only ever considers `attacker_side`
+/// and `defender_side` — the replacement, sitting where the attacker used to be, is invisible to it.
+/// Needs Red Card, a multi-hit move, and the randomly-drawn replacement holding one of seven specific
+/// abilities, all at once; the `--abilities` sweeps deal both Red Card and every Ruin ability to a
+/// meaningful share of the field, so this shows up more often than the combination sounds like it
+/// should — a handful of times across the tens of thousands of battles swept for this batch — and is
+/// left undone rather than threading a third bystander identity through every call site for that.
 pub fn apply_damage_calc(
     state: &State,
     attacker_side: usize,

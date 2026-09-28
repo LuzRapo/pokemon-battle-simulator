@@ -330,7 +330,8 @@ pub const PORTED_ABILITIES: [&str; 20] = [
 ];
 
 /// Items implemented here, on top of the damage-calc ones.
-pub const PORTED_ITEMS: [&str; 12] = [
+pub const PORTED_ITEMS: [&str; 13] = [
+    "BOOSTER_ENERGY",
     "EJECT_BUTTON",
     "ELECTRIC_SEED",
     "GRASSY_SEED",
@@ -700,7 +701,8 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
             let terrain = crate::inline::terrain_from_ability(&ability).expect("just checked");
             if state.field.terrain != terrain {
                 state.field.terrain = terrain.to_string();
-                state.field.terrain_turns_left = 5;
+                state.field.terrain_turns_left =
+                    if state.sides[side].active_pokemon().item == "TERRAIN_EXTENDER" { 8 } else { 5 };
                 let nickname = state.sides[side].active_pokemon().nickname.clone();
                 log.push(Event::TerrainSetByAbility {
                     side: side as i32,

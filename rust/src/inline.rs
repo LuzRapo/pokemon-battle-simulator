@@ -96,11 +96,14 @@ pub const PORTED_ABILITIES: [&str; 71] = [
 ];
 
 /// Items implemented at their inline sites.
-pub const PORTED_ITEMS: [&str; 17] = [
+pub const PORTED_ITEMS: [&str; 28] = [
+    "ADRENALINE_ORB",
     "CHESTO_BERRY",
     "CHOICE_BAND",
     "CHOICE_SCARF",
     "CHOICE_SPECS",
+    "CLEAR_AMULET",
+    "COVERT_CLOAK",
     "CUSTAP_BERRY",
     "DAMP_ROCK",
     "EJECT_PACK",
@@ -108,11 +111,19 @@ pub const PORTED_ITEMS: [&str; 17] = [
     "HEAT_ROCK",
     "ICY_ROCK",
     "LEPPA_BERRY",
+    "LIGHT_CLAY",
+    "LOADED_DICE",
     "LUM_BERRY",
+    "MENTAL_HERB",
+    "MIRROR_HERB",
+    "POWER_HERB",
     "PROTECTIVE_PADS",
+    "PUNCHING_GLOVE",
     "QUICK_CLAW",
     "SCOPE_LENS",
     "SMOOTH_ROCK",
+    "TERRAIN_EXTENDER",
+    "WHITE_HERB",
     "WIDE_LENS",
 ];
 
@@ -135,28 +146,30 @@ pub fn priority_bonus(ability: &str, move_type: &str, category: &str, healing: b
 }
 
 /// `_tuned_status_secondary`: a *secondary* status effect (one riding a damaging move, not a pure
-/// status move) is blocked outright by Shield Dust on the defender — no probability draw at all —
-/// unless it targets the move's own user, or doubled by Serene Grace on the attacker. `None` means
-/// skip the draw entirely; `Some` carries the probability actually to be drawn. A non-secondary
-/// effect is returned unchanged either way. Sheer Force's own nullification is the attacker's own
-/// unported ability and Covert Cloak the defender's own unported item, so neither reaches here —
-/// any holder of either is refused before turn one.
+/// status move) is blocked outright by Shield Dust or Covert Cloak on the defender — no probability
+/// draw at all — unless it targets the move's own user, or doubled by Serene Grace on the attacker.
+/// `None` means skip the draw entirely; `Some` carries the probability actually to be drawn. A
+/// non-secondary effect is returned unchanged either way. Sheer Force's own nullification is checked
+/// first, ahead of the block.
 pub fn tune_status_secondary(
     is_secondary: bool,
     probability: f64,
     aimed_at_self: bool,
     attacker_ability: &str,
     defender_ability: &str,
+    defender_item: &str,
 ) -> Option<f64> {
     if !is_secondary {
         return Some(probability);
     }
-    // Sheer Force trades the whole secondary for its own power boost — checked before Shield
-    // Dust's block, matching the Python's own order, though both paths land on the same `None`.
+    // Sheer Force trades the whole secondary for its own power boost — checked before
+    // `_blocks_secondaries`'s block, matching the Python's own order, though both paths land on
+    // the same `None`.
     if attacker_ability == "SHEER_FORCE" {
         return None;
     }
-    if !aimed_at_self && defender_ability == "SHIELD_DUST" {
+    // `_blocks_secondaries`: Shield Dust or Covert Cloak, either one refusing the same way.
+    if !aimed_at_self && (defender_ability == "SHIELD_DUST" || defender_item == "COVERT_CLOAK") {
         return None;
     }
     if attacker_ability == "SERENE_GRACE" {
@@ -173,6 +186,7 @@ pub fn tune_stage_secondary(
     target: &str,
     attacker_ability: &str,
     defender_ability: &str,
+    defender_item: &str,
 ) -> Option<f64> {
     if !is_secondary {
         return Some(probability);
@@ -180,7 +194,7 @@ pub fn tune_stage_secondary(
     if attacker_ability == "SHEER_FORCE" {
         return None;
     }
-    if target == "TARGET" && defender_ability == "SHIELD_DUST" {
+    if target == "TARGET" && (defender_ability == "SHIELD_DUST" || defender_item == "COVERT_CLOAK") {
         return None;
     }
     if attacker_ability == "SERENE_GRACE" {

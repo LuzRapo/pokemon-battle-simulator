@@ -268,6 +268,17 @@ pub enum Event {
         pokemon: String,
         ability: String,
     },
+    /// Clear Amulet's own version of the same refusal.
+    StatDropBlockedByItem {
+        side: i32,
+        pokemon: String,
+        item: String,
+    },
+    /// White Herb: every currently-negative stat stage reset to zero at once.
+    WhiteHerbRestored {
+        side: i32,
+        pokemon: String,
+    },
     /// Liquid Ooze turning a drink into a wound.
     DrainBackfired {
         side: i32,

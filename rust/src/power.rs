@@ -568,14 +568,23 @@ fn sun_skips_charge(move_name: &str) -> bool {
 }
 
 /// `_skips_charge_turn`: applies the charge-turn boost unconditionally, then says whether the
-/// charge itself is skipped. Power Herb's skip is not read here — a Pokemon holding it is refused
-/// upstream by `unsupported_pokemon`, since the item is not ported, so this branch cannot yet be
-/// reached; it comes back once the item does.
+/// charge itself is skipped — by the weather, or (checked last, in the Python's own order) by a
+/// consumed Power Herb.
 pub fn skips_charge_turn(state: &mut crate::battle::State, side: usize, the_move: &Move, log: &mut crate::log::Log) -> bool {
     if let Some(stat) = charge_turn_boost(&the_move.name) {
         crate::turn::apply_stage_changes(state, side, &[(stat.to_string(), 1)], "move", log);
     }
-    sun_skips_charge(&the_move.name) && matches!(crate::hooks::effective_weather(state).as_str(), "SUN" | "HARSH_SUN")
+    if sun_skips_charge(&the_move.name) && matches!(crate::hooks::effective_weather(state).as_str(), "SUN" | "HARSH_SUN") {
+        return true;
+    }
+    if state.sides[side].active_pokemon().item == "POWER_HERB" {
+        let pokemon = state.sides[side].active_mut();
+        pokemon.last_consumed_item = pokemon.item.clone();
+        pokemon.item = "NONE".to_string();
+        pokemon.item_consumed = true;
+        return true;
+    }
+    false
 }
 
 /// `_UP_IN_THE_AIR` and `_REACHES_THROUGH`: which charges are semi-invulnerable, and what still
