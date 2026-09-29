@@ -386,6 +386,7 @@ pub fn ported_items() -> &'static std::collections::HashSet<&'static str> {
         all.extend(crate::hooks::PORTED_RESIDUAL_ITEMS);
         all.extend(crate::hooks::PORTED_RKS_MEMORIES);
         all.extend(crate::items::PORTED_TYPE_ONLY_PLATES);
+        all.extend(crate::choices::PORTED_LEGALITY_ONLY_ITEMS);
         all
     })
 }
@@ -533,12 +534,71 @@ pub fn unsupported_reason(the_move: &Move, db: &Database) -> Option<String> {
     unsupported(the_move, db).map(|gap| format!("{}: {}", the_move.name, gap.label()))
 }
 
+/// Who picks the Pokemon a pivot, Eject Button, Eject Pack or Shed Tail sends in mid-turn.
+///
+/// `Harness` is the differential harness's `replacement_chooser` — the lowest-index healthy benched
+/// Pokemon, answered on the spot — which is what `step` has always done. `Caller` pauses the turn
+/// at exactly the point the Python asks its `switch_chooser` (after every completed action, side 0
+/// first) and hands the question to whoever is playing: `begin_turn` / `resume_with_switch` return
+/// `TurnStatus::NeedsSwitch` until the turn is done. That is `runner.run_battle`'s own semantics,
+/// and the bot's AI's: a pivot resolves the instant it is forced, so a target still waiting to act
+/// this turn hits whoever just arrived.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Replacements {
+    Harness,
+    Caller,
+}
+
+/// Where a paused turn stopped: everything the per-action loop needs to pick up where it left off.
+#[derive(Debug, Clone)]
+pub struct TurnInProgress {
+    actions: [Action; 2],
+    choosers: [usize; 2],
+    order: Vec<usize>,
+    /// The next entry of `order` to resolve.
+    next: usize,
+    /// The side the turn is waiting on for a replacement.
+    waiting_on: usize,
+    log: Log,
+}
+
+impl TurnInProgress {
+    /// The side this paused turn is waiting on.
+    pub fn waiting_on(&self) -> usize {
+        self.waiting_on
+    }
+}
+
+/// A turn either finished, with its log, or is waiting on one side to name a replacement.
+#[derive(Debug)]
+pub enum TurnStatus {
+    Done(Log),
+    NeedsSwitch { side: usize },
+}
+
 pub fn step(
     state: &mut State,
     actions: [Action; 2],
     db: &Database,
     tape: &mut Tape,
 ) -> Result<Log, Refusal> {
+    match begin_turn(state, actions, Replacements::Harness, db, tape)? {
+        TurnStatus::Done(log) => Ok(log),
+        TurnStatus::NeedsSwitch { .. } => unreachable!("the harness answers every replacement itself"),
+    }
+}
+
+/// `step`, up to the first mid-turn replacement the caller has to answer (or the end of the turn).
+pub fn begin_turn(
+    state: &mut State,
+    actions: [Action; 2],
+    replacements: Replacements,
+    db: &Database,
+    tape: &mut Tape,
+) -> Result<TurnStatus, Refusal> {
+    if state.turn_in_progress.is_some() {
+        return Err(Refusal::Unported("a turn is already waiting on a replacement".into()));
+    }
     let mut log = Log::new();
     // Indexed rather than zipped: the loop touches `state.sides`, `actions` and `choosers` by the
     // same index, and a zip over one of them would only hide that.
@@ -586,41 +646,89 @@ pub fn step(
     // to be in that slot, which is a different move belonging to a different Pokemon.
     let choosers = [state.sides[0].active, state.sides[1].active];
     let order = order_actions(state, &actions, db, tape)?;
-    for side in order {
-        if state.outcome.is_some() {
-            break;
+    let turn = TurnInProgress { actions, choosers, order, next: 0, waiting_on: 0, log };
+    run_turn(state, turn, replacements, db, tape)
+}
+
+/// Answer the replacement a paused turn is waiting on — `_execute_switch`, then the rest of
+/// `_resolve_pending_switches` for any later side, then the rest of the turn.
+pub fn resume_with_switch(state: &mut State, to: usize, db: &Database, tape: &mut Tape) -> Result<TurnStatus, Refusal> {
+    let Some(turn) = state.turn_in_progress.take() else {
+        return Err(Refusal::Unported("no turn is waiting on a replacement".into()));
+    };
+    let mut turn = *turn;
+    let side = turn.waiting_on;
+    state.sides[side].needs_switch = false;
+    execute_switch(state, side, to, db, &mut turn.log);
+    let mut turn = match settle_pending_switches(state, turn, side + 1, Replacements::Caller, db) {
+        Ok(turn) => turn,
+        Err(paused) => return Ok(paused),
+    };
+    announce_outcome(state, &mut turn.log);
+    run_turn(state, turn, Replacements::Caller, db, tape)
+}
+
+/// `_resolve_pending_switches` from `first_side` on. `Err` when a side needs the caller's answer:
+/// the turn is stashed on the state, to be picked up by `resume_with_switch`.
+fn settle_pending_switches(
+    state: &mut State,
+    mut turn: TurnInProgress,
+    first_side: usize,
+    replacements: Replacements,
+    db: &Database,
+) -> Result<TurnInProgress, TurnStatus> {
+    for switch_side in first_side..2 {
+        if !state.sides[switch_side].needs_switch {
+            continue;
         }
-        if state.sides[side].active != choosers[side] {
+        match replacements {
+            Replacements::Harness => resolve_pending_switches(state, switch_side, db, &mut turn.log),
+            Replacements::Caller => {
+                turn.waiting_on = switch_side;
+                state.turn_in_progress = Some(Box::new(turn));
+                return Err(TurnStatus::NeedsSwitch { side: switch_side });
+            }
+        }
+    }
+    Ok(turn)
+}
+
+/// `_update_outcome`, which announces the result the moment it is decided, once.
+fn announce_outcome(state: &mut State, log: &mut Log) {
+    let was_decided = state.outcome.is_some();
+    state.update_outcome();
+    if !was_decided {
+        if let Some(outcome) = state.outcome {
+            log.push(Event::BattleEnded { outcome: outcome.name().to_string() });
+        }
+    }
+}
+
+/// The per-action loop and everything after it, from wherever `turn.next` says.
+fn run_turn(
+    state: &mut State,
+    mut turn: TurnInProgress,
+    replacements: Replacements,
+    db: &Database,
+    tape: &mut Tape,
+) -> Result<TurnStatus, Refusal> {
+    'actions: while turn.next < turn.order.len() {
+        let side = turn.order[turn.next];
+        turn.next += 1;
+        if state.outcome.is_some() {
+            break 'actions;
+        }
+        if state.sides[side].active != turn.choosers[side] {
             continue; // phazed out before acting
         }
         // A fainted Pokemon cannot move, but its side must still send out a replacement — and
         // that switch is the first thing to resolve. Skipping the side outright left the Rust
         // engine a Pokemon behind for the rest of the battle.
-        if state.sides[side].active_pokemon().fainted() && matches!(actions[side], Action::Move { .. }) {
+        if state.sides[side].active_pokemon().fainted() && matches!(turn.actions[side], Action::Move { .. }) {
             continue;
         }
-        match &actions[side] {
-            Action::Switch { to } => {
-                let sent_out = state.sides[side].team[*to].nickname.clone();
-                let withdrew = switch_out(state, side, *to, &mut log);
-                state.register_active(side);
-                let arriving = state.sides[side].active_mut();
-                arriving.just_switched_in = true;
-                arriving.turns_active = 0; // a fresh stint, so Fake Out is live again
-                log.push(Event::Switched { side: side as i32, withdrew, sent_out });
-                // `_execute_switch` lays the hazards on before it emits ON_SWITCH_IN, so Stealth
-                // Rock bites before Intimidate looks across the field.
-                crate::field::entry_hazards(state, side, db, &mut log);
-                // An arrival the hazards knock out is unregistered and returns: its switch-in
-                // ability never fires. So a Pokemon that dies to Stealth Rock on the way in does
-                // not get to Intimidate on the way past.
-                if !state.sides[side].active_pokemon().fainted() {
-                    grant_switch_in_bonuses(state, side, &mut log);
-                    // `_execute_switch` logs the swap and then emits, so an Intimidate lands after
-                    // the line announcing who arrived.
-                    on_switch_in(state, side, &mut log);
-                }
-            }
+        match &turn.actions[side] {
+            Action::Switch { to } => execute_switch(state, side, *to, db, &mut turn.log),
             Action::Move { slot, z_move } => {
                 // `_mold_breaker_window`: wraps the whole of `_execute_move`, can-act checks and all.
                 let window = crate::hooks::open_mold_breaker_window(state, side);
@@ -638,8 +746,8 @@ pub fn step(
                     let actor = state.sides[side].active_pokemon();
                     actor.status == Status::Sleep && move_in_slot(actor, *slot, db)?.name == "Sleep Talk"
                 };
-                if can_act(state, side, defrosting, sleep_talking, tape, &mut log)? {
-                    resolve_move(state, side, *slot, *z_move, sleep_talking, db, tape, &mut log)?
+                if can_act(state, side, defrosting, sleep_talking, tape, &mut turn.log)? {
+                    resolve_move(state, side, *slot, *z_move, sleep_talking, db, tape, &mut turn.log)?
                 } else {
                     // A skipped turn breaks the consecutive-Protect chain.
                     state.sides[side].active_mut().protect_streak = 0;
@@ -651,7 +759,7 @@ pub fn step(
         // moved, and a side that has just finished moving is exactly what that means.
         state.sides[side].acted_this_turn = true;
         // The hit that just landed may have crossed an HP forme's line.
-        crate::formes::resolve_hp_formes(state, db, &mut log);
+        crate::formes::resolve_hp_formes(state, db, &mut turn.log);
         // Both sides, after *every* completed action, not just the one that just acted — a drop or
         // an Eject Button this action triggered on the other side pulls that side's Pokemon before
         // it ever gets its own turn, if it hasn't acted yet this turn. Two full passes, in the
@@ -659,27 +767,21 @@ pub fn step(
         // all executes, so a side-0 pivot already holding `needs_switch` doesn't jump the queue
         // ahead of a side-1 Eject Pack this same action just triggered.
         for eject_side in 0..2 {
-            resolve_eject_packs(state, eject_side, &mut log);
+            resolve_eject_packs(state, eject_side, &mut turn.log);
         }
-        for switch_side in 0..2 {
-            resolve_pending_switches(state, switch_side, db, &mut log);
-        }
-        let was_decided = state.outcome.is_some();
-        state.update_outcome();
-        // `_update_outcome` announces the result the moment it is decided, once.
-        if !was_decided {
-            if let Some(outcome) = state.outcome {
-                log.push(Event::BattleEnded { outcome: outcome.name().to_string() });
-            }
-        }
+        turn = match settle_pending_switches(state, turn, 0, replacements, db) {
+            Ok(turn) => turn,
+            Err(paused) => return Ok(paused),
+        };
+        announce_outcome(state, &mut turn.log);
     }
     if state.outcome.is_none() {
-        residuals(state, db, tape, &mut log)?;
+        residuals(state, db, tape, &mut turn.log)?;
         // Residual chip crosses HP-forme lines too.
-        crate::formes::resolve_hp_formes(state, db, &mut log);
+        crate::formes::resolve_hp_formes(state, db, &mut turn.log);
         state.update_outcome();
         if let Some(outcome) = state.outcome {
-            log.push(Event::BattleEnded { outcome: outcome.name().to_string() });
+            turn.log.push(Event::BattleEnded { outcome: outcome.name().to_string() });
         }
     }
     // `_tick_turns_active`, which runs at turn end whether or not the battle is over: the flag's
@@ -695,16 +797,27 @@ pub fn step(
             // `turns_active` counts only for whoever actually chose this turn's action: a Pokemon
             // that arrived mid-turn has not had a turn of its own yet, and Fake Out is still live
             // for it next turn.
-            if state.sides[side].active == choosers[side] {
+            if state.sides[side].active == turn.choosers[side] {
                 state.sides[side].active_mut().turns_active += 1;
             }
         }
     }
     // `ON_TURN_END`, emitted unconditionally after the turn-active tick — its only subscriber is
     // the balloon's pop, with an empty payload, so side 0 again.
-    crate::hooks::check_air_balloons(state, 0, &mut log);
+    crate::hooks::check_air_balloons(state, 0, &mut turn.log);
     state.turn += 1;
-    Ok(log)
+    Ok(TurnStatus::Done(turn.log))
+}
+
+/// `apply_forced_switch`: a replacement chosen between turns — after a faint, or a pivot the caller
+/// deferred. Hazards can knock the arrival out and end the battle, so the outcome is checked here
+/// too. The turn counter does not move.
+pub fn apply_forced_switch(state: &mut State, side: usize, to: usize, db: &Database) -> Log {
+    let mut log = Log::new();
+    execute_switch(state, side, to, db, &mut log);
+    state.sides[side].needs_switch = false;
+    announce_outcome(state, &mut log);
+    log
 }
 
 /// `_stall_check`: consecutive Protect-likes fail with odds 1 - 1/3^n, capped at n = 6.
@@ -1367,6 +1480,14 @@ fn resolve_move(
         state.sides[side].active_mut().charging_slot = None;
     }
 
+    // No target: a move aimed at a Pokemon already knocked out this turn fails before anything is
+    // rolled or anybody reacts — the Python's check, in the same place. Without it a fainted
+    // Pokemon could be healed back up by Pain Split or its own Water Absorb.
+    if DEFENDER_FACING.contains(&the_move.target.as_str()) && state.sides[other].active_pokemon().fainted() {
+        log.push(Event::MoveFailed);
+        return Ok(());
+    }
+
     // `_stall_check`, which sits after the move is announced and before anything is rolled for it.
     // A second Protect in a row usually fails, and the roll it fails on is a real draw even though
     // nothing in the log says so — which is exactly how this was found: identical events, and the
@@ -1807,12 +1928,21 @@ pub(crate) fn send_out_replacement(state: &mut State, side: usize, db: &Database
     else {
         return;
     };
+    execute_switch(state, side, to, db, log);
+}
+
+/// `_execute_switch`: the one way anybody arrives — a chosen switch, a pivot's replacement, a faint
+/// replacement. Hazards land before `ON_SWITCH_IN`, and an arrival they knock out never gets its
+/// switch-in ability: a Pokemon that dies to Stealth Rock on the way in does not Intimidate.
+pub(crate) fn execute_switch(state: &mut State, side: usize, to: usize, db: &Database, log: &mut Log) {
     let sent_out = state.sides[side].team[to].nickname.clone();
     let withdrew = switch_out(state, side, to, log);
     state.register_active(side);
     let arriving = state.sides[side].active_mut();
     arriving.just_switched_in = true;
-    arriving.turns_active = 0;
+    arriving.turns_active = 0; // a fresh stint, so Fake Out is live again
+    // `_execute_switch` logs the swap, lays the hazards, and only then emits `ON_SWITCH_IN`, so
+    // Stealth Rock bites before Intimidate looks across the field.
     log.push(Event::Switched { side: side as i32, withdrew, sent_out });
     crate::field::entry_hazards(state, side, db, log);
     if !state.sides[side].active_pokemon().fainted() {

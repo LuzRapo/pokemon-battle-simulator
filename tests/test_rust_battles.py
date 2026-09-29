@@ -5159,12 +5159,25 @@ def test_every_ported_ability_and_item_reaches_a_battle() -> None:
 
 
 @needs_rust
-@pytest.mark.parametrize("carries", ["ability", "item"])
+def test_every_live_item_but_the_forme_items_is_ported() -> None:
+    """Shed Shell — whose whole effect is on legality, ported with `legal_actions` — was the last.
+    The Mega Stones and orbs left over are ported conditionally, on the forme they reach, which
+    `test_a_mega_stone_reaching_an_unported_ability_is_refused_not_played_wrong` checks instead."""
+    rules = json.loads((DATA / "rules.json").read_text())
+    forme_items = {row["item"] for row in rules["mega_formes"]} | {row["item"] for row in rules["ultra_burst_formes"]}
+    live = set(rules["live_items"]) - forme_items
+    missing = sorted(name for name in live - set(PORTED["items"]) if name in Item.__members__)
+    assert not missing, missing
+
+
+@needs_rust
+@pytest.mark.parametrize("carries", ["ability"])
 def test_live_abilities_and_items_are_refused_rather_than_ignored(carries: str, tmp_path: Path) -> None:
     """Reading an ability off a Pokemon and doing nothing with it is a wrong answer in silence.
 
-    Both of these are wired to the Python's event bus, so a battle containing one is not comparable
-    until the Rust engine implements it. The engine has to say so.
+    It is wired to the Python's event bus, so a battle containing one is not comparable until the
+    Rust engine implements it. The engine has to say so. (Items used to be checked here too; every
+    live one is ported now — see the test above.)
     """
     kind, enum = ("abilities", Ability) if carries == "ability" else ("items", Item)
     expected = _still_unported(kind, enum)

@@ -215,6 +215,14 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
         attacker.volatiles.pop(ExtraStatus.CHARGING, None)
         attacker.charging_slot = None
 
+    # No target: a move aimed at a Pokemon already knocked out this turn — by hazards on its way in,
+    # by its own recoil, by a faster hit — fails before anything is rolled or anybody reacts. Without
+    # this, Pain Split averaged a fainted Pokemon's zero HP back up and Water Absorb healed a fainted
+    # absorber, standing both back up to fight on.
+    if move.target in _DEFENDER_FACING_TARGETS and defender.is_fainted():
+        log.add(MoveFailed())
+        return
+
     if not _stall_check(move, attacker, state.rng):
         log.add(MoveFailed())
         return

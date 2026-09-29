@@ -10,15 +10,18 @@
 
 pub mod abilities;
 pub mod battle;
+pub mod choices;
 pub mod damage;
 pub mod data;
 pub mod digest;
+pub mod env;
 pub mod field;
 pub mod formes;
 pub mod hooks;
 pub mod inline;
 pub mod items;
 pub mod log;
+pub mod obs;
 pub mod power;
 #[cfg(feature = "python")]
 pub mod python;

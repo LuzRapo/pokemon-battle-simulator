@@ -34,7 +34,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from battle_sim.engine import legal_actions, step
+from battle_sim.engine import apply_forced_switch, legal_actions, step
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, SideState
 from battle_sim.models.actions import Action, ActionType
@@ -438,3 +438,131 @@ def self_check(scenario: Scenario, expected: Sequence[dict[str, Any]]) -> Diverg
     tested — and every failure it reported would be noise.
     """
     return compare(expected, trace(scenario))
+
+
+type ActionPicker = Callable[[BattleState, int, list[Action]], Action]
+
+
+@dataclass
+class PlayedScenario:
+    """A battle played the way `runner.run_battle` and the bot play one — chosen leads, pivots
+    answered mid-turn by the side that has to switch, faint replacements chosen after the turn —
+    reduced to its inputs. `decisions` is every choice in the order the battle asked for it, each
+    with the legal actions on offer at that moment, so a second engine can be checked on legality
+    as well as on what the choices did."""
+
+    teams: tuple[list[dict[str, Any]], list[dict[str, Any]]]
+    orders: tuple[list[int], list[int]]
+    decisions: list[dict[str, Any]]
+    tape: list[float | int]
+    seed: int = 0
+
+    def to_json(self) -> str:
+        return json.dumps(
+            {
+                "version": FORMAT_VERSION,
+                "seed": self.seed,
+                "teams": list(self.teams),
+                "orders": list(self.orders),
+                "decisions": self.decisions,
+                "tape": self.tape,
+            }
+        )
+
+    @classmethod
+    def from_json(cls, text: str) -> "PlayedScenario":
+        payload = json.loads(text)
+        return cls(
+            teams=(payload["teams"][0], payload["teams"][1]),
+            orders=(payload["orders"][0], payload["orders"][1]),
+            decisions=payload["decisions"],
+            tape=payload["tape"],
+            seed=payload["seed"],
+        )
+
+
+def _named_legal(state: BattleState, side: int) -> list[str]:
+    return [name_action(action, state, side) for action in legal_actions(state, side)]
+
+
+def record_played(
+    teams: tuple[Sequence[PokemonSpec], Sequence[PokemonSpec]],
+    orders: tuple[Sequence[int], Sequence[int]],
+    pick: ActionPicker,
+    seed: int = 0,
+    max_turns: int = 200,
+    observe: Callable[[BattleState, int, str], None] | None = None,
+) -> tuple[PlayedScenario, list[dict[str, Any]]]:
+    """Play one battle exactly as `runner.run_battle` does, writing down everything needed to replay
+    it elsewhere: every decision, the legal actions at each, the tape, and a trace with one segment
+    per turn and one per between-turns replacement.
+
+    `observe(state, side, kind)` sees every decision as it is asked for — "lead" for both sides,
+    then "turn", or "switch" for a pivot or replacement — in the order `rust_bridge.replay_played`
+    reports them."""
+    rng = TapeRNG(seed=seed)
+    sides = (
+        SideState(team=[build_pokemon(teams[0][i]) for i in orders[0]]),
+        SideState(team=[build_pokemon(teams[1][i]) for i in orders[1]]),
+    )
+    state = BattleState(sides=sides, rng=rng)
+    decisions: list[dict[str, Any]] = []
+    segments: list[dict[str, Any]] = []
+
+    def segment(labels: list[str], log: Any) -> None:
+        segments.append(
+            {
+                "actions": labels,
+                "events": [entry_json(e) for e in log],
+                "state": state_digest(state),
+                "drawn": rng.drawn,
+            }
+        )
+
+    def seen(live: BattleState, side: int, kind: str) -> None:
+        if observe is not None:
+            observe(live, side, kind)
+
+    seen(state, 0, "lead")
+    seen(state, 1, "lead")
+    pivots: list[str] = []
+
+    def switch_chooser(live: BattleState, side: int) -> Action:
+        seen(live, side, "switch")
+        offered = legal_actions(live, side)
+        chosen = pick(live, side, offered)
+        name = name_action(chosen, live, side)
+        decisions.append({"kind": "pivot", "side": side, "action": name, "legal": _named_legal(live, side)})
+        pivots.append(name)
+        return chosen
+
+    turns = 0
+    while state.outcome is None and turns < max_turns:
+        seen(state, 0, "turn")
+        seen(state, 1, "turn")
+        legal = [_named_legal(state, 0), _named_legal(state, 1)]
+        actions = {side: pick(state, side, legal_actions(state, side)) for side in (0, 1)}
+        labels = [name_action(actions[0], state, 0), name_action(actions[1], state, 1)]
+        decisions.append({"kind": "turn", "actions": labels, "legal": legal})
+        pivots.clear()
+        log = step(state, actions, switch_chooser)
+        segment(labels + pivots, log)
+        turns += 1
+        for side in (0, 1):
+            own = state.sides[side]
+            while state.outcome is None and (own.active_pokemon.is_fainted() or own.needs_switch):
+                seen(state, side, "switch")
+                offered = legal_actions(state, side)
+                chosen = pick(state, side, offered)
+                name = name_action(chosen, state, side)
+                decisions.append({"kind": "replace", "side": side, "action": name, "legal": _named_legal(state, side)})
+                segment([f"replace:{side}", name], apply_forced_switch(state, side, chosen))
+
+    scenario = PlayedScenario(
+        teams=([encode_spec(s) for s in teams[0]], [encode_spec(s) for s in teams[1]]),
+        orders=(list(orders[0]), list(orders[1])),
+        decisions=decisions,
+        tape=list(rng.tape),
+        seed=seed,
+    )
+    return scenario, segments

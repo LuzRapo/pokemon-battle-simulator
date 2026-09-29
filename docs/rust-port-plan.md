@@ -915,20 +915,69 @@ in the bridge test, which runs a full battle on `Tape::live` alone — zero `Sce
 `record()`, zero recorded draws anywhere in that test — until a lead faints or 50 turns pass,
 confirming `drawn() > 0` so the test cannot silently pass without exercising the RNG at all.
 
-**Still missing before an unattended self-play loop can actually run — flagged, not built, and not
-part of what "minimal bridge" ever meant:** `legal_actions` (`battle_sim/engine/choices.py`) reads
-Python's own `BattleState`/`SideState` dataclasses directly — locks, traps, charges, `needs_switch` —
-and has no way to ask a Rust `State` the same question. A Rust-driven battle therefore still needs
-something on the Python side to rebuild enough of a `BattleState` from this bridge's own
-`Battle.digest()` after every turn (fainted, HP, PP, volatiles, stat stages, items — everything the
-digest already reports) so `legal_actions` keeps working without Python re-simulating the turn
-itself. That is genuinely the next concrete step, not a Rust-port gap — matches the same
-carve-out this plan has already made for a Rust-native `legal_actions` itself, which stays exactly as
-out of scope as it always was (Python decides; Rust only executes, fast).
+**Player decisions in Rust — done.** The gap flagged here before (legality lived only in Python, so
+a Rust battle needed a Python mirror to know what either side could do) is closed the other way:
+self-play has to run without Python in the loop at all, so the decisions came to Rust.
 
-Once that glue exists: swap the search over behind a flag, re-run the AI validation (mirror-match
-win rate) to confirm the engine change did not move play strength, and keep the differential running
-against the Python for as long as both exist.
+- **Legality.** `rust/src/choices.rs` ports `choices.py::legal_actions` line for line: forced
+  switches, rampage and charge locks, trapping (Shadow Tag, Arena Trap, Magnet Pull, partial traps;
+  a Ghost or a Shed Shell escapes), choice and Encore locks, PP / Disable / Taunt with the Struggle
+  fallback, and Z-move variants. Actions live in one fixed space of 14 — moves 0–3, Z-moves 4–7,
+  switch-or-lead 8–13 — so a network can mask them. Shed Shell's only effect is on legality, so it
+  counts as ported (`PORTED_LEGALITY_ONLY_ITEMS`); every live item except the forme items now plays.
+- **Choices the engine used to make for the player.** Leads come from an order per side, like
+  `runner.build_side`. A pivot, Eject Button/Pack or Shed Tail replacement is answered mid-turn by
+  the switching side, as `run_battle`'s `switch_chooser` answers it: `turn::begin_turn` with
+  `Replacements::Caller` pauses with `NeedsSwitch { side }`, keeps its place in a `TurnInProgress`
+  on the `State`, and `resume_with_switch` carries on. Faint replacements go through
+  `apply_forced_switch` after the turn. `step()` is now `begin_turn` with `Replacements::Harness`,
+  so every older test and sweep runs exactly as before.
+- **Verified** by `differential.record_played`, which plays a Python battle the way `run_battle`
+  does and writes down every decision along with the legal actions offered at it.
+  `rust_bridge.replay_played` then plays those decisions through Rust, checking the trace, the
+  digests, the draw counts and — at every decision — that Rust offered exactly the Python's legal
+  actions. The results:
+  - 1,000/1,000 played mirror battles agree: 75,921 decisions, 845 of them mid-turn pivots and
+    8,385 replacements.
+  - The harness-driven mirror sweep (1,000/1,000) and the broad sweeps (5,000 battles, 0 divergences)
+    are unchanged.
+  - `tests/test_rust_decisions.py` covers pivots, Eject Button, double knockouts, leads, Shadow Tag
+    against Shed Shell and a Ghost, and choice locks. Each case goes red when its rule is sabotaged
+    in either engine.
+- **A bug the played battles found, in both engines:** a move aimed at a Pokemon that had already
+  fainted that turn still resolved. Pain Split averaged a fainted foe's HP back above zero, and
+  Water Absorb healed one, standing a knocked-out Pokemon back up. The harness never hit this
+  because its replacements were never hazard-KO'd arrivals. Both engines now fail a defender-facing
+  move with no target before anything is rolled (`_DEFENDER_FACING_TARGETS`), as the games do.
+  **This changes the live Python engine,** so it reaches the bot on its next deploy.
+
+**Self-play environment — done.**
+
+- **Observation** (`rust/src/obs.rs`, mirrored by `battle_sim/rl/encode.py`). Mirror battles are
+  full information, so all twelve Pokemon are encoded completely, the viewer's side first:
+  - seven embedding ids each (species, ability, item, four moves), from `rust/data/vocab.json`,
+    which `export_data` writes from `battle_sim/rl/vocab.py`;
+  - 85 floats each: HP, stats, stages, status, flags, types, 25 volatiles, PP, and the
+    choice/Encore/Disable slots;
+  - a 51-float field vector: weather, terrain, pseudo-weathers, each side's hazards, screens,
+    tailwind, once-per-battle flags, Wish and Future Sight, plus the turn number and the decision
+    kind.
+
+  `tests/test_rl_encode.py` asserts the two encoders produce identical arrays at every decision of
+  played battles, plus a Transform case, since no mirror set transforms. The columns the mirror pool
+  never sets (Snow, Magic Room, Slow Start, Nightmare and the like) go through the same loops as
+  the ones it does.
+- **`VecEnv`** (`rust/src/env.rs`, exposed as `pokemon_engine_rs.VecEnv`). It holds N battles,
+  each paused at its next real decision. `observe()` returns every open request as numpy arrays
+  (env, side, decision kind, ids, floats, field, legality mask). `act()` answers them, and each
+  battle plays on in parallel on a rayon pool with the GIL released. A decision with one legal
+  answer is answered by the environment and never asked. `tests/test_rl_env.py` feeds
+  `record_played` decisions to a `VecEnv` replaying the same draws: it has to ask for every
+  multi-option decision and end in the Python's final state (500/500 in a sweep, 40 in the suite).
+  Each sabotage goes red: leads ignored, pivots answered by the harness, side 1 replacing first.
+- **Throughput** (`tools/bench_vecenv.py`, random policy, 256 envs, this 4-core server): about 35k
+  decisions/s on one thread and 75k on three, which is about 390 mirror battles a second at roughly
+  90 turns each. Training speed now depends on the network, not the engine.
 
 ## Closed gap: cross-side switch-in ability ordering (misdiagnosed, then fixed)
 

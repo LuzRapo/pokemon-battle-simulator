@@ -235,6 +235,11 @@ def export(directory: Path) -> dict[str, int]:
     (directory / "rules.json").write_text(
         json.dumps({"schema": SCHEMA_VERSION} | rules_json(), indent=1, sort_keys=True)
     )
+    # The network's embedding tables. Read by the Rust observation encoder; the Python one builds
+    # the same tables itself, and `tests/test_rl_encode.py` checks this copy is not stale.
+    from battle_sim.rl.vocab import vocabulary
+
+    (directory / "vocab.json").write_text(json.dumps({"schema": SCHEMA_VERSION} | vocabulary(), indent=1))
     for name, payload in (("moves", moves), ("species", species), ("zmoves", z_moves)):
         (directory / f"{name}.json").write_text(
             json.dumps({"schema": SCHEMA_VERSION, name: payload}, indent=1, sort_keys=True)
