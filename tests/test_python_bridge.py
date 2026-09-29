@@ -170,3 +170,23 @@ def test_live_mode_plays_a_whole_battle_with_no_python_rng() -> None:
 
     assert turns > 0, "the battle never took a single turn"
     assert battle.drawn() > 0, "a live battle that never drew a random number is not exercising Tape::live"
+
+
+@needs_bridge
+def test_every_mined_gen7ag_set_is_playable_in_rust() -> None:
+    """Mirror battles are dealt from `battle_sim/data/ag_sets.json`, and self-play for them runs on
+    this engine — so every set in it has to be one this engine plays rather than refuses. Regenerating
+    the file can pull in a set with something new; this is where that shows up."""
+    from battle_sim.ag_sets import ag_sets
+
+    rs = _load_bridge()
+    db = rs.Database(str(DATA))
+    refused = {}
+    for species, sets in ag_sets().items():
+        for spec in sets:
+            team = json.dumps([encode_spec(spec.model_copy(update={"nickname": "X"}))])
+            try:
+                rs.Battle.live(db, [team, team], 0)
+            except rs.Unported as why:
+                refused[f"{species} {spec.moves}"] = str(why)
+    assert not refused, refused

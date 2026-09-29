@@ -958,19 +958,36 @@ def test_item_and_ability_manipulation_moves_fire_and_agree(tmp_path: Path) -> N
         assert seen[wanted] > 0, f"{wanted} never happened across 40 battles: {dict(seen)}"
 
 
+def _mega_reaching_an_unported_ability() -> tuple[str, Item]:
+    """A base species and the stone that takes it to a forme whose ability is still unported.
+
+    Found rather than named, for the reason `_still_unported` gives: this test was first written
+    against Sableye-Mega and went stale the day Magic Bounce was ported.
+    """
+    rules = json.loads((DATA / "rules.json").read_text())
+    species = {entry["name"]: entry for entry in json.loads((DATA / "species.json").read_text())["species"].values()}
+    live = set(rules["live_abilities"]) - set(PORTED["abilities"])
+    for row in rules["mega_formes"]:
+        forme = species.get(row["forme"])
+        if forme is not None and forme.get("regular_ability") in live and row["item"] in Item.__members__:
+            return str(forme["base_species"]), Item[row["item"]]
+    raise AssertionError("every Mega forme's ability is ported; this test needs rewriting")
+
+
 @needs_rust
 def test_a_mega_stone_reaching_an_unported_ability_is_refused_not_played_wrong(tmp_path: Path) -> None:
     """Mega Evolution itself is ported now (see the forme-swap batch), but only for a forme whose
-    own ability this engine has implemented — Sableye-Mega's Magic Bounce is not one of them yet.
-    A Pokemon that would reach an unplayed-out forme must still be refused, not silently left
-    sitting in its base forme all battle, which is a different Pokemon from the one Python plays."""
+    own ability this engine has implemented. A Pokemon that would reach an unplayed-out forme must
+    still be refused, not silently left sitting in its base forme all battle, which is a different
+    Pokemon from the one Python plays."""
+    base, stone = _mega_reaching_an_unported_ability()
     team = [
         PokemonSpec(
-            species="Sableye",
+            species=base,
             nickname="A0",
             level=50,
             ability=Ability.NONE,
-            item=Item.SABLENITE,
+            item=stone,
             nature=Nature.HARDY,
             moves=["Tackle"],
         )
@@ -1593,6 +1610,288 @@ def test_a_balloon_popped_by_residual_chip_is_logged_against_side_zero(tmp_path:
     assert compare(expected, theirs) is None
     popped = [e for turn in expected for e in turn["events"] if e["type"] == "AirBalloonPopped"]
     assert popped == [{"type": "AirBalloonPopped", "side": 0, "pokemon": "B0"}], popped
+
+
+def _ditto(nickname: str) -> PokemonSpec:
+    return PokemonSpec(
+        species="Ditto",
+        nickname=nickname,
+        level=50,
+        ability=Ability.IMPOSTER,
+        item=Item.CHOICE_SCARF,
+        moves=["Transform"],
+    )
+
+
+@needs_rust
+def test_imposter_transforms_on_arrival_and_fights_with_the_copied_moves(tmp_path: Path) -> None:
+    """`_bind_imposter` is an `ON_SWITCH_IN` handler that runs `transform_into` — so the Ditto
+    arrives as its opponent and its first action is one of the opponent's own moves."""
+    team_a = [_ditto("A0")]
+    team_b = [PokemonSpec(species="Rhydon", nickname="B0", level=50, moves=["Rock Slide"])]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    first = expected[0]["events"]
+    assert {"type": "Transformed", "side": 0, "pokemon": "A0", "into": "B0"} in first, first
+    used = [e for e in first if e["type"] == "MoveUsed" and e["pokemon"] == "A0"]
+    assert used and used[0]["move"] == "Rock Slide", used
+
+
+def _mimikyu() -> PokemonSpec:
+    return PokemonSpec(species="Mimikyu", nickname="B0", level=50, ability=Ability.DISGUISE, moves=["Splash"])
+
+
+@needs_rust
+def test_a_disguise_takes_one_hit_whole_then_busts(tmp_path: Path) -> None:
+    """`_disguise_absorbs`: the first damaging move busts the disguise and does nothing else — no
+    damage, and no draws past the accuracy roll — and the second lands normally."""
+    team_a = [PokemonSpec(species="Rhydon", nickname="A0", level=50, moves=["Rock Slide"])]
+    scenario, expected = record((team_a, [_mimikyu()]), _chooser(random.Random(0)), seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    first, second = (turn["events"] for turn in expected)
+    assert {"type": "FormeChanged", "side": 1, "pokemon": "B0", "forme": "Mimikyu-Busted"} in first, first
+    assert not any(e["type"] == "DamageDealt" and e["side"] == 1 for e in first), first
+    assert any(e["type"] == "DamageDealt" and e["side"] == 1 for e in second), second
+
+
+@needs_rust
+def test_a_disguise_blocks_the_secondary_along_with_the_hit(tmp_path: Path) -> None:
+    """Decided before any effect runs, like a substitute: Nuzzle's certain paralysis never reaches
+    a Mimikyu whose disguise took the hit."""
+    team_a = [PokemonSpec(species="Rhydon", nickname="A0", level=50, moves=["Nuzzle"])]
+    scenario, expected = record((team_a, [_mimikyu()]), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    mimikyu = expected[0]["state"]["sides"][1]["team"][0]
+    assert mimikyu["species"] == "Mimikyu-Busted" and mimikyu["status"] == "NONE", mimikyu
+
+
+@needs_rust
+def test_a_fixed_damage_move_is_blocked_by_a_disguise_without_busting_it(tmp_path: Path) -> None:
+    """A quirk of the reference, pinned: a disguise skips every non-`DamageEffect` effect aimed at
+    Mimikyu, and Night Shade's fixed damage is not a `DamageEffect` — so it is blocked outright,
+    fails for want of anything having happened, and leaves the disguise standing."""
+    team_a = [PokemonSpec(species="Rhydon", nickname="A0", level=50, moves=["Night Shade"])]
+    scenario, expected = record((team_a, [_mimikyu()]), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    kinds = [e["type"] for e in expected[0]["events"]]
+    assert "MoveFailed" in kinds and "FormeChanged" not in kinds, kinds
+
+
+@needs_rust
+def test_power_construct_completes_zygarde_at_half_hp_and_adds_the_new_hp(tmp_path: Path) -> None:
+    """`_resolve_hp_formes` after the action: two Super Fangs take a 183-HP Zygarde to 46, at or
+    below half, and it becomes Zygarde-Complete — whose extra maximum HP arrives as real HP, not as a
+    rescaled fraction, so it ends comfortably above half of its new, much larger bar."""
+    team_a = [PokemonSpec(species="Machamp", nickname="A0", level=50, moves=["Super Fang"])]
+    zygarde = PokemonSpec(species="Zygarde", nickname="B0", level=50, ability=Ability.POWER_CONSTRUCT, moves=["Splash"])
+    team_b = [zygarde]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    before, after = (turn["state"]["sides"][1]["team"][0] for turn in expected)
+    assert before["species"] == "Zygarde" and after["species"] == "Zygarde-Complete", (before, after)
+    assert after["ability"] == "POWER_CONSTRUCT" and 2 * after["hp"] > after["max_hp"], after
+
+
+@needs_rust
+@pytest.mark.parametrize("seed", range(6))
+def test_sucker_punch_reads_the_chosen_slot_as_it_is_now(seed: int, tmp_path: Path) -> None:
+    """`_target_is_about_to_attack` looks the chosen *slot* up in the target's moves when asked, not
+    when chosen. An Imposter Ditto picks its only move, Transform, and arrives as a Sucker Punch user
+    before anyone acts — so whoever goes second is facing a slot that now holds an attack. The Rust
+    engine used to record the move's name at the top of the turn and read "Transform"."""
+    # No Choice Scarf: the transformed Ditto ties Kangaskhan's speed, so across these seeds each
+    # side goes first some of the time — and only Kangaskhan going first reads Ditto's slot.
+    ditto = _ditto("A0").model_copy(update={"item": Item.NONE})
+    team_b = [PokemonSpec(species="Kangaskhan", nickname="B0", level=50, moves=["Sucker Punch"])]
+    scenario, expected = record(([ditto], team_b), _chooser(random.Random(seed)), seed=seed, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+
+
+@needs_rust
+def test_damage_above_a_transformed_maximum_also_takes_the_overflow(tmp_path: Path) -> None:
+    """`transform_into` recomputes the HP total with the target's EVs while keeping current HP, so a
+    bulky Ditto copying a frail target stands *above* its new maximum. `_adjust_hp` clamps into
+    `0..=max` on the way down as well as up, so the next chip also takes the overflow and reports it
+    as dealt. Found by a mirror-battle sweep: the Rust engine only floored at zero."""
+    ditto = _ditto("A0").model_copy(update={"effort_values": EVs(HP=252)})
+    team_b = [PokemonSpec(species="Machamp", nickname="B0", level=50, moves=["Toxic"])]
+    scenario, expected = record(([ditto], team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    chip = next(e for e in expected[0]["events"] if e["type"] == "ResidualDamage" and e["pokemon"] == "A0")
+    after = expected[0]["state"]["sides"][0]["team"][0]
+    assert chip["amount"] > after["max_hp"] // 16 and after["hp"] <= after["max_hp"], (chip, after)
+
+
+@needs_rust
+@pytest.mark.parametrize("move", ["Toxic", "Encore", "Taunt"])
+def test_prankster_status_moves_do_not_affect_a_dark_type(move: str, tmp_path: Path) -> None:
+    """Gen 7's Prankster drawback, checked in `_execute_move` right after Taunt — before Magic Bounce
+    or Protect is even asked. Invisible to every sweep before the mirror-battle one: none of the
+    generic sweeps' six species is Dark, and half the gen7ag pool's Prankster users face Yveltal."""
+    team_a = [PokemonSpec(species="Klefki", nickname="A0", level=50, ability=Ability.PRANKSTER, moves=[move])]
+    team_b = [PokemonSpec(species="Yveltal", nickname="B0", level=50, moves=["Roost"])]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    assert {"type": "DoesNotAffect", "side": 1, "pokemon": "B0"} in expected[0]["events"], expected[0]["events"]
+
+
+@needs_rust
+def test_eviolite_reads_the_species_a_pokemon_was_built_as(tmp_path: Path) -> None:
+    """`Pokemon.fully_evolved` is set once, at build, and no forme change touches it: a Disguise that
+    busts turns this Rhydon into Mimikyu-Busted, and its Eviolite still counts it as unevolved."""
+    team_a = [PokemonSpec(species="Machamp", nickname="A0", level=50, moves=["Rock Slide"])]
+    team_b = [
+        PokemonSpec(
+            species="Rhydon", nickname="B0", level=50, ability=Ability.DISGUISE, item=Item.EVIOLITE, moves=["Splash"]
+        )
+    ]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=2)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    assert expected[1]["state"]["sides"][1]["team"][0]["species"] == "Mimikyu-Busted"
+
+
+@needs_rust
+def test_a_heal_that_lowers_hp_is_not_announced(tmp_path: Path) -> None:
+    """Standing above a Transform-shrunk maximum, Leftovers "heals" HP *down* to the cap — every
+    Python healer logs only `if healed > 0`, so the HP moves and nothing is said."""
+    ditto = _ditto("A0").model_copy(update={"effort_values": EVs(HP=252), "item": Item.LEFTOVERS})
+    team_b = [PokemonSpec(species="Machamp", nickname="B0", level=50, moves=["Splash"])]
+    scenario, expected = record(([ditto], team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    assert not any(e["type"] == "ItemHealed" for e in expected[0]["events"]), expected[0]["events"]
+    after = expected[0]["state"]["sides"][0]["team"][0]
+    assert after["hp"] == after["max_hp"], after
+
+
+@needs_rust
+def test_a_copied_multitype_resyncs_in_its_own_sides_residual(tmp_path: Path) -> None:
+    """Paradox's residual handler reacts in either side's `ON_RESIDUAL` emit; the item type shifter
+    checks its actor, so a Multitype re-syncs only in its own side's — after all of side 0's chips.
+    An Imposter Ditto copying Arceus-Water keeps Water through its own switch-in (the copied handler
+    registers too late to be heard) and turns Normal at the end of the turn, holding no plate."""
+    team_a = [
+        PokemonSpec(
+            species="Arceus-Water", nickname="A0", level=50, ability=Ability.MULTITYPE, item=Item.SPLASH_PLATE,
+            moves=["Toxic"],
+        )
+    ]
+    scenario, expected = record((team_a, [_ditto("B0")]), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    kinds = [(e["type"], e.get("side")) for e in expected[0]["events"]]
+    assert kinds.index(("ResidualDamage", 0)) < kinds.index(("TypeChanged", 1)), kinds
+
+
+@needs_rust
+def test_two_imposters_in_a_mirror_only_one_transforms(tmp_path: Path) -> None:
+    """Mirror battles hand both sides the same Ditto. The first to arrive copies the other; the
+    second then faces a Pokemon already mid-Transform, which `transform_into` refuses with
+    `MoveFailed` rather than letting the two copy each other."""
+    scenario, expected = record(([_ditto("A0")], [_ditto("B0")]), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    kinds = [e["type"] for e in expected[0]["events"]]
+    assert kinds.count("Transformed") == 1 and "MoveFailed" in kinds, kinds
+
+
+@needs_rust
+def test_a_transformed_beat_up_counts_the_copied_attack(tmp_path: Path) -> None:
+    """Beat Up sums each healthy teammate's *current* base Attack — `base_stats.ATTACK`, which a
+    Transform overwrites. An Imposter Ditto copying a Beat Up user therefore counts Machamp's 130,
+    not its own 48. Found by a mirror-battle sweep; the Rust engine had been reading a copy of the
+    base Attack taken when the team was built."""
+    team_a = [_ditto("A0"), PokemonSpec(species="Rhydon", nickname="A1", level=50, moves=["Tackle"])]
+    team_b = [PokemonSpec(species="Machamp", nickname="B0", level=50, moves=["Beat Up"])]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    used = [e for e in expected[0]["events"] if e["type"] == "MoveUsed" and e["pokemon"] == "A0"]
+    assert used and used[0]["move"] == "Beat Up", used
+
+
+@needs_rust
+@pytest.mark.parametrize(
+    "ability", [Ability.MOLD_BREAKER, Ability.TERAVOLT, Ability.TURBOBLAZE, Ability.NONE], ids=lambda a: a.name
+)
+def test_a_mold_breaker_earthquake_lands_on_levitate(ability: Ability, tmp_path: Path) -> None:
+    """`_mold_breaker_window` takes the defender's ability handlers off the bus for the attacker's
+    whole move, and Levitate's avoidance is one of them. Three names, one mechanism; the ability-less
+    control floats as ever."""
+    team_a = [PokemonSpec(species="Excadrill", nickname="A0", level=50, ability=ability, moves=["Earthquake"])]
+    team_b = [PokemonSpec(species="Bronzong", nickname="B0", level=50, ability=Ability.LEVITATE, moves=["Splash"])]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    kinds = [e["type"] for e in expected[0]["events"]]
+    if ability is Ability.NONE:
+        assert "AvoidedWithLevitate" in kinds, kinds
+    else:
+        assert "AvoidedWithLevitate" not in kinds and "DamageDealt" in kinds, kinds
+
+
+@needs_rust
+@pytest.mark.parametrize(
+    ("move", "user_ability"),
+    [("Toxic", Ability.NONE), ("Stealth Rock", Ability.NONE), ("Toxic", Ability.MOLD_BREAKER)],
+    ids=["toxic", "stealth-rock", "toxic-from-a-mold-breaker"],
+)
+def test_magic_bounce_sends_a_status_move_back_at_its_user(move: str, user_ability: Ability, tmp_path: Path) -> None:
+    """The bounce swaps attacker and defender for the rest of the move: the poison lands on the
+    user, the rocks on the user's own side. A Mold Breaker is bounced too — the Python's check is
+    an inline read, not a bus handler, so `_mold_breaker_window` never touches it (the games would
+    let Mold Breaker through; the reference does not, and this pins the reference)."""
+    team_a = [PokemonSpec(species="Machamp", nickname="A0", level=50, ability=user_ability, moves=[move])]
+    team_b = [PokemonSpec(species="Espeon", nickname="B0", level=50, ability=Ability.MAGIC_BOUNCE, moves=["Splash"])]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    events = expected[0]["events"]
+    assert {"type": "MoveBounced", "side": 1, "pokemon": "B0"} in events, events
+    sides = expected[0]["state"]["sides"]
+    if move == "Toxic":
+        assert sides[0]["team"][0]["status"] == "TOXIC" and sides[1]["team"][0]["status"] == "NONE", sides
+    else:
+        assert "STEALTH_ROCK" in sides[0]["hazards"] and not sides[1]["hazards"], sides
+
+
+@needs_rust
+@pytest.mark.parametrize("ability", [Ability.MOLD_BREAKER, Ability.NONE], ids=lambda a: a.name)
+def test_a_mold_breaker_knocks_out_through_sturdy(ability: Ability, tmp_path: Path) -> None:
+    """Sturdy's clamp is an `ON_BEFORE_HIT` handler, so it is off the bus too. (Not every ability
+    read is: the Python's inline checks — Synchronize, Shield Dust, Pressure — ignore the window.)"""
+    team_a = [PokemonSpec(species="Machamp", nickname="A0", level=100, ability=ability, moves=["Surf"])]
+    team_b = [PokemonSpec(species="Rhydon", nickname="B0", level=5, ability=Ability.STURDY, moves=["Splash"])]
+    scenario, expected = record((team_a, team_b), _chooser(random.Random(0)), seed=0, max_turns=1)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    kinds = [e["type"] for e in expected[0]["events"]]
+    assert ("SurvivedAtOneHp" in kinds) is (ability is Ability.NONE), kinds
 
 
 @needs_rust
@@ -4807,7 +5106,7 @@ def test_every_ported_ability_and_item_reaches_a_battle() -> None:
     expensive half is that turning the ability dispatch off makes 187 of 200 swept battles diverge.
     """
     rng = random.Random(0)
-    generated = [spec for _ in range(400) for spec in _team(rng, size=3, abilities=True, items=True)]
+    generated = [spec for _ in range(1000) for spec in _team(rng, size=3, abilities=True, items=True)]
 
     missing = set(PORTED["abilities"]) - {spec.ability.name for spec in generated}
     missing |= set(PORTED["items"]) - {spec.item.name for spec in generated}

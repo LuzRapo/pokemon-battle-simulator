@@ -17,7 +17,9 @@ pub fn pokemon(p: &Pokemon) -> serde_json::Value {
         "item": p.item,
         "item_consumed": p.item_consumed,
         "ability": p.ability,
-        "types": p.types.iter().flatten().collect::<Vec<_>>(),
+        // `battle_types`, as the Python's digest reads it — Roost's Flying-less typing included, which
+        // a Pokemon knocked out mid-turn keeps, since only the standing have their volatiles ticked.
+        "types": p.battle_types().into_iter().flatten().collect::<Vec<_>>(),
         "stages": STAGE_NAMES.iter().map(|s| (s.to_string(), json!(p.stage(s))))
             .collect::<serde_json::Map<String, serde_json::Value>>(),
         "volatiles": p.volatiles,

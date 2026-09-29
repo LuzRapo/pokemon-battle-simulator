@@ -246,6 +246,11 @@ pub enum Event {
         side: i32,
         pokemon: String,
     },
+    /// Magic Bounce reflecting a status move back at its user; `side` is the bouncer's.
+    MoveBounced {
+        side: i32,
+        pokemon: String,
+    },
     /// An Air Balloon cancelling a Ground move outright, at `ON_BEFORE_MOVE` right after Levitate.
     FloatedOnAirBalloon {
         side: i32,

@@ -190,7 +190,7 @@ pub fn on_damage_calc(
     if item == "ASSAULT_VEST" && special {
         payload.defense_mods_4096.push(6144);
     }
-    if item == "EVIOLITE" && !calc.db.species_named(&pokemon.species_name).is_some_and(|s| s.fully_evolved) {
+    if item == "EVIOLITE" && !pokemon.fully_evolved {
         payload.defense_mods_4096.push(6144);
     }
     if let Some((_, weakened)) = RESIST_BERRIES.iter().find(|(name, _)| *name == item) {

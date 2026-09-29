@@ -60,7 +60,9 @@ pub fn ability_before_move(state: &mut State, side: usize, the_move: &Move, db: 
     }
     let ability = state.sides[other].active_pokemon().ability.clone();
     let move_type = the_move.move_type.as_str();
-    let cancelled = ability_absorbs(state, other, &ability, the_move, db, log);
+    // Every absorber here is a bus handler, so a Mold Breaker's move simply never reaches them.
+    let cancelled = !state.sides[other].active_pokemon().ability_suppressed
+        && ability_absorbs(state, other, &ability, the_move, db, log);
     // `_bind_air_balloon`'s `float_over`, at `EventPriority.ITEM` — after every ability above, and
     // only reached if none of them already cancelled the emit.
     if !cancelled && move_type == "GROUND" {
@@ -136,11 +138,53 @@ fn ability_absorbs(state: &mut State, other: usize, ability: &str, the_move: &Mo
     }
 }
 
-/// Both sides, in the order their handlers sit on the bus at equal priority: registration order.
+/// Both sides, in the order their *item* handlers sit on the bus at equal priority: registration
+/// order.
 pub fn by_registration(state: &State) -> [usize; 2] {
     let mut order = [0, 1];
     order.sort_by_key(|side| state.sides[*side].active_pokemon().registered_at);
     order
+}
+
+/// The same for their *ability* handlers, which a Mold Breaker's move can move on their own.
+pub fn by_ability_registration(state: &State) -> [usize; 2] {
+    let mut order = [0, 1];
+    order.sort_by_key(|side| state.sides[*side].active_pokemon().ability_registered_at);
+    order
+}
+
+/// Mold Breaker, Teravolt and Turboblaze: one mechanism under three names.
+pub const MOLD_BREAKERS: [&str; 3] = ["MOLD_BREAKER", "TERAVOLT", "TURBOBLAZE"];
+
+/// `_mold_breaker_window`'s opening half: for the whole of this side's move, the defender's ability
+/// handlers come off the bus — unless it has already fainted. Returns the defender's team index if
+/// the window opened, for `close_mold_breaker_window` to check it is still the one standing there.
+pub fn open_mold_breaker_window(state: &mut State, side: usize) -> Option<usize> {
+    let other = 1 - side;
+    if !MOLD_BREAKERS.contains(&state.sides[side].active_pokemon().ability.as_str())
+        || state.sides[other].active_pokemon().fainted()
+    {
+        return None;
+    }
+    state.sides[other].active_mut().ability_suppressed = true;
+    Some(state.sides[other].active)
+}
+
+/// The closing half: `register_ability`, only for a defender still out and still standing. That
+/// appends its ability handlers again — behind every other handler at their priority, including
+/// this same Pokemon's own item. A defender that was dragged out or knocked out stays unregistered,
+/// and is registered afresh whenever it next comes in.
+pub fn close_mold_breaker_window(state: &mut State, side: usize, window: Option<usize>) {
+    let Some(defender) = window else { return };
+    let other = 1 - side;
+    if state.sides[other].active != defender || state.sides[other].active_pokemon().fainted() {
+        return;
+    }
+    state.registrations += 1;
+    let stamp = state.registrations;
+    let pokemon = state.sides[other].active_mut();
+    pokemon.ability_suppressed = false;
+    pokemon.ability_registered_at = stamp;
 }
 
 /// `_bind_air_balloon`'s `pop`: burst the balloon the moment its holder has lost any HP at all,
@@ -280,6 +324,10 @@ pub fn ability_on_faint(state: &mut State, attacker_side: usize, log: &mut Log) 
 pub const PORTED_ON_SWITCH_OUT_ABILITIES: [&str; 2] = ["NATURAL_CURE", "REGENERATOR"];
 
 pub fn ability_on_switch_out(state: &mut State, side: usize, log: &mut Log) {
+    // Dragged out mid-way through a Mold Breaker's move: its handlers are not on the bus to hear it.
+    if state.sides[side].active_pokemon().ability_suppressed {
+        return;
+    }
     match state.sides[side].active_pokemon().ability.as_str() {
         "REGENERATOR" => heal_by(state, side, 3, Healer::Ability("REGENERATOR"), log),
         "NATURAL_CURE" if state.sides[side].active_pokemon().status != Status::None => {
@@ -336,7 +384,8 @@ pub fn evaluate_paradox(state: &mut State, side: usize, log: &mut Log) {
         "QUARK_DRIVE" => state.field.terrain == "ELECTRIC",
         _ => return,
     };
-    if pokemon.fainted() {
+    // Off the bus for the length of a Mold Breaker's move, like any other ability handler.
+    if pokemon.fainted() || pokemon.ability_suppressed {
         return;
     }
     if pokemon.paradox_boost.is_some() {
@@ -433,9 +482,7 @@ pub fn sync_type_from_item(state: &mut State, side: usize, log: &mut Log) {
 /// rule `abilities::apply_damage_calc` sorts by, since both sides register at the same bus
 /// priority.
 pub fn ability_on_turn_start(state: &mut State, log: &mut Log) {
-    let mut order = [0usize, 1];
-    order.sort_by_key(|side| state.sides[*side].active_pokemon().registered_at);
-    for side in order {
+    for side in by_ability_registration(state) {
         if !state.sides[side].active_pokemon().fainted() {
             evaluate_paradox(state, side, log);
         }
@@ -443,7 +490,7 @@ pub fn ability_on_turn_start(state: &mut State, log: &mut Log) {
 }
 
 /// Abilities implemented here, on top of the damage-calc ones.
-pub const PORTED_ABILITIES: [&str; 20] = [
+pub const PORTED_ABILITIES: [&str; 21] = [
     "AFTERMATH",
     "BERSERK",
     "CURSED_BODY",
@@ -451,6 +498,7 @@ pub const PORTED_ABILITIES: [&str; 20] = [
     "DOWNLOAD",
     "EFFECT_SPORE",
     "FLAME_BODY",
+    "IMPOSTER",
     "INTIMIDATE",
     "INTREPID_SWORD",
     "IRON_BARBS",
@@ -543,15 +591,19 @@ pub fn on_after_hit(
     log: &mut Log,
 ) -> Result<(), Refusal> {
     let defender_side = 1 - hit.attacker_side;
-    let mut order = [hit.attacker_side, defender_side];
-    order.sort_by_key(|side| state.sides[*side].active_pokemon().registered_at);
-    for side in order {
+    // Both orders taken before anything runs, as the bus snapshots its handler list at emit time.
+    let (abilities_first, items_after) = (by_ability_registration(state), by_registration(state));
+    for side in abilities_first {
         if side == hit.attacker_side && !attacker_registered {
+            continue;
+        }
+        // A defender inside a Mold Breaker's move has no ability handlers on the bus to reach.
+        if state.sides[side].active_pokemon().ability_suppressed {
             continue;
         }
         ability_after_hit(state, side, hit, tape, log)?;
     }
-    for side in order {
+    for side in items_after {
         item_after_hit(state, side, hit, db, tape, log)?;
         // Each active holds one item, so the balloon's own `ON_AFTER_HIT` handler sits exactly
         // where that Pokemon's item handlers do. Skipped for an attacker Red Card has already sent
@@ -851,7 +903,45 @@ pub fn apply_weather_from_ability(state: &mut State, side: usize, log: &mut Log)
 pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
     let other = 1 - side;
     let ability = state.sides[side].active_pokemon().ability.clone();
-    match ability.as_str() {
+    // Every `ON_SWITCH_IN` ability handler checks `context.actor is pokemon` — except Paradox's
+    // `evaluate`, which re-evaluates its holder on *anyone's* arrival. So the other active's
+    // Protosynthesis/Quark Drive runs too, at its own place among this emit's `ABILITY` handlers:
+    // registration order, fixed when the emit starts. Usually the other active registered first
+    // and goes first — a slow Booster Energy Golem activates during a faster lead's own emit,
+    // before that lead's Electric Surge lands.
+    let other_first =
+        state.sides[other].active_pokemon().ability_registered_at < state.sides[side].active_pokemon().ability_registered_at;
+    if other_first {
+        evaluate_paradox(state, other, log);
+    }
+    switcher_abilities_on_switch_in(state, side, &ability, log);
+    if !other_first {
+        evaluate_paradox(state, other, log);
+    }
+    // `_bind_terrain_seed`'s own `ON_SWITCH_IN` binding, at `EventPriority.ITEM` (1000) — after
+    // every ability above it including Paradox's own 2000 — so a Pokemon that both sets and eats
+    // its own seed (Electric Surge holding Electric Seed) still sees the terrain it just set, on
+    // the same switch-in. This is only one of two paths to the same seed: the terrain-setter's own
+    // direct sweep (`consume_terrain_seeds_on_terrain_change`, called from the match above and from
+    // `turn::resolve_move`'s `TerrainEffect` arm) is the other, and fires even when this Pokemon
+    // itself never switches in at all.
+    //
+    // The balloon's `announce` shares that priority, so the two interleave by registration: the
+    // switching Pokemon's own item handler (seed or balloon — it holds one item) at its own place,
+    // the other active's balloon at its.
+    for holder in by_registration(state) {
+        if holder == side {
+            consume_terrain_seed_for_side(state, side, log);
+        }
+        announce_air_balloon(state, holder, side, log);
+    }
+}
+
+/// The arriving Pokemon's own `ON_SWITCH_IN` ability handlers — its ability holds one binder, so
+/// at most one of these does anything.
+fn switcher_abilities_on_switch_in(state: &mut State, side: usize, ability: &str, log: &mut Log) {
+    let other = 1 - side;
+    match ability {
         "INTIMIDATE" => {
             // A sub blocks Intimidate (gen 8+).
             let opponent = state.sides[other].active_pokemon();
@@ -879,9 +969,9 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
                 apply_stage_changes(state, side, &[(stat.to_string(), 1)], "download", log);
             }
         }
-        _ if crate::inline::weather_from_ability(&ability).is_some() => apply_weather_from_ability(state, side, log),
-        _ if crate::inline::terrain_from_ability(&ability).is_some() => {
-            let terrain = crate::inline::terrain_from_ability(&ability).expect("just checked");
+        _ if crate::inline::weather_from_ability(ability).is_some() => apply_weather_from_ability(state, side, log),
+        _ if crate::inline::terrain_from_ability(ability).is_some() => {
+            let terrain = crate::inline::terrain_from_ability(ability).expect("just checked");
             if state.field.terrain != terrain {
                 state.field.terrain = terrain.to_string();
                 state.field.terrain_turns_left =
@@ -890,7 +980,7 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
                 log.push(Event::TerrainSetByAbility {
                     side: side as i32,
                     pokemon: nickname,
-                    ability: ability.clone(),
+                    ability: ability.to_string(),
                 });
                 // `_set_terrain_from_ability` sweeps both sides' seeds itself, on the spot — not
                 // through the bus at all. This is what makes a seed fire for a Pokemon that is not
@@ -899,38 +989,27 @@ pub fn on_switch_in(state: &mut State, side: usize, log: &mut Log) {
                 consume_terrain_seeds_on_terrain_change(state, log);
             }
         }
-        "DAUNTLESS_SHIELD" | "INTREPID_SWORD" => {
-            // Once per battle per Pokemon, not once per switch-in.
-            if !state.sides[side].active_pokemon().switch_in_boost_used {
-                state.sides[side].active_mut().switch_in_boost_used = true;
-                let stat = if ability == "DAUNTLESS_SHIELD" { "DEFENCE" } else { "ATTACK" };
-                let source = if ability == "DAUNTLESS_SHIELD" { "dauntless_shield" } else { "intrepid_sword" };
-                apply_stage_changes(state, side, &[(stat.to_string(), 1)], source, log);
-            }
+        // `_bind_imposter`: transform into whoever stands opposite, unless they have fainted —
+        // checked here, before `transform_into` is even reached, so a fainted opponent costs no
+        // `MoveFailed` line. One already mid-Transform on either side still does.
+        "IMPOSTER" if !state.sides[other].active_pokemon().fainted() => crate::turn::transform(state, side, log),
+        // Once per battle per Pokemon, not once per switch-in.
+        "DAUNTLESS_SHIELD" | "INTREPID_SWORD" if !state.sides[side].active_pokemon().switch_in_boost_used => {
+            state.sides[side].active_mut().switch_in_boost_used = true;
+            let stat = if ability == "DAUNTLESS_SHIELD" { "DEFENCE" } else { "ATTACK" };
+            let source = if ability == "DAUNTLESS_SHIELD" { "dauntless_shield" } else { "intrepid_sword" };
+            apply_stage_changes(state, side, &[(stat.to_string(), 1)], source, log);
         }
         _ => {}
     }
     // `_bind_paradox` registers its own `ON_SWITCH_IN` handler separately from the match above,
-    // rather than as one more arm in it.
-    evaluate_paradox(state, side, log);
-    // `_bind_item_type_shifter` does too, at the same priority.
-    sync_type_from_item(state, side, log);
-    // `_bind_terrain_seed`'s own `ON_SWITCH_IN` binding, at `EventPriority.ITEM` (1000) — after
-    // every ability above it including Paradox's own 2000 — so a Pokemon that both sets and eats
-    // its own seed (Electric Surge holding Electric Seed) still sees the terrain it just set, on
-    // the same switch-in. This is only one of two paths to the same seed: the terrain-setter's own
-    // direct sweep (`consume_terrain_seeds_on_terrain_change`, called from the match above and from
-    // `turn::resolve_move`'s `TerrainEffect` arm) is the other, and fires even when this Pokemon
-    // itself never switches in at all.
-    //
-    // The balloon's `announce` shares that priority, so the two interleave by registration: the
-    // switching Pokemon's own item handler (seed or balloon — it holds one item) at its own place,
-    // the other active's balloon at its.
-    for holder in by_registration(state) {
-        if holder == side {
-            consume_terrain_seed_for_side(state, side, log);
-        }
-        announce_air_balloon(state, holder, side, log);
+    // rather than as one more arm in it; `_bind_item_type_shifter` does too, at the same priority.
+    // Both belong to the ability this Pokemon *arrived* with. The bus snapshots its handlers when
+    // the emit starts, so an ability Imposter copied just now registers too late to be heard on
+    // this switch-in — a copied Protosynthesis first evaluates at the next `ON_TURN_START`.
+    if state.sides[side].active_pokemon().ability == ability {
+        evaluate_paradox(state, side, log);
+        sync_type_from_item(state, side, log);
     }
 }
 
@@ -1251,7 +1330,9 @@ fn heal_by(state: &mut State, side: usize, divisor: i32, by: Healer, log: &mut L
     let before = pokemon.hp;
     pokemon.hp = std::cmp::min(pokemon.totals.hp, pokemon.hp + amount);
     let healed = pokemon.hp - before;
-    if healed == 0 {
+    // `if healed > 0`, as every Python healer asks it: a Pokemon standing above a Transform-shrunk
+    // maximum is "healed" *down* to it, which moves HP but is never announced.
+    if healed <= 0 {
         return;
     }
     let nickname = pokemon.nickname.clone();

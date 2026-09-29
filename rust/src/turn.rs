@@ -371,6 +371,8 @@ pub fn ported_abilities() -> &'static std::collections::HashSet<&'static str> {
         all.extend(crate::power::PORTED_ATE_ABILITIES);
         all.extend(crate::hooks::PORTED_TYPE_SHIFTER_ABILITIES);
         all.extend(PORTED_NO_STEP_EFFECT_ABILITIES);
+        all.extend(crate::hooks::MOLD_BREAKERS);
+        all.extend(crate::formes::PORTED_FORME_ABILITIES);
         all
     })
 }
@@ -544,10 +546,8 @@ pub fn step(
     for side in 0..2 {
         state.sides[side].acted_this_turn = false;
         // What this side picked, so Sucker Punch can ask whether an attack is still coming.
-        state.sides[side].chosen_move = match &actions[side] {
-            Action::Move { slot, .. } => {
-                state.sides[side].active_pokemon().moves.get(*slot).cloned()
-            }
+        state.sides[side].chosen_slot = match &actions[side] {
+            Action::Move { slot, .. } => Some(*slot),
             Action::Switch { .. } => None,
         };
         // "This turn" is what Counter and Mirror Coat mean, so the record starts empty.
@@ -578,6 +578,9 @@ pub fn step(
     // `_resolve_mega_evolution`: same reasoning, same placement — a Mega Evolution's new Speed has
     // to be visible before `order_actions` reads it below.
     crate::formes::resolve_forme_changes(state, &actions, db, &mut log);
+    // `_resolve_hp_formes`, before the turn is ordered: a Pokemon that crossed its line last turn
+    // (or arrived below it) sorts on the forme it is actually in.
+    crate::formes::resolve_hp_formes(state, db, &mut log);
     // Who chose each action, by team slot. A Pokemon dragged out by Roar before it acted takes its
     // queued move with it — resolving the slot anyway means the replacement uses whatever happens
     // to be in that slot, which is a different move belonging to a different Pokemon.
@@ -619,6 +622,8 @@ pub fn step(
                 }
             }
             Action::Move { slot, z_move } => {
+                // `_mold_breaker_window`: wraps the whole of `_execute_move`, can-act checks and all.
+                let window = crate::hooks::open_mold_breaker_window(state, side);
                 // Whether the *chosen* move melts its own user free, decided before anything is
                 // rolled: Flame Wheel, Sacred Fire and Scald thaw and go off anyway, with no 20%
                 // check taken. The Python reads the chosen move here too, so a Struggle
@@ -639,11 +644,14 @@ pub fn step(
                     // A skipped turn breaks the consecutive-Protect chain.
                     state.sides[side].active_mut().protect_streak = 0;
                 }
+                crate::hooks::close_mold_breaker_window(state, side, window);
             }
         }
         // Set after the action, not before: Analytic asks whether the *other* side has already
         // moved, and a side that has just finished moving is exactly what that means.
         state.sides[side].acted_this_turn = true;
+        // The hit that just landed may have crossed an HP forme's line.
+        crate::formes::resolve_hp_formes(state, db, &mut log);
         // Both sides, after *every* completed action, not just the one that just acted — a drop or
         // an Eject Button this action triggered on the other side pulls that side's Pokemon before
         // it ever gets its own turn, if it hasn't acted yet this turn. Two full passes, in the
@@ -667,6 +675,8 @@ pub fn step(
     }
     if state.outcome.is_none() {
         residuals(state, db, tape, &mut log)?;
+        // Residual chip crosses HP-forme lines too.
+        crate::formes::resolve_hp_formes(state, db, &mut log);
         state.update_outcome();
         if let Some(outcome) = state.outcome {
             log.push(Event::BattleEnded { outcome: outcome.name().to_string() });
@@ -848,24 +858,24 @@ fn residuals(state: &mut State, db: &Database, tape: &mut Tape, log: &mut Log) -
     // its durations. A sandstorm that expires this turn still chips on the way out only if the
     // tick and the chip are in this order, which is why the field goes first.
     crate::field::tick_field(state, log);
-    // `_apply_residuals` calls `state.bus.emit(ON_RESIDUAL, ...)` once per side, but that emit
-    // reaches *every* handler on the bus, not just the current side's own Pokemon — and Paradox's
-    // own handler never checks `context.actor is pokemon` the way Solar Power's does. So a Quark
-    // Drive on side 1 activates during side 0's own residual emit, priority 9500, before side 0
-    // has taken so much as a weather tick — not during side 1's own turn through this loop, which
-    // is where a side-keyed call here would have put it. Both sides' Paradox abilities are
-    // evaluated in one pass, before either side's weather/item/status chips, to match.
+    // `_apply_residuals` calls `state.bus.emit(ON_RESIDUAL, ...)` once per standing side, and each
+    // emit reaches *every* handler on the bus. Paradox's own handler never checks `context.actor is
+    // pokemon`, so *both* actives re-evaluate at 9500 in *each* emit — a Quark Drive on side 1
+    // activates during side 0's own emit, before side 0 has taken so much as a weather tick. The
+    // item type shifter at the same priority does check its actor, so Multitype/RKS System re-sync
+    // only in their own side's emit: after the whole of side 0's chips, for side 1. Interleaved by
+    // registration order, as the bus sorts equal priorities.
     for side in 0..2 {
         if !state.sides[side].active_pokemon().fainted() {
-            crate::hooks::evaluate_paradox(state, side, log);
-            crate::hooks::sync_type_from_item(state, side, log);
-        }
-    }
-    for side in 0..2 {
-        if !state.sides[side].active_pokemon().fainted() {
-            // ResidualOrder, top to bottom (Paradox already done above): WEATHER (9000), then the
-            // weather abilities (8500), the terrain (8400), the cures and the recovery items, then
-            // the status chip at 6000, then everything below it.
+            for holder in crate::hooks::by_ability_registration(state) {
+                crate::hooks::evaluate_paradox(state, holder, log);
+                if holder == side {
+                    crate::hooks::sync_type_from_item(state, side, log);
+                }
+            }
+            // ResidualOrder, top to bottom (Paradox and the type shifter just above): WEATHER
+            // (9000), then the weather abilities (8500), the terrain (8400), the cures and the
+            // recovery items, then the status chip at 6000, then everything below it.
             crate::field::weather_residual(state, side, log);
             crate::hooks::solar_power_chip(state, side, log);
             crate::hooks::residual_before_status(state, side, tape, log)?;
@@ -874,11 +884,20 @@ fn residuals(state: &mut State, db: &Database, tape: &mut Tape, log: &mut Log) -
             // SPEED_BOOST (1000) and the balloon's pop (`EventPriority.ITEM`, also 1000), by
             // registration — the pop for *both* actives, since this emit reaches every handler,
             // and logged against side 0 whichever side holds the balloon (see `check_air_balloon`).
-            for holder in crate::hooks::by_registration(state) {
-                if holder == side {
-                    crate::hooks::speed_boost_residual(state, side, log);
+            // Three handlers at most, each at its own stamp — the actor's ability, and both
+            // actives' items — and one Pokemon's ability ahead of its own item at a tie.
+            let mut handlers = [(0u64, 0u8, side, true), (0, 1, 0, false), (0, 1, 1, false)];
+            handlers[0].0 = state.sides[side].active_pokemon().ability_registered_at;
+            for entry in handlers.iter_mut().skip(1) {
+                entry.0 = state.sides[entry.2].active_pokemon().registered_at;
+            }
+            handlers.sort();
+            for (_, _, holder, is_ability) in handlers {
+                if is_ability {
+                    crate::hooks::speed_boost_residual(state, holder, log);
+                } else {
+                    crate::hooks::check_air_balloon(state, holder, 0, log);
                 }
-                crate::hooks::check_air_balloon(state, holder, 0, log);
             }
             // One faint line for the whole residual pass, whichever chip did it — the Python logs
             // it in `_apply_residuals` after the emit, not inside any handler. Announcing it from
@@ -1232,6 +1251,26 @@ fn resolve_move(
         log.push(Event::TauntBlocked { side: side as i32, pokemon: nickname, the_move: the_move.name.clone() });
         return Ok(());
     }
+    // Prankster's Gen 7 drawback: a status move from a Prankster user, aimed at a Dark type, does
+    // nothing. Here — after Taunt, before the choice lock and last-move slot are touched, and before
+    // Magic Bounce is even asked — because that is where the Python returns. It reads the defender's
+    // plain `types`, not Roost-adjusted ones, and applies whether or not Prankster's priority was what
+    // sorted the move where it was.
+    if state.sides[side].active_pokemon().ability == "PRANKSTER"
+        && the_move.category == "STATUS"
+        && DEFENDER_FACING.contains(&the_move.target.as_str())
+        && state.sides[other].active_pokemon().types.iter().flatten().any(|t| t == "DARK")
+    {
+        log.push(Event::MoveUsed {
+            side: side as i32,
+            pokemon: state.sides[side].active_pokemon().nickname.clone(),
+            the_move: the_move.name.clone(),
+            unleashed_as,
+        });
+        let nickname = state.sides[other].active_pokemon().nickname.clone();
+        log.push(Event::DoesNotAffect { side: other as i32, pokemon: nickname });
+        return Ok(());
+    }
     // `TRACE_DRAWS=1` prints where on the tape each move started. When the two engines disagree
     // about *how many* draws a turn took, the divergence message names the position but not the
     // move that got there — this closes that gap in one run.
@@ -1343,6 +1382,19 @@ fn resolve_move(
         log.push(Event::MoveFailed);
         return Ok(());
     }
+
+    // Magic Bounce: an inline read in `_execute_move`, not a bus handler — so a Mold Breaker does
+    // not stop it — and placed before Protect. The Python swaps attacker and defender for the rest
+    // of the move, so the bouncer rolls the accuracy, sets the hazards on the user's side, and so
+    // on; rebinding `side`/`other` here does the same for everything below. There is no second
+    // bounce: a user that also has Magic Bounce takes its own move.
+    let (side, other) = if the_move.reflectable && state.sides[other].active_pokemon().ability == "MAGIC_BOUNCE" {
+        let nickname = state.sides[other].active_pokemon().nickname.clone();
+        log.push(Event::MoveBounced { side: other as i32, pokemon: nickname });
+        (other, side)
+    } else {
+        (side, other)
+    };
 
     // Protect and its relatives. *After* the stall check, which is where the Python puts it — a
     // move turned aside by a Protect has still spent its own stalling roll if it had one.
@@ -1471,6 +1523,12 @@ fn resolve_move(
     // reproduces this for its own internal tail and for a second hit of the same multi-hit move;
     // `restore_active_to`, set the instant a switch is first seen below, pins the rest of this
     // function to match and is put back only once, right before `resolve_move` itself returns.
+    // A disguise takes the whole move, not merely its damage — decided here, before any effect runs,
+    // for the same reason the substitute is: by the time a flinch is reached the disguise has
+    // already busted, and a Mimikyu that was never actually hit would flinch anyway. Only the damage
+    // effect still runs, because absorbing it is what busts the disguise; a fixed-damage effect is
+    // not a `DamageEffect`, so a Seismic Toss is simply blocked and leaves the disguise intact.
+    let disguised = crate::formes::disguise_intercepts(state.sides[other].active_pokemon(), &the_move);
     let attacker_active_at_move_start = state.sides[side].active;
     let mut restore_active_to: Option<usize> = None;
     for effect in &the_move.effects {
@@ -1488,6 +1546,9 @@ fn resolve_move(
         // too, which is how this was found: the Python stopped after the faint and this engine
         // rolled on, so every draw from there wasread out of another turn.
         if state.sides[other].active_pokemon().fainted() && targets_defender(effect, &the_move) {
+            continue;
+        }
+        if disguised && targets_defender(effect, &the_move) && !matches!(effect, Effect::DamageEffect { .. }) {
             continue;
         }
         match effect {
@@ -2331,7 +2392,7 @@ const TRANSFORM_PP: i32 = 5;
 /// exactly as `id(attacker) in state.transforms or id(defender) in state.transforms` does; `side`/
 /// `team_index` is this engine's stable identity in place of the Python's object identity, the
 /// same substitution `future_sight_attacker` already makes.
-fn transform(state: &mut State, side: usize, log: &mut Log) {
+pub(crate) fn transform(state: &mut State, side: usize, log: &mut Log) {
     let other = 1 - side;
     let attacker_index = state.sides[side].active;
     let defender_index = state.sides[other].active;
@@ -2384,6 +2445,9 @@ fn transform(state: &mut State, side: usize, log: &mut Log) {
         .collect();
     attacker.stages = defender_stages;
     attacker.recompute_totals();
+    // `unregister_active` ... `register_active` around the copy: the copied ability's handlers (and
+    // the Pokemon's item's, afresh) join the bus behind everyone else's.
+    state.register_active(side);
     log.push(Event::Transformed { side: side as i32, pokemon: nickname, into });
 }
 
@@ -2692,6 +2756,11 @@ fn apply_damage(
     // instant it changes, and only let go of for real once this function is done with it — the same
     // trick as the `Refusal`-free early exits elsewhere, minus needing a second notion of "the
     // attacker" in every stage-change/heal site downstream.
+    // `_stopped_before_any_hit`'s second half (the first, the immunity gate, runs before this is
+    // called): an intact disguise takes the whole move before a single hit is rolled.
+    if crate::formes::disguise_absorbs(state, other, db, log) {
+        return Ok(());
+    }
     let attacker_active_before = state.sides[side].active;
     let mut attacker_active_after_hits = attacker_active_before;
     let attacker_ability = state.sides[side].active_pokemon().ability.clone();
@@ -2816,7 +2885,11 @@ fn apply_damage(
         }
         {
             let defender = state.sides[other].active_pokemon();
-            if defender.ability == "STURDY" && defender.hp == defender.totals.hp && incoming >= defender.hp {
+            if defender.ability == "STURDY"
+                && !defender.ability_suppressed
+                && defender.hp == defender.totals.hp
+                && incoming >= defender.hp
+            {
                 incoming = defender.hp - 1;
                 let nickname = defender.nickname.clone();
                 log.push(Event::SurvivedAtOneHp { side: other as i32, pokemon: nickname, cause: "sturdy".into() });

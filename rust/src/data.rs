@@ -84,6 +84,9 @@ pub struct Move {
     pub effects: Vec<Effect>,
     #[serde(default)]
     pub protectable: bool,
+    /// Magic Bounce sends this move back at its user.
+    #[serde(default)]
+    pub reflectable: bool,
     #[serde(default)]
     pub healing: bool,
     #[serde(default)]

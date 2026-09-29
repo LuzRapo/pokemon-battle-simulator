@@ -20,13 +20,13 @@ to this doc; per invariant 2 the batch now belongs on the "done" side.
 | | done | total |
 |---|---|---|
 | moves | 843 | 843 (100%) |
-| abilities | 180 | 220 (82%) |
-| items | 105 | 193 |
+| abilities | 187 | 220 (85%) |
+| items | 108 | 193 |
 | volatiles | 18 | 18 — every volatile in the database is ported |
 
 The counts above are confirmed against `rust/target/release/replay --coverage rust/data`, run with
 a release build for this update:
-`{"abilities":{"live":220,"ported":180},"items":{"live":193,"ported":105},"moves":{"playable":843,
+`{"abilities":{"live":220,"ported":187},"items":{"live":193,"ported":108},"moves":{"playable":843,
 "refused_by_cause":{},"total":843}}` — an empty `refused_by_cause` for moves, matching the 100%
 row above.
 
@@ -830,6 +830,52 @@ Silvally alike, including the no-item control (0 diverged).
 and the rest of `legal_actions`** — genuinely deferred to section 8, since nothing else in this
 cluster has any `step()`-level effect to port.
 
+### 7b. The gen7ag mirror-battle pool — done
+
+Mirror Mode now deals from `battle_sim/data/ag_sets.json`: up to two sets per species for the 90
+species common enough in 5,001 high-ladder Gen 7 AG replays to mine one, built by
+`tools/build_ag_sets.py` from which moves those Pokemon actually used together. Every one of the
+114 sets has to play on this engine, since self-play for the mode runs here —
+`tests/test_python_bridge.py::test_every_mined_gen7ag_set_is_playable_in_rust` fails otherwise.
+Seven mechanics stood between the pool and that, ported in two batches:
+
+- **Griseous Orb/Core** (legend-orb boost) and **Air Balloon**. The balloon ports the Python's house
+  rule exactly: it pops on *any* HP loss, noticed at `ON_AFTER_HIT`, `ON_ACTION_RESOLVE`,
+  `ON_RESIDUAL` and `ON_TURN_END`, each reaching both actives; residual and turn-end pops log
+  against side 0 (`payload.get("defender_index", 0)`), and every switch-in — the opponent's too —
+  re-announces every bound balloon under the switching side's index. Both quirks are pinned by
+  tests. Whether a balloon's handlers exist is decided at registration, so `register_active` now
+  mirrors `rewire_active` too: Knock Off, Trick, Skill Swap, ability changes, Mega Evolution,
+  Transform and forme swaps all re-register, as the Python re-appends.
+- **Mold Breaker/Teravolt/Turboblaze**: `_mold_breaker_window` takes the defender's ability
+  *handlers* off the bus for the attacker's whole move and re-registers them after — behind every
+  other handler, including the same Pokemon's own item, hence a separate `ability_registered_at`.
+  Inline ability reads (Magic Bounce, Disguise, Pressure, Synchronize, Shield Dust...) are untouched,
+  exactly as in the Python — so a Mold Breaker is still bounced and still hits a disguise.
+- **Magic Bounce**: inline, before Protect; the rest of the move runs with the roles swapped.
+- **Imposter**: `transform_into` on arrival. The bus snapshots its handlers at emit start, so a
+  copied ability's own switch-in handlers are not heard until the next event.
+- **Disguise** and **Power Construct**, through a shared `formes::swap_forme` (the causing ability
+  survives; Power Construct's extra maximum arrives as real HP). Disguise is decided before any
+  effect runs and busts before a single hit is rolled; a fixed-damage move is blocked outright
+  without busting it, which is the reference's quirk, pinned.
+
+A sweep of real mirror battles — six AG sets a side, identical, with switching — then found things
+the generic sweeps never could, because their six plain species reach so little of the rulebook:
+Prankster's Gen 7 drawback against Dark types was missing entirely (none of the generic species is
+Dark); Paradox's `ON_SWITCH_IN` handler reacts to *either* side's arrival (see the closed gap below);
+Sucker Punch must read the chosen *slot* when asked, not a name recorded before the turn-0 switch-ins;
+Beat Up reads each member's current base Attack; Eviolite reads `fully_evolved` as fixed at build;
+`_adjust_hp` clamps to the maximum on the way down as well as up, so a Pokemon Transform left above
+its new cap takes the overflow as damage and is "healed" down to it silently; and the digest reports
+Roost-adjusted `battle_types`; and Multitype/RKS System re-sync in their *own* side's residual
+emit (their handler checks its actor), not in the up-front pass Paradox needs. All fixed, each with
+a regression test and a vacuity check.
+
+Known, deliberately not changed: the Python gives Mega Evolution and Primal Reversion one shared
+once-per-battle flag, so Primal Groudon and Mega Rayquaza cannot both transform in one battle, which
+the real games allow. Mirroring that is this engine's job; changing it is a Python change.
+
 ### 8. Integration — after parity
 
 **Minimal PyO3 bridge — done.** `rust/src/python.rs` (behind the `python` Cargo feature, on by
@@ -883,30 +929,27 @@ Once that glue exists: swap the search over behind a flag, re-run the AI validat
 win rate) to confirm the engine change did not move play strength, and keep the differential running
 against the Python for as long as both exist.
 
-## Known gap: cross-side switch-in ability ordering
+## Closed gap: cross-side switch-in ability ordering (misdiagnosed, then fixed)
 
 Found by a broad sweep during the Multitype/RKS System/plates batch (seed 870 of a 8000-battle
-status+abilities+switches run) — not caused by that batch, which is otherwise clean, but newly
-reachable once it landed (the scenario needed a Pokemon holding an RKS System Memory *not* on an
-RKS System Pokemon, previously refused outright as an unported item).
+status+abilities+switches run, saved as `rust/failures/status-870.json`): a slow Golem's
+Protosynthesis (Booster Energy) and a fast Tauros's Electric Surge both fire on turn 0, and Python
+logs the Golem's `ParadoxActivated` before the Tauros's `TerrainSetByAbility` where Rust logged them
+the other way round.
 
-`turn::step`'s `_send_out_leads` (`turn.rs:524-536`) sorts the two leads by descending
-`effective_speed` once, then runs each one's entire `on_switch_in` before starting the other's — the
-comment there ("the slower weather-setter's weather is the one that stands") is itself the
-documented intent. Python's own event bus does not work this way for a switch-in ability: `ON_
-SWITCH_IN` handlers from *both* leads sit on the same bus, sorted by `(priority, registered_at)`
-globally, not "everything from the faster Pokemon, then everything from the slower one." The sweep's
-own case: a slow Golem's Protosynthesis (Booster Energy, no speed dependency) and a fast Tauros's
-Electric Surge both fire on turn 0 — Python logs the Golem's `ParadoxActivated` before the Tauros's
-`TerrainSetByAbility` (registration order — side 0 registers before side 1), Rust logs them in speed
-order instead (Tauros first, since it's faster). Both engines agree on *what* happens, only the
-*order* of these two specific log lines differs, so nothing about the ultimate board state actually
-diverges here — but `compare()` is event-for-event, correctly refusing to treat that as a pass.
+This section first put that down to Python dispatching both leads' `ON_SWITCH_IN` handlers in one
+global priority-sorted pass. That was wrong: Python emits `ON_SWITCH_IN` once per arrival, exactly
+as Rust calls `on_switch_in` once per side. The real cause is narrower. Every ability `ON_SWITCH_IN`
+handler checks `context.actor is pokemon` — except Paradox's `evaluate`, which re-evaluates its
+holder on *anyone's* arrival. So the faster Tauros's own emit also reached the slower Golem's
+Paradox handler, registered earlier, which activated off its Booster Energy before the Tauros's
+terrain landed. Rust's `on_switch_in` only ever evaluated the arriving side.
 
-Not fixed here: a real fix needs `on_switch_in`'s per-side dispatch restructured into the same kind
-of single, priority-sorted pass across both sides that `apply_damage_calc`'s own two-entry walk
-already uses — a own investigation and batch, not a one-line change, and not part of what this
-batch's own tests exercise. Flagged so it is not lost, not fixed opportunistically mid-batch.
+Fixed in the Mold Breaker/Magic Bounce/Imposter batch, where Imposter made it reachable far more
+often: a Ditto that copies a Protosynthesis holder gains the ability too late to be heard on its own
+switch-in (the bus snapshots its handlers when the emit starts), and then activates on the *next*
+switch-in anyone makes. `on_switch_in` now evaluates the other active's Paradox too, at its place
+among the emit's `ABILITY` handlers by registration order. The saved seed-870 scenario agrees.
 
 ## Rough sizing
 

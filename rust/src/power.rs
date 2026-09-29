@@ -123,13 +123,16 @@ fn formula(
         "Punishment" => std::cmp::min(200, 60 + 20 * positive_stages(defender)),
         "Last Respects" => 50 * (1 + state.sides[side].team.iter().filter(|p| p.fainted()).count() as i32),
         "Rage Fist" => std::cmp::min(350, 50 * (1 + attacker.times_hit)),
-        // PS hits once per healthy ally; approximated as one hit carrying the summed power.
+        // PS hits once per healthy ally; approximated as one hit carrying the summed power. Each
+        // member's *current* base Attack, as the Python reads `base_stats.ATTACK` — a Transformed
+        // or Mega-Evolved member counts with the stats it is fighting with, not the ones it was
+        // built with.
         "Beat Up" => {
             let total: i32 = state.sides[side]
                 .team
                 .iter()
                 .filter(|m| !m.fainted() && m.status == Status::None)
-                .map(|m| 5 + m.base_attack / 10)
+                .map(|m| 5 + m.base_stats.attack / 10)
                 .sum();
             if total == 0 {
                 5
@@ -191,8 +194,8 @@ fn condition(name: &str, state: &State, side: usize) -> Option<(bool, i32, i32)>
         // override made it a Fire move at half strength, which is most of the move missing.
         "Weather Ball" => crate::hooks::effective_weather(state) != "NONE",
         // Pursuit doubles against a target caught on its way out. A side whose chosen action is a
-        // switch has no move name recorded, which is exactly the question being asked.
-        "Pursuit" => !state.sides[1 - side].acted_this_turn && state.sides[1 - side].chosen_move.is_none(),
+        // switch has no move slot recorded, which is exactly the question being asked.
+        "Pursuit" => !state.sides[1 - side].acted_this_turn && state.sides[1 - side].chosen_slot.is_none(),
         "Wake-Up Slap" => defender.status == Status::Sleep,
         "Smelling Salts" => defender.status == Status::Paralysis,
         "Rising Voltage" => state.field.terrain == "ELECTRIC" && grounded(defender),
@@ -661,7 +664,8 @@ fn target_is_about_to_attack(state: &State, side: usize, db: &Database) -> bool 
     if state.sides[side].acted_this_turn {
         return false;
     }
-    let Some(name) = state.sides[side].chosen_move.as_deref() else { return false };
+    let Some(slot) = state.sides[side].chosen_slot else { return false };
+    let Some(name) = state.sides[side].active_pokemon().moves.get(slot) else { return false };
     db.move_named(name).is_some_and(|chosen| {
         chosen
             .effects

@@ -127,16 +127,18 @@ pub fn apply_damage_calc(
     calc: &Calc,
     payload: &mut Payload,
 ) -> Option<crate::items::Consumed> {
-    let defender_side = 1 - attacker_side;
-    let mut order = [attacker_side, defender_side];
-    order.sort_by_key(|side| state.sides[*side].active_pokemon().registered_at);
+    // Abilities and items each in their own registration order: a Mold Breaker's move re-registers
+    // an ability without its item, so the two need not agree.
+    let ability_order = crate::hooks::by_ability_registration(state);
+    let item_order = crate::hooks::by_registration(state);
     // An aura is field-wide and Aura Break cancels it from either side, so this is decided once
-    // before anybody's handler runs rather than inside one of them.
+    // before anybody's handler runs rather than inside one of them. An inline read in the Python,
+    // so a Mold Breaker does not hide an Aura Break from it.
     let broken = state
         .sides
         .iter()
         .any(|side| side.active_pokemon().ability == "AURA_BREAK");
-    for side in order {
+    for side in ability_order {
         // Red Card, mid-multi-hit: once the attacker's own side has switched, its ability (and,
         // below, its item) stop contributing for the rest of this move — `_execute_switch`
         // unregisters the departing Pokemon's bus handlers the instant it leaves, and a later hit's
@@ -146,10 +148,13 @@ pub fn apply_damage_calc(
             continue;
         }
         let pokemon = state.sides[side].active_pokemon();
+        if pokemon.ability_suppressed {
+            continue;
+        }
         handle(&pokemon.ability, pokemon, side == attacker_side, broken, calc, payload);
     }
     let mut consumed = None;
-    for side in order {
+    for side in item_order {
         if side == attacker_side && !attacker_registered {
             continue;
         }

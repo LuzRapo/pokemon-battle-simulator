@@ -10,7 +10,7 @@
 //! currently narrower, ported set rather than Python's.
 
 use crate::battle::{Pokemon, State};
-use crate::data::Database;
+use crate::data::{Database, Effect, Move};
 use crate::log::{Event, Log};
 use crate::turn::Action;
 
@@ -92,6 +92,81 @@ pub fn apply_forme(pokemon: &mut Pokemon, forme_name: &str, db: &Database) {
     pokemon.weight_kg = species.weight_kg;
     pokemon.recompute_totals();
     pokemon.hp = if fraction > 0.0 { (fraction * pokemon.totals.hp as f64).round().max(1.0) as i32 } else { 0 };
+}
+
+/// The HP- and hit-triggered forme abilities this engine has; the rest (Stance Change, Zen Mode,
+/// Schooling, Shields Down) are still refused.
+pub const PORTED_FORME_ABILITIES: [&str; 2] = ["DISGUISE", "POWER_CONSTRUCT"];
+
+pub const MIMIKYU_BUSTED: &str = "Mimikyu-Busted";
+pub const ZYGARDE_COMPLETE: &str = "Zygarde-Complete";
+
+/// `FORME_ABILITIES`: the abilities that drive a swap, and so the ones that survive one.
+const FORME_ABILITIES: [&str; 6] = ["STANCE_CHANGE", "DISGUISE", "ZEN_MODE", "SCHOOLING", "SHIELDS_DOWN", "POWER_CONSTRUCT"];
+
+/// `swap_forme`: `apply_forme`, except the ability that caused the swap survives it, and Power
+/// Construct's extra maximum HP arrives as real HP rather than as a rescaling — half a Zygarde
+/// becomes a comfortably-above-half Complete. Rewires, then logs, in that order.
+pub fn swap_forme(state: &mut State, side: usize, forme: &str, db: &Database, log: &mut Log) {
+    let pokemon = state.sides[side].active_mut();
+    let keeper = FORME_ABILITIES.contains(&pokemon.ability.as_str()).then(|| pokemon.ability.clone());
+    let (was_max, was_live) = (pokemon.totals.hp, pokemon.hp);
+    apply_forme(pokemon, forme, db);
+    if let Some(keeper) = keeper {
+        if keeper == "POWER_CONSTRUCT" {
+            pokemon.hp = std::cmp::min(pokemon.totals.hp, was_live + (pokemon.totals.hp - was_max));
+        }
+        pokemon.ability = keeper;
+    }
+    state.register_active(side);
+    let pokemon = state.sides[side].active_pokemon();
+    log.push(Event::FormeChanged { side: side as i32, pokemon: pokemon.nickname.clone(), forme: pokemon.species_name.clone() });
+}
+
+/// `_power_construct_forme`: the cells arrive at half HP or below, and never leave. One-way, which
+/// is why it is not a threshold pair the way Schooling or Zen Mode are.
+fn power_construct_forme(pokemon: &Pokemon) -> Option<&'static str> {
+    if pokemon.ability != "POWER_CONSTRUCT" || pokemon.fainted() || pokemon.species_name == ZYGARDE_COMPLETE {
+        return None;
+    }
+    (pokemon.hp as f64 <= 0.5 * pokemon.totals.hp as f64).then_some(ZYGARDE_COMPLETE)
+}
+
+/// `_resolve_hp_formes`: put both actives, side 0 first, into whatever forme their HP-triggered
+/// ability calls for. Asked wherever HP can have moved — at the top of the turn, after every
+/// action, after the residuals — rather than hooked to one kind of damage. Power Construct is the
+/// only HP forme this engine has; the rest are still refused as abilities.
+pub fn resolve_hp_formes(state: &mut State, db: &Database, log: &mut Log) {
+    for side in 0..2 {
+        if let Some(forme) = power_construct_forme(state.sides[side].active_pokemon()) {
+            swap_forme(state, side, forme, db, log);
+        }
+    }
+}
+
+/// `_disguise_intercepts`: an intact disguise takes a damaging move whole — decided before any of
+/// the move's effects run, so its secondaries never reach Mimikyu either. A status move goes
+/// straight through, which is the Gen 7 rule. An inline read in the Python, so a Mold Breaker's
+/// window does not touch it.
+pub fn disguise_intercepts(defender: &Pokemon, the_move: &Move) -> bool {
+    defender.ability == "DISGUISE"
+        && defender.species_name != MIMIKYU_BUSTED
+        && the_move.target != "SELF"
+        && the_move
+            .effects
+            .iter()
+            .any(|e| matches!(e, Effect::DamageEffect { .. } | Effect::FixedDamageEffect { .. }))
+}
+
+/// `_disguise_absorbs`, from `_stopped_before_any_hit`: bust, and stop the move before a single hit
+/// is rolled — no hit count, no crit, no damage roll, no recoil, no on-hit reaction.
+pub fn disguise_absorbs(state: &mut State, defender_side: usize, db: &Database, log: &mut Log) -> bool {
+    let defender = state.sides[defender_side].active_pokemon();
+    if defender.ability != "DISGUISE" || defender.species_name == MIMIKYU_BUSTED {
+        return false;
+    }
+    swap_forme(state, defender_side, MIMIKYU_BUSTED, db, log);
+    true
 }
 
 /// `_resolve_mega_evolution`: Mega Evolve (or Primal Revert, or Ultra Burst) any active Pokemon

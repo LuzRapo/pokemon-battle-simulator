@@ -158,6 +158,15 @@ pub struct Pokemon {
     /// fire in registration order, and a fold of `chain` modifiers is not commutative, so the
     /// order two abilities push into the same list is worth a point of damage.
     pub registered_at: u64,
+    /// The same stamp for this Pokemon's *ability* handlers alone. Equal to `registered_at` after
+    /// any full registration; a Mold Breaker's move is the one thing that re-registers an ability
+    /// without its item (`register_ability` at the end of `_mold_breaker_window`), moving the
+    /// ability's handlers — and only those — behind everyone else's.
+    pub ability_registered_at: u64,
+    /// Inside a Mold Breaker's move: this Pokemon's ability handlers are off the bus. Inline reads
+    /// of its ability elsewhere in the engine are untouched, exactly as in the Python, so only the
+    /// dispatch points standing in for bus events consult this.
+    pub ability_suppressed: bool,
     /// Dauntless Shield and Intrepid Sword fire once per battle, not once per switch-in.
     pub switch_in_boost_used: bool,
     /// What the last hit this turn took off, and whether it was physical or special. Counter and
@@ -169,10 +178,11 @@ pub struct Pokemon {
     pub turns_active: i32,
     pub times_hit: i32,
     pub rolling_hits: i32,
-    /// The species' base Attack, which Beat Up sums over the whole team, and its weight, which
-    /// Low Kick and Heavy Slam weigh against each other.
-    pub base_attack: i32,
+    /// The species' weight, which Low Kick and Heavy Slam weigh against each other.
     pub weight_kg: f64,
+    /// Fixed when the Pokemon is built, as the Python's `Pokemon.fully_evolved` is: no forme change or
+    /// Transform ever updates it, so what Eviolite reads is the species it was *caught as*.
+    pub fully_evolved: bool,
     pub last_hit_taken: i32,
     pub last_hit_category: Option<String>,
     /// Consecutive stalling moves. Protect-likes fail with odds 1 - 1/3^n, and the counter is
@@ -348,12 +358,14 @@ impl Pokemon {
             // zero exactly the same way.
             just_switched_in: true,
             registered_at: 0,
+            ability_registered_at: 0,
+            ability_suppressed: false,
             switch_in_boost_used: false,
             turns_active: 0,
             times_hit: 0,
             rolling_hits: 0,
-            base_attack: species.base_stats.attack,
             weight_kg: species.weight_kg,
+            fully_evolved: species.fully_evolved,
             last_hit_taken: 0,
             last_hit_category: None,
             protect_streak: 0,
@@ -460,12 +472,16 @@ impl Pokemon {
         with_stage(self.stat(name), self.stage(name))
     }
 
-    /// Damage, clamped at zero, returning how much actually landed. Nine Lives is deliberately not
-    /// here yet: it belongs with the ability work, and until then a butler in a Rust battle simply
-    /// faints — which the differential harness will say, loudly, the moment one is in a scenario.
+    /// Damage, returning how much HP actually went — `_adjust_hp`, which clamps the result into
+    /// `0..=max` whichever way HP moved. That only differs from a plain floor at zero when HP sits
+    /// *above* the maximum, which Transform can leave it doing (it recomputes the HP total with the
+    /// target's EVs, IVs and nature while keeping the current HP); then a hit also takes the overflow
+    /// and reports it as dealt. Nine Lives is deliberately not here yet: it belongs with the ability
+    /// work, and until then a butler in a Rust battle simply faints — which the differential harness
+    /// will say, loudly, the moment one is in a scenario.
     pub fn take_damage(&mut self, amount: i32) -> i32 {
         let before = self.hp;
-        self.hp = (self.hp - amount.abs()).max(0);
+        self.hp = (self.hp - amount.abs()).min(self.totals.hp).max(0);
         before - self.hp
     }
 }
@@ -479,8 +495,11 @@ pub struct Side {
     pub tailwind_turns: i32,
     /// Whether this side has already taken its action this turn. Analytic reads it.
     pub acted_this_turn: bool,
-    /// The move this side picked for the turn, by name — what Sucker Punch is trying to read.
-    pub chosen_move: Option<String>,
+    /// The slot this side picked a move from this turn, `None` for a switch — what Sucker Punch
+    /// is trying to read. A slot, not a name, as the Python keeps `chosen_action`: the move is
+    /// looked up in whoever is standing there *when asked*, so a lead that Imposter turned into
+    /// something else between choosing and acting is read with the moves it now has.
+    pub chosen_slot: Option<usize>,
     /// Wish: turns left, and how much it will heal when it lands (fixed at cast time, off the
     /// caster's own max HP — not whoever is standing there when it lands).
     pub wish_turns: i32,
@@ -527,7 +546,7 @@ impl Side {
             screens: OrderedCounts::new(),
             tailwind_turns: 0,
             acted_this_turn: false,
-            chosen_move: None,
+            chosen_slot: None,
             wish_turns: 0,
             wish_pending: 0,
             healing_wish_pending: false,
@@ -632,6 +651,8 @@ impl State {
         let stamp = self.registrations;
         let pokemon = self.sides[side].active_mut();
         pokemon.registered_at = stamp;
+        pokemon.ability_registered_at = stamp;
+        pokemon.ability_suppressed = false;
         pokemon.balloon_bound = pokemon.item == "AIR_BALLOON";
         pokemon.balloon_seen = pokemon.hp;
     }
