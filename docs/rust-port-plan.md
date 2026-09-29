@@ -979,6 +979,10 @@ self-play has to run without Python in the loop at all, so the decisions came to
   decisions/s on one thread and 75k on three, which is about 390 mirror battles a second at roughly
   90 turns each. Training speed now depends on the network, not the engine.
 
+**The trainer — done.** `training/` holds the network, PPO self-play, ONNX export and evaluation
+against the bot's own AI (`battle_sim/rl/net_player.py` plays the exported network in the Python
+engine). How to run it, on this server or on a GPU under WSL2, is in `docs/self-play.md`.
+
 ## Closed gap: cross-side switch-in ability ordering (misdiagnosed, then fixed)
 
 Found by a broad sweep during the Multitype/RKS System/plates batch (seed 870 of a 8000-battle

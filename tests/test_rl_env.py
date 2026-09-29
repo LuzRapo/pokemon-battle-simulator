@@ -9,16 +9,20 @@ draws, and it must ask for every multi-option decision, in order, and end in the
 import json
 import random
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import pytest
 
 from battle_sim.ag_sets import mirror_team
-from battle_sim.differential import encode_spec, record_played
+from battle_sim.differential import PlayedScenario, encode_spec, name_action, record_played
+from battle_sim.engine import legal_actions
 from battle_sim.mechanics.battle import BattleState
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.spec import PokemonSpec
 from battle_sim.rl import encode as py
+from battle_sim.rl.encode import Decision
+from battle_sim.rl.net_player import action_index, decision_for
 from battle_sim.rust_bridge import LIBRARY, database, load
 
 pytestmark = pytest.mark.skipif(not LIBRARY.exists(), reason="run `cargo build --release` in rust/")
@@ -29,8 +33,12 @@ def _teams_json(team: Sequence[PokemonSpec]) -> list[str]:
     return [encoded, encoded]
 
 
-@pytest.mark.parametrize("seed", range(40))
-def test_the_environment_asks_what_run_battle_asks_and_ends_where_it_ends(seed: int) -> None:
+type Reads = list[tuple[Decision, dict[str, int]]]
+
+
+def _played(seed: int) -> tuple[Sequence[PokemonSpec], tuple[int, int], PlayedScenario, list[dict[str, Any]], Reads]:
+    """A random mirror battle played the `run_battle` way, and what `NetPlayer` would have made of
+    each of its decisions: the kind, and each legal action's number."""
     rng = random.Random(f"env:{seed}")
     team = mirror_team(rng)
     leads = (rng.randrange(6), rng.randrange(6))
@@ -40,18 +48,42 @@ def test_the_environment_asks_what_run_battle_asks_and_ends_where_it_ends(seed: 
         moves = [a for a in offered if a.action is ActionType.USE_MOVE]
         return rng.choice(moves) if moves and rng.random() < 0.8 else rng.choice(offered)
 
-    scenario, expected = record_played((team, team), orders, pick, seed=seed, max_turns=150)  # type: ignore[arg-type]
+    reads: Reads = []
+
+    def read(state: BattleState, side: int, kind: str) -> None:
+        if kind != "lead":
+            numbered = {name_action(a, state, side): action_index(a, state, side) for a in legal_actions(state, side)}
+            reads.append((decision_for(state, side), numbered))
+            assert reads[-1][0] is {"turn": Decision.TURN, "switch": Decision.SWITCH}[kind]
+
+    scenario, expected = record_played(
+        (team, team),
+        orders,  # type: ignore[arg-type]
+        pick,
+        seed=seed,
+        max_turns=150,
+        observe=read,
+    )
+    return team, leads, scenario, expected, reads
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_the_environment_asks_what_run_battle_asks_and_ends_where_it_ends(seed: int) -> None:
+    team, leads, scenario, expected, python_reads = _played(seed)
+    reads = iter(python_reads)
     env = load().VecEnv(database(), 1, max_turns=150, threads=1)
     env.replay(0, _teams_json(team), json.dumps(scenario.tape))
 
     def answer(side: int, name: str, python_legal: list[str], kind: int) -> None:
         rows, sides, decisions = env.observe()[:3]
         asked = {(int(s), int(d)) for r, s, d in zip(rows, sides, decisions, strict=True) if r == 0}
+        numbered = next(reads)[1] if kind else None
         if len(python_legal) == 1:
             return  # answered by the environment itself; the final state checks it answered right
         assert (side, kind) in asked, f"side {side} had a choice of {python_legal} and was not asked"
         named = {label: action for action, label in env.legal(0, side)}
         assert sorted(named) == sorted(python_legal)
+        assert numbered is None or named == numbered, "NetPlayer numbers these actions differently"
         env.act(np.array([0]), np.array([side]), np.array([named[name]]))
 
     for side, lead in enumerate(leads):
