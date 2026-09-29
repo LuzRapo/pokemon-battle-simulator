@@ -68,6 +68,34 @@ def test_mega_evolves_only_once_per_side():
     assert state.sides[0].active_pokemon.name == "Scizor"
 
 
+def test_primal_reversion_and_mega_evolution_are_separate_allowances():
+    """An orb does not use the Mega slot: Primal Groudon and Mega Tyranitar both transform."""
+    groudon = _spec("Groudon", Ability.DROUGHT, Item.RED_ORB, ["Precipice Blades"])
+    state = _battle([groudon, _tyranitar(Item.TYRANITARITE)], [_blissey()])
+    step(state, {0: _ATTACK, 1: _ATTACK})
+    assert state.sides[0].active_pokemon.name == "Groudon-Primal"
+    assert state.sides[0].has_primal_reverted and not state.sides[0].has_mega_evolved
+
+    state.sides[0].active[0] = 1
+    state.sides[0].chosen_action = _ATTACK
+    _resolve_mega_evolution(state, BattleLog())
+    assert state.sides[0].active_pokemon.name == "Tyranitar-Mega"
+    assert state.sides[0].has_mega_evolved
+
+
+def test_primal_reversion_is_still_once_per_side():
+    groudon = _spec("Groudon", Ability.DROUGHT, Item.RED_ORB, ["Precipice Blades"])
+    kyogre = _spec("Kyogre", Ability.DRIZZLE, Item.BLUE_ORB, ["Origin Pulse"])
+    state = _battle([groudon, kyogre], [_blissey()])
+    step(state, {0: _ATTACK, 1: _ATTACK})
+    assert state.sides[0].active_pokemon.name == "Groudon-Primal"
+
+    state.sides[0].active[0] = 1
+    state.sides[0].chosen_action = _ATTACK
+    _resolve_mega_evolution(state, BattleLog())
+    assert state.sides[0].active_pokemon.name == "Kyogre"
+
+
 def test_switching_does_not_mega_evolve():
     state = _battle([_blissey(), _tyranitar(Item.TYRANITARITE)], [_blissey()])
     switch = Action(action=ActionType.SWITCH_OUT, switch_in=state.sides[0].team[1])

@@ -186,18 +186,29 @@ pub fn resolve_forme_changes(state: &mut State, actions: &[Action; 2], db: &Data
         }
         let species_name = state.sides[side].active_pokemon().species_name.clone();
         let item = state.sides[side].active_pokemon().item.clone();
-        let bursts = ultra_bursts(&species_name, &item, db);
-        if if bursts { state.sides[side].has_ultra_bursted } else { state.sides[side].has_mega_evolved } {
-            continue;
-        }
         let known_moves = state.sides[side].active_pokemon().moves.clone();
         let Some(forme) = mega_forme(&species_name, &item, &known_moves, db) else { continue };
+        // Three separate allowances, as the Python keeps them: Ultra Burst, Primal Reversion, Mega.
+        let bursts = ultra_bursts(&species_name, &item, db);
+        let primal = forme.ends_with("-Primal");
+        let used = if bursts {
+            state.sides[side].has_ultra_bursted
+        } else if primal {
+            state.sides[side].has_primal_reverted
+        } else {
+            state.sides[side].has_mega_evolved
+        };
+        if used {
+            continue;
+        }
         apply_forme(state.sides[side].active_mut(), &forme, db);
         // `rewire_active`: the new forme's ability replaces the old one's handlers, which re-register
         // behind everyone else's at their priority.
         state.register_active(side);
         if bursts {
             state.sides[side].has_ultra_bursted = true;
+        } else if primal {
+            state.sides[side].has_primal_reverted = true;
         } else {
             state.sides[side].has_mega_evolved = true;
         }

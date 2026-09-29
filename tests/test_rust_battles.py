@@ -1136,6 +1136,47 @@ def test_ultra_burst_changes_type_along_with_stats_and_ability(tmp_path: Path) -
 
 
 @needs_rust
+def test_primal_reversion_does_not_use_the_mega_slot(tmp_path: Path) -> None:
+    """Groudon Primal Reverts on turn one; Rayquaza, switched in on turn two, still Mega Evolves on
+    turn three — the classic AG core, and three separate once-per-battle allowances in both engines."""
+    team_a = [
+        PokemonSpec(
+            species="Groudon",
+            nickname="A0",
+            level=50,
+            ability=Ability.DROUGHT,
+            item=Item.RED_ORB,
+            moves=["Precipice Blades"],
+        ),
+        PokemonSpec(
+            species="Rayquaza",
+            nickname="A1",
+            level=50,
+            ability=Ability.AIR_LOCK,
+            item=Item.LIFE_ORB,
+            moves=["Dragon Ascent"],
+        ),
+    ]
+    team_b = [PokemonSpec(species="Blissey", nickname="B0", level=100, moves=["Soft-Boiled"])]
+    turn = {0: 0}
+
+    def choose(state, side_index):  # type: ignore[no-untyped-def]
+        options = legal_actions(state, side_index)
+        if side_index == 0:
+            turn[0] += 1
+            if turn[0] == 2:
+                return next(a for a in options if a.action is ActionType.SWITCH_OUT)
+        return next(a for a in options if a.action is ActionType.USE_MOVE)
+
+    scenario, expected = record((team_a, team_b), choose, seed=0, max_turns=3)
+    theirs = _rust_trace(scenario, tmp_path)
+    assert not isinstance(theirs, str), f"was refused: {theirs}"
+    assert compare(expected, theirs) is None
+    formes = [e["forme"] for turn_ in expected for e in turn_["events"] if e["type"] == "FormeChanged"]
+    assert formes == ["Groudon-Primal", "Rayquaza-Mega"], formes
+
+
+@needs_rust
 def test_mega_rayquaza_is_gated_on_dragon_ascent_not_an_item(tmp_path: Path) -> None:
     """The one move-gated forme in Gen 7: no Mega Stone at all, just knowing Dragon Ascent. Also
     the only Mega whose ability sets its own weather (`Delta Stream`/`STRONG_WINDS`), exercising
@@ -1791,7 +1832,11 @@ def test_a_copied_multitype_resyncs_in_its_own_sides_residual(tmp_path: Path) ->
     registers too late to be heard) and turns Normal at the end of the turn, holding no plate."""
     team_a = [
         PokemonSpec(
-            species="Arceus-Water", nickname="A0", level=50, ability=Ability.MULTITYPE, item=Item.SPLASH_PLATE,
+            species="Arceus-Water",
+            nickname="A0",
+            level=50,
+            ability=Ability.MULTITYPE,
+            item=Item.SPLASH_PLATE,
             moves=["Toxic"],
         )
     ]

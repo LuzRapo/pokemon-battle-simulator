@@ -872,9 +872,10 @@ Roost-adjusted `battle_types`; and Multitype/RKS System re-sync in their *own* s
 emit (their handler checks its actor), not in the up-front pass Paradox needs. All fixed, each with
 a regression test and a vacuity check.
 
-Known, deliberately not changed: the Python gives Mega Evolution and Primal Reversion one shared
-once-per-battle flag, so Primal Groudon and Mega Rayquaza cannot both transform in one battle, which
-the real games allow. Mirroring that is this engine's job; changing it is a Python change.
+Primal Reversion no longer shares Mega Evolution's once-per-battle flag (a rules change, made in the
+Python first and mirrored here): `has_primal_reverted` is its own allowance beside `has_mega_evolved`
+and `has_ultra_bursted`, so Primal Groudon and Mega Rayquaza both transform on one side. Teams carry
+one Mega Stone and one Primal orb at most (`formes.forme_item_kind`).
 
 ### 8. Integration — after parity
 
