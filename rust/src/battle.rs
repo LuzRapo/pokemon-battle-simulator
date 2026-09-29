@@ -500,6 +500,9 @@ pub struct Side {
     /// looked up in whoever is standing there *when asked*, so a lead that Imposter turned into
     /// something else between choosing and acting is read with the moves it now has.
     pub chosen_slot: Option<usize>,
+    /// Whether that pick was a switch — which `chosen_slot` being `None` does not say on its own,
+    /// since it is also `None` before this side has picked anything. Pursuit reads it.
+    pub chose_switch: bool,
     /// Wish: turns left, and how much it will heal when it lands (fixed at cast time, off the
     /// caster's own max HP — not whoever is standing there when it lands).
     pub wish_turns: i32,
@@ -550,6 +553,7 @@ impl Side {
             tailwind_turns: 0,
             acted_this_turn: false,
             chosen_slot: None,
+            chose_switch: false,
             wish_turns: 0,
             wish_pending: 0,
             healing_wish_pending: false,

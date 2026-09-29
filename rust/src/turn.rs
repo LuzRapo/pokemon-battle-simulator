@@ -610,6 +610,7 @@ pub fn begin_turn(
             Action::Move { slot, .. } => Some(*slot),
             Action::Switch { .. } => None,
         };
+        state.sides[side].chose_switch = matches!(actions[side], Action::Switch { .. });
         // "This turn" is what Counter and Mirror Coat mean, so the record starts empty.
         let active = state.sides[side].active_mut();
         active.last_hit_taken = 0;
@@ -1604,7 +1605,10 @@ fn resolve_move(
         .effects
         .iter()
         .any(|e| matches!(e, Effect::DamageEffect { .. } | Effect::FixedDamageEffect { .. }));
-    if damaging && effectiveness == 0.0 {
+    // Future Sight and Doom Desire are queued whatever stands there now: their effectiveness is
+    // asked when they land (`_DELAYED_DAMAGE_MOVES`), so one aimed at a Dark type still goes up.
+    let delayed = matches!(the_move.name.as_str(), "Future Sight" | "Doom Desire");
+    if damaging && !delayed && effectiveness == 0.0 {
         log.push(Event::NoEffect {
             side: other as i32,
             pokemon: state.sides[other].active_pokemon().nickname.clone(),

@@ -67,7 +67,7 @@ fn lead_order(lead: usize, size: usize) -> Vec<usize> {
     std::iter::once(lead).chain((0..size).filter(|&i| i != lead)).collect()
 }
 
-fn to_action(action: u8) -> Action {
+pub(crate) fn to_action(action: u8) -> Action {
     if action >= SWITCH {
         Action::Switch { to: (action - SWITCH) as usize }
     } else if action >= Z_MOVE {

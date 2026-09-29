@@ -85,15 +85,39 @@ fn positive_stages(pokemon: &Pokemon) -> i32 {
     STAGED.iter().map(|stat| pokemon.stage(stat).max(0)).sum()
 }
 
+/// Who is using a move on whom. The live engine asks about the two actives; the AI's damage
+/// estimator (`matchup.rs`) asks about any pair, benched ones included, and names the sides the way
+/// the Python's `_sides_of` does.
+#[derive(Clone, Copy)]
+pub struct Duel<'a> {
+    pub attacker: &'a Pokemon,
+    pub defender: &'a Pokemon,
+    pub attacker_side: usize,
+    pub defender_side: usize,
+}
+
+impl<'a> Duel<'a> {
+    pub fn actives(state: &'a State, side: usize) -> Self {
+        Duel {
+            attacker: state.sides[side].active_pokemon(),
+            defender: state.sides[1 - side].active_pokemon(),
+            attacker_side: side,
+            defender_side: 1 - side,
+        }
+    }
+}
+
 fn formula(
     name: &str,
+    duel: Duel<'_>,
     state: &State,
-    side: usize,
-    speed: impl Fn(usize) -> i32,
-    tape: &mut Tape,
+    magnitude: &mut dyn FnMut() -> Result<i32, Refusal>,
 ) -> Result<Option<i32>, Refusal> {
-    let attacker = state.sides[side].active_pokemon();
-    let defender = state.sides[1 - side].active_pokemon();
+    let (attacker, defender) = (duel.attacker, duel.defender);
+    let speed = |pokemon: &Pokemon, side: usize| {
+        crate::turn::effective_speed(pokemon, &state.sides[side], &state.field)
+    };
+    let (own_speed, other_speed) = (speed(attacker, duel.attacker_side), speed(defender, duel.defender_side));
     Ok(Some(match name {
         "Low Kick" | "Grass Knot" => match defender.weight_kg {
             w if w >= 200.0 => 120,
@@ -110,7 +134,7 @@ fn formula(
             r if r >= 2.0 => 60,
             _ => 40,
         },
-        "Electro Ball" => match speed(side) as f64 / std::cmp::max(1, speed(1 - side)) as f64 {
+        "Electro Ball" => match own_speed as f64 / std::cmp::max(1, other_speed) as f64 {
             r if r >= 4.0 => 150,
             r if r >= 3.0 => 120,
             r if r >= 2.0 => 80,
@@ -118,17 +142,19 @@ fn formula(
             _ => 40,
         },
         // The slower the user next to its target, the harder it hits.
-        "Gyro Ball" => std::cmp::min(150, 25 * speed(1 - side) / std::cmp::max(1, speed(side)) + 1),
+        "Gyro Ball" => std::cmp::min(150, 25 * other_speed / std::cmp::max(1, own_speed) + 1),
         "Stored Power" | "Power Trip" => 20 + 20 * positive_stages(attacker),
         "Punishment" => std::cmp::min(200, 60 + 20 * positive_stages(defender)),
-        "Last Respects" => 50 * (1 + state.sides[side].team.iter().filter(|p| p.fainted()).count() as i32),
+        "Last Respects" => {
+            50 * (1 + state.sides[duel.attacker_side].team.iter().filter(|p| p.fainted()).count() as i32)
+        }
         "Rage Fist" => std::cmp::min(350, 50 * (1 + attacker.times_hit)),
         // PS hits once per healthy ally; approximated as one hit carrying the summed power. Each
         // member's *current* base Attack, as the Python reads `base_stats.ATTACK` — a Transformed
         // or Mega-Evolved member counts with the stats it is fighting with, not the ones it was
         // built with.
         "Beat Up" => {
-            let total: i32 = state.sides[side]
+            let total: i32 = state.sides[duel.attacker_side]
                 .team
                 .iter()
                 .filter(|m| !m.fainted() && m.status == Status::None)
@@ -161,7 +187,7 @@ fn formula(
         "Crush Grip" | "Wring Out" => {
             std::cmp::max(1, 120 * defender.hp / std::cmp::max(1, defender.totals.hp))
         }
-        "Magnitude" => match tape.integer(1, 20)? {
+        "Magnitude" => match magnitude()? {
             r if r <= 1 => 10,
             r if r <= 3 => 30,
             r if r <= 7 => 50,
@@ -175,9 +201,9 @@ fn formula(
 }
 
 /// `_POWER_CONDITIONS`: the multiplier and the question that earns it.
-fn condition(name: &str, state: &State, side: usize) -> Option<(bool, i32, i32)> {
-    let attacker = state.sides[side].active_pokemon();
-    let defender = state.sides[1 - side].active_pokemon();
+fn condition(name: &str, duel: Duel<'_>, state: &State) -> Option<(bool, i32, i32)> {
+    let (attacker, defender) = (duel.attacker, duel.defender);
+    let defender_side = &state.sides[duel.defender_side];
     let grounded = |p: &Pokemon| crate::field::is_grounded(p);
     let met = match name {
         "Facade" => attacker.status != Status::None,
@@ -187,7 +213,7 @@ fn condition(name: &str, state: &State, side: usize) -> Option<(bool, i32, i32)>
         // "Hit by the target this turn", which is what `last_hit_taken` records and why it is
         // cleared at the top of every turn.
         "Avalanche" | "Revenge" => attacker.last_hit_taken > 0,
-        "Payback" => state.sides[1 - side].acted_this_turn,
+        "Payback" => defender_side.acted_this_turn,
         "Assurance" => defender.last_hit_taken > 0,
         "Brine" => defender.hp * 2 <= defender.totals.hp,
         // Weather Ball is in two tables: it changes type *and* doubles. Porting only the type
@@ -195,7 +221,9 @@ fn condition(name: &str, state: &State, side: usize) -> Option<(bool, i32, i32)>
         "Weather Ball" => crate::hooks::effective_weather(state) != "NONE",
         // Pursuit doubles against a target caught on its way out. A side whose chosen action is a
         // switch has no move slot recorded, which is exactly the question being asked.
-        "Pursuit" => !state.sides[1 - side].acted_this_turn && state.sides[1 - side].chosen_slot.is_none(),
+        // `_defender_is_fleeing`: nothing chosen yet is not fleeing, which is why this is not
+        // simply "no move slot recorded".
+        "Pursuit" => !defender_side.acted_this_turn && defender_side.chose_switch,
         "Wake-Up Slap" => defender.status == Status::Sleep,
         "Smelling Salts" => defender.status == Status::Paralysis,
         "Rising Voltage" => state.field.terrain == "ELECTRIC" && grounded(defender),
@@ -219,23 +247,33 @@ pub fn effective_power(
     db: &Database,
     tape: &mut Tape,
 ) -> Result<Option<i32>, Refusal> {
-    let speed = |which: usize| {
-        crate::turn::effective_speed(state.sides[which].active_pokemon(), &state.sides[which], &state.field)
-    };
-    let mut power = match formula(&the_move.name, state, side, speed, tape)? {
+    power_between(the_move, listed, Duel::actives(state, side), state, db, &mut || Ok(tape.integer(1, 20)?))
+}
+
+/// `effective_power` for any attacker and defender. `magnitude` rolls Magnitude's 1..=20: the tape
+/// in play, a fixed stand-in for an estimate (see `matchup::damage_range`).
+pub fn power_between(
+    the_move: &Move,
+    listed: Option<i32>,
+    duel: Duel<'_>,
+    state: &State,
+    db: &Database,
+    magnitude: &mut dyn FnMut() -> Result<i32, Refusal>,
+) -> Result<Option<i32>, Refusal> {
+    let mut power = match formula(&the_move.name, duel, state, magnitude)? {
         Some(computed) => computed,
         None => match listed {
             Some(listed) => listed,
             None => return Ok(None),
         },
     };
-    if let Some((met, numerator, denominator)) = condition(&the_move.name, state, side) {
+    if let Some((met, numerator, denominator)) = condition(&the_move.name, duel, state) {
         if met {
             power = power * numerator / denominator;
         }
     }
     if matches!(the_move.name.as_str(), "Electro Drift" | "Collision Course") {
-        let types = state.sides[1 - side].active_pokemon().battle_types();
+        let types = duel.defender.battle_types();
         if db.effectiveness(&the_move.move_type, &types) >= 2.0 {
             power = power * 5461 / 4096;
         }

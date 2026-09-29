@@ -182,3 +182,15 @@ def test_a_move_aimed_at_a_fainted_pokemon_fails_and_does_not_revive_it(victim: 
     assert events[-1] == {"type": "MoveFailed"} or {"type": "MoveFailed"} in events, events
     assert expected[0]["state"]["sides"][1]["team"][0]["fainted"], expected[0]["state"]["sides"][1]["team"][0]
     assert not any(e["type"] in ("Healed", "AbsorbHealed") and e["side"] == 1 for e in events), events
+
+
+@needs_bridge
+def test_future_sight_is_queued_against_a_target_immune_to_it() -> None:
+    """Its effectiveness is asked when it lands, not when it is used: aimed at a Dark type it still
+    goes up. The Rust engine used to stop it at the immunity gate, which the MatchupPlayer port's
+    parity battles found (a Chimecho foreseeing into Liepard)."""
+    team_a = [_spec("Chimecho", "A0", ["Future Sight"]), _spec("Machamp", "A1", ["Tackle"])]
+    team_b = [_spec("Umbreon", "B0", ["Tackle"]), _spec("Rhydon", "B1", ["Tackle"])]
+    _, expected = _played(team_a, team_b, _preferring("Future Sight", "Tackle"))
+    events = expected[0]["events"]
+    assert {"type": "FutureAttackQueued", "side": 0, "pokemon": "A0", "move": "Future Sight"} in events, events

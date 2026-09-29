@@ -983,6 +983,33 @@ self-play has to run without Python in the loop at all, so the decisions came to
 against the bot's own AI (`battle_sim/rl/net_player.py` plays the exported network in the Python
 engine). How to run it, on this server or on a GPU under WSL2, is in `docs/self-play.md`.
 
+**The AI, ported — done.** `rust/src/matchup.rs` is `MatchupPlayer` with the parts of `analysis.py`
+it stands on: all 28 genome features, the per-battle offense cache, `choose_order`, first-of-equals
+tie-breaking. `rust/src/tournament.rs` pilots whole battles with it on both sides, as `run_battle`
+would, and `battle_sim/rust_ratings.py` runs `species_rating`'s experiment on it (learnpool sets, no
+items, same log, same `species_fit`) at ~300 battles/s on three cores against ~584 an hour before.
+
+- **The estimator** (`damage_range`) reuses `damage.rs`'s formula with the roll fixed and no crit
+  (`estimate_hit`) and the static modifier set around it, including two Python quirks reproduced on
+  purpose: `{**items, **abilities, **field}` keeps only the *later* list when two of them fill one
+  channel (a Life Orb is dropped beside Tinted Lens), and `_sides_of` reads any Pokemon but side 0's
+  active as side 1's, which is whose team Beat Up counts. The power formulas now take any attacker
+  and defender (`power::Duel`), not just the two actives.
+- **Scored as the Python scores the true board**: sets known, no belief machinery. That is what
+  `MatchupPlayer` does handed a real `BattleState`, and what these battles are.
+- **One deliberate difference**: the Python estimator rolls Magnitude off the battle's RNG; this
+  estimates it at Magnitude 7 (power 70), its likeliest.
+- **Verified** by `tests/test_rust_matchup.py`: Python battles piloted by `MatchupPlayer`, replayed in
+  Rust, with every feature of every legal action compared at every decision (300/300 tournament
+  battles and 100/100 itemed Mirror battles in sweeps), team orders compared, and 86,400 damage
+  estimates identical. Every sabotage tried goes red, including the two quirks above, which random
+  battles almost never reach and a hand-picked case now covers.
+- **Two engine bugs it found**, both fixed and covered: Pursuit read "no move chosen" as "switching"
+  (a side that has not chosen yet is not fleeing — `Side::chose_switch`), and Future Sight / Doom
+  Desire were stopped at the immunity gate when used into an immune target, where the Python queues
+  them and asks when they land. Still refused, and so never dealt in the tournament: a Future Sight
+  landing after its user has switched out.
+
 ## Closed gap: cross-side switch-in ability ordering (misdiagnosed, then fixed)
 
 Found by a broad sweep during the Multitype/RKS System/plates batch (seed 870 of a 8000-battle
