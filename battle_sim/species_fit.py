@@ -18,6 +18,7 @@ honest reading of "we hardly saw this one".
 import argparse
 import json
 from collections import Counter
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -48,10 +49,10 @@ class Fit:
         return {name: ELO_CENTRE + ELO_SCALE * value for name, value in zip(self.names, centred, strict=True)}
 
 
-def read_log(path: Path) -> list[dict[str, Any]]:
-    """Every complete record in the log. A truncated last line (a run killed mid-write) is skipped
-    rather than fatal, and so are the failure records the runner writes for battles that fell over."""
-    rows: list[dict[str, Any]] = []
+def iter_log(path: Path) -> Iterator[dict[str, Any]]:
+    """Every complete record in the log, streamed. A truncated last line (a run killed mid-write) is
+    skipped rather than fatal, and so are the failure records the runner writes for battles that fell
+    over."""
     skipped = 0
     with path.open() as handle:
         for line in handle:
@@ -61,30 +62,45 @@ def read_log(path: Path) -> list[dict[str, Any]]:
                 skipped += 1
                 continue
             if "margin" in record and "a" in record and "b" in record:
-                rows.append(record)
+                yield record
             else:
                 skipped += 1
     if skipped:
         logger.info(f"skipped {skipped} incomplete or failed records")
-    return rows
 
 
-def fit(rows: list[dict[str, Any]], ridge: float = RIDGE) -> Fit:
+def read_log(path: Path) -> list[dict[str, Any]]:
+    return list(iter_log(path))
+
+
+def species_in(rows: Iterable[dict[str, Any]]) -> list[str]:
+    return sorted({name for row in rows for name in (*row["a"], *row["b"])})
+
+
+def fit(rows: Iterable[dict[str, Any]], ridge: float = RIDGE, names: Sequence[str] | None = None) -> Fit:
     """Least squares with a ridge penalty, solved on the normal equations.
+
+    Given `names` (every species in `rows`), the rows are only walked once, so a log far too big to
+    hold in memory can be streamed through (`iter_log`) — the Rust tournament writes millions.
 
     The design matrix is one row per battle, +1 for each species on team A and -1 for each on team B,
     so a coefficient is "what this species does to the margin from whichever side it is on". It is
     far too sparse to build densely — 950 columns against tens of thousands of rows — but the normal
     equations only ever need the 12x12 block each battle touches, so they accumulate row by row.
     """
-    names = sorted({name for row in rows for name in (*row["a"], *row["b"])})
+    if names is None:
+        rows = list(rows)
+        names = species_in(rows)
+    names = list(names)
     index = {name: i for i, name in enumerate(names)}
     size = len(names)
     gram = np.zeros((size, size))
     moment = np.zeros(size)
     appearances: Counter[str] = Counter()
 
+    battles = 0
     for row in rows:
+        battles += 1
         columns = np.array([index[name] for name in (*row["a"], *row["b"])])
         signs = np.r_[np.ones(len(row["a"])), -np.ones(len(row["b"]))]
         gram[np.ix_(columns, columns)] += np.outer(signs, signs)
@@ -92,7 +108,7 @@ def fit(rows: list[dict[str, Any]], ridge: float = RIDGE) -> Fit:
         appearances.update((*row["a"], *row["b"]))
 
     coefficients = np.linalg.solve(gram + ridge * np.eye(size), moment)
-    return Fit(names=names, coefficients=coefficients, appearances=appearances, battles=len(rows))
+    return Fit(names=names, coefficients=coefficients, appearances=appearances, battles=battles)
 
 
 def write_ratings(result: Fit, path: Path, log: Path) -> None:
@@ -115,10 +131,11 @@ def main() -> None:
     parser.add_argument("--top", type=int, default=20)
     args = parser.parse_args()
 
-    rows = read_log(args.log)
-    if not rows:
+    # Two passes over the file rather than one over a list: a night's log does not fit in memory.
+    names = species_in(iter_log(args.log))
+    if not names:
         raise SystemExit(f"no usable battles in {args.log}")
-    result = fit(rows, args.ridge)
+    result = fit(iter_log(args.log), args.ridge, names)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     write_ratings(result, args.out, args.log)
 

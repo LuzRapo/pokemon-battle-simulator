@@ -19,10 +19,11 @@ What differs is what that speed bought, and what it cost:
   with both sides' sets known. It is the Python search's own evaluator without the search on top:
   weaker, but thousands of times cheaper, and `tests/test_rust_matchup.py` checks it scores every
   action exactly as the Python does.
-* **Only what the Rust engine plays.** Moves and abilities it has not ported are never dealt, nor
-  are Future Sight and Doom Desire (see `UNDEALT_MOVES`), and formes that need a held item to
-  exist (Arceus's plates, Genesect's drives, ...) are left out, as there are no items. The manifest
-  lists every species left out and why.
+* **Only what the Rust engine plays.** Moves it has not ported are never dealt, nor are Future
+  Sight and Doom Desire (see `UNDEALT_MOVES`). A species none of whose abilities it plays (Truant,
+  Stance Change, and the abilities neither engine models) plays with no ability, as `random_set`
+  always played the unmodelled ones. Formes that need a held item to exist (Silvally's memories,
+  Genesect's drives, ...) are left out, as there are no items; the manifest lists them.
 
 Each batch of pairings is played in parallel in Rust with the GIL released, then written down
 before the next starts; stopping (Ctrl-C) finishes the batch in hand. Restarting with the same
@@ -100,8 +101,11 @@ def build_teams(pairing: Pairing) -> tuple[list[PokemonSpec], list[PokemonSpec]]
 def play_batch(pairings: Sequence[Pairing], genome: str | None, threads: int) -> list[dict[str, Any]]:
     """Both battles of every pairing, as log records, in pairing order."""
     jobs: list[tuple[str, str, int]] = []
+    sets: list[list[list[Any]]] = []
     for pairing in pairings:
         team_a, team_b = build_teams(pairing)
+        # What each Pokemon actually carried, so a species' ratings can be broken down by set later.
+        sets.append([[[spec.ability.name, list(spec.moves)] for spec in team] for team in (team_a, team_b)])
         a = json.dumps([encode_spec(spec) for spec in team_a])
         b = json.dumps([encode_spec(spec) for spec in team_b])
         jobs += [(a, b, pairing.seed), (b, a, pairing.seed)]
@@ -116,6 +120,7 @@ def play_batch(pairings: Sequence[Pairing], genome: str | None, threads: int) ->
             "side": side,  # which team led; the pair covers both, so side bias cancels
             "a": list(pairing.team_a),
             "b": list(pairing.team_b),
+            "sets": sets[number // 2],
         }
         if error is not None:
             records.append(record | {"error": error[:200]})
@@ -135,7 +140,7 @@ def _manifest(path: Path, seed: int, genome: Path, pool: Sequence[str], dropped:
         "pilot": PILOT,
         "genome": genome.name,
         "seed": seed,
-        "sets": "learnpool, no items (setgen.learnpool_set)",
+        "sets": "learnpool, no items, no ability where none is playable (setgen.learnpool_set)",
         "moves_never_dealt": sorted(UNDEALT_MOVES),
         "species": len(pool),
         "left_out": dropped,

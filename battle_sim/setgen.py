@@ -78,17 +78,19 @@ def learnpool_set(
     For measuring the species rather than its best build: no item, any of its abilities, and four
     moves from everything it can learn — two attacks off its better attacking stat, its own types
     preferred, then two more at random (`_pick_heuristic_moves`). `move_ok` and `ability_ok` narrow
-    the draw to what the engine playing the battle can play; a species left with no ability or no
-    moves by them raises `ValueError`.
+    the draw to what the engine playing the battle can play. A species left with no ability by them
+    plays with none; one left with no moves raises `ValueError`.
     """
     key = normalize_id(species)
     if key not in in_scope_species():
         raise KeyError(f"{species!r} is not a Gen-7-legal battling species.")
     entry = get_species(key)
-    abilities = [ability for ability in legal_abilities(species) if ability_ok(ability)]
+    # None of its abilities playable: it plays with none, as `random_set` has always played a species
+    # whose abilities the engine does not model, rather than being left out.
+    abilities = [ability for ability in legal_abilities(species) if ability_ok(ability)] or [Ability.NONE]
     pool = [name for name in sorted(gen7_movepool(key) & get_all_moves().keys()) if move_ok(get_move(name).name)]
-    if not abilities or not pool:
-        raise ValueError(f"{entry.name} has no playable {'ability' if not abilities else 'moves'}")
+    if not pool:
+        raise ValueError(f"{entry.name} has no playable moves")
     moves = _pick_heuristic_moves(entry, _with_effects(pool), rng)
     return PokemonSpec(
         species=entry.name,
