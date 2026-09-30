@@ -6,7 +6,7 @@ is then replayed through the Rust engine, where the Rust scorer — one per side
 battle as the Python's players are — is asked the same question at the same moment. All 28
 features of every legal action have to agree, and so does each side's team order.
 
-Two kinds of team: the tournament's (learnpool sets, no items) and the gen7ag Mirror pool's (Choice
+Two kinds of team: the tournament's (learnpool sets, no items but Megas' stones) and the gen7ag Mirror pool's (Choice
 items, Z-crystals, Mega Stones, orbs), so the item paths are exercised too. Magnitude is kept out of
 both: the Python estimator rolls it off the battle's RNG, which the Rust one deliberately does not
 (see `matchup.rs`).
@@ -27,7 +27,6 @@ from battle_sim.mechanics.battle import BattleState
 from battle_sim.models.actions import Action
 from battle_sim.models.spec import PokemonSpec
 from battle_sim.rust_bridge import LIBRARY, database, load, replay_played
-from battle_sim.setgen import learnpool_set
 
 pytestmark = pytest.mark.skipif(not LIBRARY.exists(), reason="run `cargo build --release` in rust/")
 
@@ -36,20 +35,19 @@ Scored = list[tuple[str, list[float] | None]]
 
 
 def _tournament_teams(seed: int) -> Teams:
-    from battle_sim.rust_ratings import UNDEALT_MOVES, species_pool
+    """Dealt as the tournament deals them, Megas and all, with Magnitude re-rolled away."""
+    from battle_sim.rust_ratings import deal, playable_set, species_pool
 
-    UNDEALT = UNDEALT_MOVES | {"Magnitude"}
-    db = database()
     rng = random.Random(f"matchup:{seed}")
-    names = rng.sample(species_pool()[0], 12)
-
-    def move_ok(move: str) -> bool:
-        return move not in UNDEALT and db.move_playable(move)
+    pairing = next(deal(species_pool()[0], 1, rng))
 
     def dealt(name: str) -> PokemonSpec:
-        return learnpool_set(name, rng, move_ok, lambda ability: db.ability_playable(ability.name))
+        spec = playable_set(name, rng)
+        while "Magnitude" in spec.moves:
+            spec = playable_set(name, rng)
+        return spec
 
-    return [dealt(n) for n in names[:6]], [dealt(n) for n in names[6:]]
+    return [dealt(n) for n in pairing.team_a], [dealt(n) for n in pairing.team_b]
 
 
 def _mirror_teams(seed: int) -> Teams:
@@ -108,10 +106,9 @@ def test_mirror_battles_with_items_score_the_same(seed: int) -> None:
 
 
 def test_the_rust_tournament_plays_whole_battles() -> None:
-    from battle_sim.rust_ratings import play_batch, species_pool
-    from battle_sim.species_rating import deal_pairings
+    from battle_sim.rust_ratings import deal, play_batch, species_pool
 
-    pairings = list(deal_pairings(species_pool()[0], 8, random.Random(0)))
+    pairings = list(deal(species_pool()[0], 8, random.Random(0)))
     records = play_batch(pairings, None, threads=1)
     assert len(records) == 16
     played = [r for r in records if "margin" in r]

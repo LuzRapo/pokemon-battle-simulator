@@ -23,7 +23,12 @@ What differs is what that speed bought, and what it cost:
   Sight and Doom Desire (see `UNDEALT_MOVES`). A species none of whose abilities it plays (Truant,
   Stance Change, and the abilities neither engine models) plays with no ability, as `random_set`
   always played the unmodelled ones. Formes that need a held item to exist (Silvally's memories,
-  Genesect's drives, ...) are left out, as there are no items; the manifest lists them.
+  Genesect's drives, ...) are left out, as there are no items; the manifest lists them. So are Totem
+  formes, which are the same Pokemon as their ordinary ones.
+* **Megas, Primals and Ultra Necrozma are entries of their own** (`transformations`): the base
+  species' learnpool set plus the stone, orb or crystal that transforms it — the one exception to
+  "no items" — so it plays as the forme from its first turn. A team spends each allowance once and
+  never fields a forme beside its own species (`clash`).
 
 Each batch of pairings is played in parallel in Rust with the GIL released, then written down
 before the next starts; stopping (Ctrl-C) finishes the batch in hand. Restarting with the same
@@ -35,20 +40,23 @@ import json
 import random
 import signal
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from types import FrameType
 from typing import Any
 
 from loguru import logger
 
-from battle_sim.database.loader import get_species
+from battle_sim.database.loader import get_move, get_species, normalize_id
 from battle_sim.database.scope import in_scope_species
 from battle_sim.differential import encode_spec
 from battle_sim.models.spec import PokemonSpec
 from battle_sim.rust_bridge import database, load
 from battle_sim.setgen import learnpool_set
 from battle_sim.species_rating import Pairing, completed_pairings, deal_pairings
+from battle_sim.utils import Item
 
 LOG_VERSION = 1
 PILOT = "rust-matchup"
@@ -65,22 +73,118 @@ UNDEALT_MOVES = frozenset({"Future Sight", "Doom Desire"})
 _stopping = False
 
 
-def playable_set(species: str, rng: random.Random) -> PokemonSpec:
-    """A learnpool set holding only what the Rust engine plays."""
+@dataclass(frozen=True)
+class Route:
+    """How a transformed forme is reached: this species, holding this item or knowing this move."""
+
+    source: str
+    item: Item | None = None
+    move: str | None = None
+
+
+@cache
+def transformations() -> dict[str, tuple[Route, ...]]:
+    """Every Mega Evolution, Primal Reversion and Ultra Burst forme, with the ways to reach it.
+
+    Each is rated as its own entry: its base species, dealt a learnpool set as usual, holding the
+    stone, orb or crystal (or, for Mega Rayquaza, knowing Dragon Ascent). Both engines transform it
+    automatically at the first opportunity, so the entry plays as the forme from its first turn out.
+    """
+    from battle_sim.formes import _ULTRA_BURST, _forme_by_base_and_item, _forme_by_base_and_move
+
+    routes: dict[str, list[Route]] = {}
+    for (key, item), forme in (*_forme_by_base_and_item().items(), *_ULTRA_BURST.items()):
+        routes.setdefault(forme, []).append(Route(get_species(key).name, item=item))
+    for (key, move), forme in _forme_by_base_and_move().items():
+        routes.setdefault(forme, []).append(Route(get_species(key).name, move=get_move(move).name))
+    return {forme: tuple(found) for forme, found in sorted(routes.items())}
+
+
+def kind(name: str) -> str | None:
+    """Which once-per-battle allowance this entry spends, if it transforms at all."""
+    if name not in transformations():
+        return None
+    if name.endswith("-Primal"):
+        return "primal"
+    return "ultra" if name == "Necrozma-Ultra" else "mega"
+
+
+def _base(name: str) -> str:
+    source = transformations()[name][0].source if name in transformations() else name
+    entry = get_species(normalize_id(source))
+    return entry.base_species or entry.name
+
+
+def clash(team: Sequence[str], name: str) -> bool:
+    """A team spends each allowance once — one Mega, one Primal, one Ultra Burst — and never fields
+    a transformed forme beside its own species (Charizard with Mega Charizard X)."""
+    allowance = kind(name)
+    if allowance is not None and any(kind(other) == allowance for other in team):
+        return True
+    transforms = [other for other in team if kind(other) is not None]
+    if allowance is not None:
+        return any(_base(other) == _base(name) for other in team)
+    return any(_base(other) == _base(name) for other in transforms)
+
+
+def deal(pool: Sequence[str], count: int, rng: random.Random, start: int = 0) -> Iterator[Pairing]:
+    return deal_pairings(pool, count, rng, start, clash=clash)
+
+
+def _transforming_moves(species: str) -> frozenset[str]:
+    """Moves that would turn this species into a forme it is not being rated as (Dragon Ascent)."""
+    return frozenset(
+        route.move
+        for routes in transformations().values()
+        for route in routes
+        if route.move is not None and route.source == species
+    )
+
+
+def playable_set(name: str, rng: random.Random) -> PokemonSpec:
+    """A learnpool set holding only what the Rust engine plays; for a transformed forme, its base
+    species' set plus whatever transforms it."""
     db = database()
+    routes = transformations().get(name)
+    route = rng.choice(routes) if routes else None
+    species = route.source if route is not None else name
+    kept_out = UNDEALT_MOVES | ({route.move} if route is not None and route.move else _transforming_moves(name))
 
     def move_ok(move: str) -> bool:
-        return move not in UNDEALT_MOVES and db.move_playable(move)
+        return move not in kept_out and db.move_playable(move)
 
-    return learnpool_set(species, rng, move_ok, lambda ability: db.ability_playable(ability.name))
+    spec = learnpool_set(species, rng, move_ok, lambda ability: db.ability_playable(ability.name))
+    if route is None:
+        return spec
+    moves = list(spec.moves)
+    if route.move is not None and route.move not in moves:
+        moves[rng.randrange(len(moves))] = route.move
+    return spec.model_copy(update={"nickname": name, "item": route.item or spec.item, "moves": moves})
+
+
+def _plays(name: str) -> str | None:
+    """Why the Rust engine cannot play this entry, if it cannot: a short battle is the test."""
+    try:
+        spec = playable_set(name, random.Random(0))
+    except (KeyError, ValueError) as error:
+        return str(error)
+    foe = playable_set("Snorlax", random.Random(0))
+    team, other = json.dumps([encode_spec(spec)]), json.dumps([encode_spec(foe)])
+    refusal: str | None = load().play_matchup_battles(database(), [(team, other, 0)], None, 20, 1)[0][4]
+    return refusal
 
 
 def species_pool() -> tuple[list[str], dict[str, str]]:
-    """Every rateable species by display name, and every one left out with the reason."""
+    """Every rateable entry by display name, and every one left out with the reason."""
     kept: list[str] = []
     dropped: dict[str, str] = {}
     for key in sorted(in_scope_species()):
         entry = get_species(key)
+        if entry.name in transformations():
+            continue  # rated below, as a transformed forme
+        if "-Totem" in entry.name:
+            dropped[entry.name] = "a Totem forme: the same Pokemon as its ordinary forme"
+            continue
         if entry.required_item is not None:
             dropped[entry.name] = f"needs {entry.required_item} to exist, and nobody holds items"
             continue
@@ -90,6 +194,12 @@ def species_pool() -> tuple[list[str], dict[str, str]]:
             dropped[entry.name] = str(error)
             continue
         kept.append(entry.name)
+    for forme in transformations():
+        why = _plays(forme)
+        if why is None:
+            kept.append(forme)
+        else:
+            dropped[forme] = why
     return sorted(kept), dropped
 
 
@@ -168,7 +278,7 @@ def run(out: Path, hours: float, seed: int, genome: Path, threads: int, batch: i
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
     total = limit if limit is not None else 10**12
-    pairings = deal_pairings(pool, total, random.Random(seed), start=done)
+    pairings = deal(pool, total, random.Random(seed), start=done)
     deadline = time.monotonic() + hours * 3600
     started = time.monotonic()
     written = failed = 0
