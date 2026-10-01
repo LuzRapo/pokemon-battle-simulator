@@ -63,6 +63,8 @@ from battle_sim.models.pokemon import Pokemon
 from battle_sim.utils import Ability, Category, ExtraStatus, Item, Stats, Status, Target, Type, Weather
 from battle_sim.zmoves import z_move_for
 
+# The abilities that ignore a defender's own: through these, Overcoat stops nothing.
+_POWDER_PIERCERS = frozenset({Ability.MOLD_BREAKER, Ability.TERAVOLT, Ability.TURBOBLAZE})
 _DEFENDER_FACING_TARGETS = frozenset({Target.SINGLE_OPPONENT, Target.ALL_ADJACENT_ENEMIES, Target.ALL_ADJACENT})
 # Same effect, two names: an opponent holding either simply cannot be hit by a priority move.
 _PRIORITY_BLOCKERS = frozenset({Ability.DAZZLING, Ability.QUEENLY_MAJESTY})
@@ -252,6 +254,17 @@ def _execute_move(  # noqa: C901 — the move-flow gate ladder reads top-to-bott
         _break_rolling(attacker)
         _apply_crash_damage(move, attacker, side_index, log)
         return
+
+    # Powder moves — Spore, Sleep Powder, Stun Spore and the rest — have no effect on a Grass type,
+    # or on an Overcoat holder unless a Mold Breaker is using the move. Asked before accuracy, as the
+    # games ask it, so no accuracy roll is spent on a target that was never going to be affected.
+    if move.powder and move.target in _DEFENDER_FACING_TARGETS:
+        if Type.GRASS in defender.battle_types:
+            log.add(NoEffect(side=defender_index, pokemon=defender.nickname))
+            return
+        if defender.ability is Ability.OVERCOAT and attacker.ability not in _POWDER_PIERCERS:
+            log.add(DoesNotAffect(side=defender_index, pokemon=defender.nickname))
+            return
 
     if not _accuracy_check(move, attacker, defender, state.field, state.rng):
         log.add(MoveMissed())

@@ -245,9 +245,11 @@ class LoaderDiagnostics:
     """Counts unmappable vendor values so drops are visible instead of silent."""
 
     skipped: Counter[str] = field(default_factory=Counter)
+    by_move: dict[str, list[str]] = field(default_factory=dict)
 
     def skip(self, kind: str, move: str, value: object) -> None:
         self.skipped[f"{kind}:{value}"] += 1
+        self.by_move.setdefault(normalize_id(move), []).append(f"{kind}={value}")
         logger.debug(f"loader: skipped {kind}={value!r} on move {move!r}")
 
     def log_summary(self, source: str) -> None:
@@ -512,6 +514,7 @@ def _adapt_move(raw: RawMoveData, diag: LoaderDiagnostics) -> Move | None:
         pulse=bool(raw.flags.get("pulse")),
         wind=bool(raw.flags.get("wind")),
         bullet=bool(raw.flags.get("bullet")),
+        powder=bool(raw.flags.get("powder")),
         healing=bool(raw.flags.get("heal")),
         reflectable=bool(raw.flags.get("reflectable")),
         charge=bool(raw.flags.get("charge")),
@@ -656,7 +659,21 @@ def get_all_moves() -> dict[str, Move]:
         if source is not None:
             result[key] = _house_move(" ".join(w.capitalize() for w in _HOUSE_MOVE_NAMES[key].split()), source, power)
     diag.log_summary("moves.json")
+    _MOVE_GAPS.clear()
+    _MOVE_GAPS.update({key: tuple(found) for key, found in diag.by_move.items()})
     return result
+
+
+# What each move carries in Showdown's data that the engine does not model, by move id — filled by
+# `get_all_moves`. A move listed here plays without these parts, which is worth saying out loud when
+# somebody asks why it did not do what they expected.
+_MOVE_GAPS: dict[str, tuple[str, ...]] = {}
+
+
+def unmodelled_parts(name: str) -> tuple[str, ...]:
+    """The parts of a move's Showdown data the engine skipped, e.g. `volatile_status=aquaring`."""
+    get_all_moves()
+    return _MOVE_GAPS.get(normalize_id(name), ())
 
 
 # Pre-rename forme names still common in older pastes.
