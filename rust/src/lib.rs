@@ -21,11 +21,13 @@ pub mod hooks;
 pub mod inline;
 pub mod items;
 pub mod log;
+pub mod matchup;
 pub mod obs;
 pub mod power;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod stats;
 pub mod tape;
+pub mod tournament;
 pub mod turn;
 pub mod zmoves;

@@ -107,6 +107,9 @@ pub struct Move {
     pub pulse: bool,
     #[serde(default)]
     pub sound: bool,
+    /// Bulletproof's class of move.
+    #[serde(default)]
+    pub bullet: bool,
     /// PS flag `wind`: absorbed by Wind Rider.
     #[serde(default)]
     pub wind: bool,

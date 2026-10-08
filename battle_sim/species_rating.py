@@ -7,7 +7,7 @@ import random
 import signal
 import subprocess
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +48,13 @@ def _species_pool() -> list[str]:
     return sorted(get_species(key).name for key in in_scope_species())
 
 
-def deal_pairings(pool: Sequence[str], count: int, rng: random.Random, start: int = 0) -> Iterator[Pairing]:
+def deal_pairings(
+    pool: Sequence[str],
+    count: int,
+    rng: random.Random,
+    start: int = 0,
+    clash: Callable[[Sequence[str], str], bool] | None = None,
+) -> Iterator[Pairing]:
     """`count` pairings, dealing species from a reshuffled bag so appearances stay even."""
     bag: list[str] = []
 
@@ -62,7 +68,8 @@ def deal_pairings(pool: Sequence[str], count: int, rng: random.Random, start: in
                 bag = list(pool)
                 rng.shuffle(bag)
             name = bag.pop()
-            (held if name in drawn else drawn).append(name)
+            refused = name in drawn or (clash is not None and clash(drawn, name))
+            (held if refused else drawn).append(name)
         bag.extend(held)
         return tuple(drawn)
 
