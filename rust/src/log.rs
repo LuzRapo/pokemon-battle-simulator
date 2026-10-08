@@ -462,7 +462,7 @@ pub enum Event {
     },
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Log {
     pub entries: Vec<Event>,
 }

@@ -35,17 +35,35 @@ dev = [
     "pre-commit>=4.3.0",
     "streamlit>=1.57.0",
 ]
+# The self-play trainer (`training/`). `ml` is CPU torch, for this server; `ml-cuda` is the same on
+# CUDA 12.6, for a GPU box (`uv sync --group ml-cuda`). They pick different builds of one package,
+# so uv resolves them apart and they cannot be installed together.
 ml = [
     "torch>=2.5.0",
     "onnxscript>=0.2.0",
 ]
+ml-cuda = [
+    "torch>=2.5.0",
+    "onnxscript>=0.2.0",
+]
+
+[tool.uv]
+conflicts = [[{ group = "ml" }, { group = "ml-cuda" }]]
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu" }]
+torch = [
+    { index = "pytorch-cpu", group = "ml" },
+    { index = "pytorch-cu126", group = "ml-cuda" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
 [tool.ruff]
@@ -101,6 +119,11 @@ cache_dir = "/dev/null"
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+# torch leaves `backward`, `Categorical.sample` and friends unannotated.
+[[tool.mypy.overrides]]
+module = "training.*"
+disallow_untyped_calls = false
 
 [[tool.mypy.overrides]]
 module = "onnxruntime.*"

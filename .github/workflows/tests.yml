@@ -15,7 +15,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install project (dev)
-        run: uv sync --locked --all-extras --all-groups
+        run: uv sync --locked --all-extras --group dev --group ml
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
