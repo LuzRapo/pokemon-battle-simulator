@@ -234,6 +234,52 @@ struct ZMovesFile {
     zmoves: HashMap<String, Move>,
 }
 
+/// `battle_sim/rl/vocab.py`: the network's embedding tables, sorted, each id one past its index so
+/// that 0 means none — or a name the table has never seen.
+#[derive(Debug, Deserialize)]
+struct VocabFile {
+    species: Vec<String>,
+    moves: Vec<String>,
+    abilities: Vec<String>,
+    items: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct Vocab {
+    species: HashMap<String, i64>,
+    moves: HashMap<String, i64>,
+    abilities: HashMap<String, i64>,
+    items: HashMap<String, i64>,
+}
+
+impl Vocab {
+    fn from_file(file: VocabFile) -> Self {
+        let table = |names: Vec<String>| names.into_iter().zip(1..).collect::<HashMap<_, _>>();
+        Vocab {
+            species: table(file.species),
+            moves: table(file.moves),
+            abilities: table(file.abilities),
+            items: table(file.items),
+        }
+    }
+
+    pub fn species(&self, name: &str) -> i64 {
+        self.species.get(&Database::normalize_id(name)).copied().unwrap_or(0)
+    }
+
+    pub fn move_id(&self, name: &str) -> i64 {
+        self.moves.get(&Database::normalize_id(name)).copied().unwrap_or(0)
+    }
+
+    pub fn ability(&self, name: &str) -> i64 {
+        self.abilities.get(name).copied().unwrap_or(0)
+    }
+
+    pub fn item(&self, name: &str) -> i64 {
+        self.items.get(name).copied().unwrap_or(0)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct RulesFile {
     coded_moves: Vec<String>,
@@ -299,6 +345,8 @@ pub struct Database {
     pub types: Vec<String>,
     pub type_chart: HashMap<String, HashMap<String, f64>>,
     pub natures: HashMap<String, NatureEffect>,
+    /// The observation encoder's embedding ids; nothing that simulates reads it.
+    pub vocab: Vocab,
 }
 
 impl Database {
@@ -314,7 +362,10 @@ impl Database {
             serde_json::from_str(&read("zmoves.json")?).map_err(|e| format!("zmoves.json: {e}"))?;
         let rules: RulesFile =
             serde_json::from_str(&read("rules.json")?).map_err(|e| format!("rules.json: {e}"))?;
+        let vocab: VocabFile =
+            serde_json::from_str(&read("vocab.json")?).map_err(|e| format!("vocab.json: {e}"))?;
         Ok(Database {
+            vocab: Vocab::from_file(vocab),
             moves: moves.moves,
             species: species.species,
             z_moves: z_moves.zmoves,

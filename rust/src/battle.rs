@@ -628,6 +628,8 @@ pub struct State {
     /// Hands out `registered_at` stamps. Side 0's lead registers before side 1's, which is the
     /// order `BattleState` wires them up in.
     pub registrations: u64,
+    /// A turn paused on a mid-turn replacement the caller has to name — see `turn::begin_turn`.
+    pub turn_in_progress: Option<Box<crate::turn::TurnInProgress>>,
 }
 
 impl State {
@@ -639,6 +641,7 @@ impl State {
                 turn: 0,
                 outcome: None,
                 registrations: 0,
+                turn_in_progress: None,
             };
         for side in 0..2 {
             state.register_active(side);

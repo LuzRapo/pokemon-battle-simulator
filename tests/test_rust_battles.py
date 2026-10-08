@@ -4282,9 +4282,19 @@ def test_every_ported_ability_and_item_reaches_a_battle() -> None:
 
 
 @needs_rust
-@pytest.mark.parametrize("carries", ["ability", "item"])
+def test_every_live_item_but_the_forme_items_is_ported() -> None:
+    """Shed Shell — whose whole effect is on legality, ported with `legal_actions` — was the last."""
+    rules = json.loads((DATA / "rules.json").read_text())
+    forme_items = {row["item"] for row in rules["mega_formes"]} | {row["item"] for row in rules["ultra_burst_formes"]}
+    live = set(rules["live_items"]) - forme_items
+    missing = sorted(name for name in live - set(PORTED["items"]) if name in Item.__members__)
+    assert not missing, missing
+
+
+@needs_rust
+@pytest.mark.parametrize("carries", ["ability"])
 def test_live_abilities_and_items_are_refused_rather_than_ignored(carries: str, tmp_path: Path) -> None:
-    """A battle holding an unported event-bus ability or item is refused, not played wrong."""
+    """Reading an ability off a Pokemon and doing nothing with it is a wrong answer in silence."""
     kind, enum = ("abilities", Ability) if carries == "ability" else ("items", Item)
     expected = _still_unported(kind, enum)
     rng = random.Random(3)

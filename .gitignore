@@ -47,3 +47,6 @@ overnight_elo.json
 overnight_elo.txt
 overnight_elo.games.jsonl
 rust/failures/
+
+# Self-play runs: checkpoints, snapshots and logs (docs/self-play.md)
+runs/
