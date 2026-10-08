@@ -1,7 +1,8 @@
 """Stat-stage application and the interactions every stage change shares:
-Contrary inversion, drop blockers (Clear Body, Full Metal Body, Clear Amulet),
-drop reflection (Mirror Armor), retaliation (Defiant, Competitive, Guard Dog,
-Adrenaline Orb), Eject Pack arming, and White Herb restoration.
+Contrary inversion, drop blockers (Clear Body, Full Metal Body, White Smoke, Clear Amulet),
+single-stat drop blockers (Keen Eye, Hyper Cutter, Big Pecks), drop reflection (Mirror Armor),
+retaliation (Defiant, Competitive, Guard Dog, Adrenaline Orb), Eject Pack arming, and White
+Herb restoration.
 """
 
 from battle_sim.mechanics.log import BattleLog
@@ -17,7 +18,12 @@ from battle_sim.utils import Ability, Item, Stats
 
 type _Retaliation = tuple[Stats, StatChangeSource]
 
-_DROP_BLOCKING_ABILITIES = (Ability.CLEAR_BODY, Ability.FULL_METAL_BODY)
+_DROP_BLOCKING_ABILITIES = (Ability.CLEAR_BODY, Ability.FULL_METAL_BODY, Ability.WHITE_SMOKE)
+_SINGLE_STAT_DROP_BLOCKERS: dict[Ability, Stats] = {
+    Ability.KEEN_EYE: Stats.ACCURACY,
+    Ability.HYPER_CUTTER: Stats.ATTACK,
+    Ability.BIG_PECKS: Stats.DEFENCE,
+}
 _DROP_RETALIATION: dict[Ability, _Retaliation] = {
     Ability.DEFIANT: (Stats.ATTACK, "defiant"),
     Ability.COMPETITIVE: (Stats.SP_ATTACK, "competitive"),
@@ -37,13 +43,14 @@ def apply_stage_changes(
 ) -> None:
     if target.ability is Ability.CONTRARY:
         stages = {stat: -change for stat, change in stages.items()}
+    elif target.ability is Ability.SIMPLE:
+        stages = {stat: 2 * change for stat, change in stages.items()}  # both ways, drops included
     has_drop = any(change < 0 for change in stages.values())
-    if (
-        inflicted_by_opponent
-        and has_drop
-        and _intercept_drops(target, target_index, stages, log, source, inflictor, reflected)
-    ):
-        return
+    if inflicted_by_opponent and has_drop:
+        surviving = _intercept_drops(target, target_index, stages, log, source, inflictor, reflected)
+        if surviving is None:
+            return
+        stages = surviving
     dropped = 0
     for stat, requested in stages.items():
         delta = target.change_stat_stage(stat, requested)
@@ -72,26 +79,30 @@ def _intercept_drops(
     source: StatChangeSource,
     inflictor: Pokemon | None,
     reflected: bool,
-) -> bool:
-    """True when a blocker or reflector consumed the opponent-inflicted drop."""
+) -> dict[Stats, int] | None:
+    """None if a blocker consumed the whole change, else the stages that still apply."""
     if source == "intimidate" and target.ability is Ability.GUARD_DOG:
         log.add(StatDropBlocked(side=target_index, pokemon=target.nickname, ability=Ability.GUARD_DOG))
         apply_stage_changes(target, target_index, {Stats.ATTACK: 1}, log, inflicted_by_opponent=False)
-        return True
+        return None
     if target.ability in _DROP_BLOCKING_ABILITIES:
         log.add(StatDropBlocked(side=target_index, pokemon=target.nickname, ability=target.ability))
-        return True
+        return None
     if target.item is Item.CLEAR_AMULET:
         log.add(StatDropBlockedByItem(side=target_index, pokemon=target.nickname, item=Item.CLEAR_AMULET))
-        return True
+        return None
     if target.ability is Ability.MIRROR_ARMOR and inflictor is not None and not reflected:
         log.add(StatDropBlocked(side=target_index, pokemon=target.nickname, ability=Ability.MIRROR_ARMOR))
         drops = {stat: change for stat, change in stages.items() if change < 0}
         apply_stage_changes(
             inflictor, 1 - target_index, drops, log, inflicted_by_opponent=True, source=source, reflected=True
         )
-        return True
-    return False
+        return None
+    protected = _SINGLE_STAT_DROP_BLOCKERS.get(target.ability)
+    if protected is not None and stages.get(protected, 0) < 0:
+        log.add(StatDropBlocked(side=target_index, pokemon=target.nickname, ability=target.ability))
+        return {stat: change for stat, change in stages.items() if stat is not protected}
+    return stages
 
 
 def _retaliate_drops(target: Pokemon, target_index: int, dropped: int, log: BattleLog) -> None:

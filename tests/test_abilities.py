@@ -1,14 +1,30 @@
+import pytest
+
 from battle_sim.database.loader import get_move
-from battle_sim.engine import step
+from battle_sim.engine import legal_actions, step
+from battle_sim.engine.power import effective_power
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.mechanics.priority import effective_speed
 from battle_sim.models.actions import Action, ActionType
-from battle_sim.models.log_events import DoesNotAffect
-from battle_sim.models.moves import MoveSet, MoveSlot
-from battle_sim.models.pokemon import Pokemon
+from battle_sim.models.log_events import CantAct, DoesNotAffect, LastStand, LogEntry, ScreenFaded, StatChangesSwept
+from battle_sim.models.moves import DamageEffect, Move, MoveSet, MoveSlot
+from battle_sim.models.pokemon import NINE_LIVES, Pokemon
 from battle_sim.models.stats import BaseStats, EVs, IVs
-from battle_sim.utils import Ability, ExtraStatus, Hazards, Item, Nature, Stats, Status, Target, Terrain, Type, Weather
+from battle_sim.utils import (
+    Ability,
+    ExtraStatus,
+    Hazards,
+    Item,
+    Nature,
+    Outcome,
+    Stats,
+    Status,
+    Target,
+    Terrain,
+    Type,
+    Weather,
+)
 
 TACKLE = get_move("Tackle")
 EMBER = get_move("Ember")
@@ -58,12 +74,34 @@ def _battle(side0: list[Pokemon], side1: list[Pokemon], seed: int = 0, field: Fi
     )
 
 
-def test_speed_boost_raises_speed_at_end_of_turn():
+def test_speed_boost_does_not_raise_speed_on_the_turn_it_enters():
+    """Leading with it counts as entering too: Bulbapedia — "except for the turn it enters battle"."""
     a = _mk("A", ability=Ability.SPEED_BOOST)
     b = _mk("B")
     state = _battle([a], [b])
     step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert a.stat_stages.SPEED == 0
+
+
+def test_speed_boost_raises_speed_after_a_full_turn_out():
+    a = _mk("A", ability=Ability.SPEED_BOOST)
+    b = _mk("B")
+    state = _battle([a], [b])
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
     assert a.stat_stages.SPEED == 1
+
+
+def test_speed_boost_does_not_raise_speed_on_a_mid_battle_switch_in():
+    a = _mk("A")
+    a2 = _mk("A2", ability=Ability.SPEED_BOOST)
+    b = _mk("B")
+    state = _battle([a, a2], [b])
+    switch = Action(action=ActionType.SWITCH_OUT, switch_in=a2)
+    step(state, {0: switch, 1: USE_SWORDS_DANCE})
+    assert a2.stat_stages.SPEED == 0
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert a2.stat_stages.SPEED == 1
 
 
 def test_intimidate_lowers_opponent_attack_on_switch_in():
@@ -170,6 +208,25 @@ def test_levitate_ignores_spikes():
     switch = Action(action=ActionType.SWITCH_OUT, switch_in=b2)
     step(state, {0: USE_SWORDS_DANCE, 1: switch})
     assert b2.live_stats.HP == b2.stat_totals.HP
+
+
+def test_wonder_guard_blocks_anything_short_of_super_effective():
+    ice_beam = get_move("Ice Beam")  # neutral (1x) against Bug/Ghost
+    attacker = _mk("A", moves=MoveSet(ice_beam, TACKLE, EMBER, SWORDS_DANCE))
+    defender = _mk("B", types=(Type.BUG, Type.GHOST), ability=Ability.WONDER_GUARD)
+    state = _battle([attacker], [defender])
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert defender.live_stats.HP == defender.stat_totals.HP
+
+
+def test_wonder_guard_lets_super_effective_hits_through():
+    shadow_ball = get_move("Shadow Ball")  # super effective (2x) against Ghost
+    attacker = _mk("A", moves=MoveSet(shadow_ball, TACKLE, EMBER, SWORDS_DANCE))
+    defender = _mk("B", types=(Type.BUG, Type.GHOST), ability=Ability.WONDER_GUARD)
+    state = _battle([attacker], [defender])
+    use_shadow_ball = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+    step(state, {0: use_shadow_ball, 1: USE_SWORDS_DANCE})
+    assert defender.live_stats.HP < defender.stat_totals.HP
 
 
 def test_sturdy_survives_ohko_at_full_hp():
@@ -314,17 +371,38 @@ def test_pure_power_doubles_attack():
     assert (hp_a - defender_a.live_stats.HP) > (hp_b - defender_b.live_stats.HP)
 
 
-def test_guts_boosts_attack_when_statused_and_ignores_burn_halving():
-    burned_guts = _mk("G", ability=Ability.GUTS, status=Status.BURN, types=(Type.FIRE, None))
-    burned_normal = _mk("N", status=Status.BURN, types=(Type.FIRE, None))
-    defender_a = _mk("B")
-    defender_b = _mk("B")
-    state_a = _battle([burned_guts], [defender_a])
-    state_b = _battle([burned_normal], [defender_b])
-    hp_a, hp_b = defender_a.live_stats.HP, defender_b.live_stats.HP
-    step(state_a, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
-    step(state_b, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
-    assert (hp_a - defender_a.live_stats.HP) > (hp_b - defender_b.live_stats.HP)
+def _best_tackle(ability: Ability, status: Status, trials: int = 200) -> int:
+    """The hardest this attacker ever tackles, over `trials` seeds."""
+    best = 0
+    for seed in range(trials):
+        attacker = _mk("G", ability=ability, status=status, types=(Type.FIRE, None))
+        defender = _mk("B")
+        state = _battle([attacker], [defender], seed=seed)
+        before = defender.live_stats.HP
+        step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+        best = max(best, before - defender.live_stats.HP)
+    return best
+
+
+def test_guts_boosts_attack_when_statused():
+    healthy = _best_tackle(Ability.GUTS, Status.NONE)
+    poisoned = _best_tackle(Ability.GUTS, Status.POISON)
+    assert poisoned / healthy == pytest.approx(1.5, abs=0.05)
+    assert healthy == _best_tackle(Ability.NONE, Status.NONE)  # nothing without a status to feed on
+
+
+def test_guts_cancels_the_burn_halving_rather_than_merely_outweighing_it():
+    """Guts must cancel the burn's halving exactly, which only the ratio shows."""
+    healthy = _best_tackle(Ability.GUTS, Status.NONE)
+    burned = _best_tackle(Ability.GUTS, Status.BURN)
+    poisoned = _best_tackle(Ability.GUTS, Status.POISON)
+
+    assert burned == poisoned  # the burn is doing nothing whatever to the damage
+    assert burned / healthy == pytest.approx(1.5, abs=0.05)
+    # And the halving is real for anybody else, so the test above is not measuring its absence.
+    assert _best_tackle(Ability.NONE, Status.BURN) / _best_tackle(Ability.NONE, Status.NONE) == pytest.approx(
+        0.5, abs=0.05
+    )
 
 
 def test_intimidate_blocked_by_substitute():
@@ -556,7 +634,7 @@ def test_water_bubble_blocks_burns():
     from battle_sim.mechanics.log import BattleLog
 
     mon = _mk("B", ability=Ability.WATER_BUBBLE)
-    _apply_main_status(Status.BURN, mon, 0, RNG(seed=0), BattleLog())
+    _apply_main_status(Status.BURN, mon, 0, RNG(seed=0), BattleLog(), ((mon,), ()))
     assert mon.status is Status.NONE
 
 
@@ -566,7 +644,7 @@ def test_purifying_salt_blocks_all_statuses():
 
     mon = _mk("B", ability=Ability.PURIFYING_SALT)
     for status in (Status.BURN, Status.SLEEP, Status.TOXIC, Status.PARALYSIS):
-        _apply_main_status(status, mon, 0, RNG(seed=0), BattleLog())
+        _apply_main_status(status, mon, 0, RNG(seed=0), BattleLog(), ((mon,), ()))
         assert mon.status is Status.NONE
 
 
@@ -788,7 +866,8 @@ def test_thermal_exchange_boosts_attack_against_fire_and_blocks_burns():
     state = _battle([_mk("A", types=(Type.FIRE, None))], [exchanger])
     step(state, {0: USE_EMBER, 1: USE_SPLASH})
     assert exchanger.stat_stages.ATTACK == 1
-    _apply_main_status(Status.BURN, exchanger, 1, RNG(seed=0), BattleLog())
+    teams = (state.sides[0].team, state.sides[1].team)
+    _apply_main_status(Status.BURN, exchanger, 1, RNG(seed=0), BattleLog(), teams)
     assert exchanger.status is Status.NONE
 
 
@@ -1088,3 +1167,1639 @@ def test_poison_puppeteer_confuses_what_it_poisons():
     step(state, {0: USE_FIRST, 1: USE_SPLASH})
     assert victim.status is Status.TOXIC
     assert ExtraStatus.CONFUSION in victim.volatiles
+
+
+# -- Gen-7-scope ability coverage (Sam, 2026-08-22) --------------------------------
+
+STONE_EDGE = get_move("Stone Edge")  # 80% accuracy
+HYPER_VOICE = get_move("Hyper Voice")  # sound-flagged
+DOUBLE_EDGE = get_move("Double-Edge")  # 1/3 recoil
+TICKLE = get_move("Tickle")  # drops Attack and Defense together
+USE_ALL_ADJACENT_ENEMIES = Action(action=ActionType.USE_MOVE, target=Target.ALL_ADJACENT_ENEMIES, move=MoveSlot.FIRST)
+
+
+@pytest.mark.parametrize(
+    "ability, status",
+    [
+        (Ability.LIMBER, Status.PARALYSIS),
+        (Ability.INSOMNIA, Status.SLEEP),
+        (Ability.VITAL_SPIRIT, Status.SLEEP),
+        (Ability.WATER_VEIL, Status.BURN),
+        (Ability.MAGMA_ARMOR, Status.FREEZE),
+        (Ability.IMMUNITY, Status.POISON),
+    ],
+)
+def test_status_immunity_abilities_block_their_status(ability: Ability, status: Status) -> None:
+    from battle_sim.engine.status_apply import _apply_main_status
+    from battle_sim.mechanics.log import BattleLog
+
+    mon = _mk("B", ability=ability)
+    _apply_main_status(status, mon, 0, RNG(seed=0), BattleLog(), ((mon,), ()))
+    assert mon.status is Status.NONE
+
+
+def test_own_tempo_prevents_confusion():
+    from battle_sim.engine.status_apply import _apply_volatile
+    from battle_sim.mechanics.log import BattleLog
+
+    mon = _mk("B", ability=Ability.OWN_TEMPO)
+    _apply_volatile(ExtraStatus.CONFUSION, mon, 0, RNG(seed=0), BattleLog())
+    assert ExtraStatus.CONFUSION not in mon.volatiles
+
+
+def test_white_smoke_blocks_stat_drops():
+    from battle_sim.mechanics.log import BattleLog
+    from battle_sim.mechanics.stages import apply_stage_changes
+
+    mon = _mk("B", ability=Ability.WHITE_SMOKE)
+    apply_stage_changes(mon, 0, {Stats.ATTACK: -1}, BattleLog(), inflicted_by_opponent=True)
+    assert mon.stat_stages.ATTACK == 0
+
+
+def test_soundproof_blocks_sound_moves():
+    moves = MoveSet(HYPER_VOICE, TACKLE, EMBER, SWORDS_DANCE)
+    deafened = _mk("B", ability=Ability.SOUNDPROOF)
+    state = _battle([_mk("A", moves=moves)], [deafened])
+    step(state, {0: USE_ALL_ADJACENT_ENEMIES, 1: USE_SWORDS_DANCE})
+    assert deafened.live_stats.HP == deafened.stat_totals.HP
+
+
+def test_reckless_boosts_recoil_move_power():
+    moves = MoveSet(DOUBLE_EDGE, TACKLE, EMBER, SWORDS_DANCE)
+    plain = _duel_damage(_mk("A", moves=moves), _mk("B"), USE_FIRST)
+    reckless = _duel_damage(_mk("A", ability=Ability.RECKLESS, moves=moves), _mk("B"), USE_FIRST)
+    assert reckless > plain
+
+
+def test_rain_dish_heals_each_turn_in_rain():
+    dish = _mk("B", ability=Ability.RAIN_DISH)
+    dish.live_stats.HP = dish.stat_totals.HP // 2
+    hp_before = dish.live_stats.HP
+    field = FieldState(weather=Weather.RAIN, weather_turns_left=5)
+    state = _battle([_mk("A")], [dish], field=field)
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert hp_before + dish.stat_totals.HP // 16 == dish.live_stats.HP
+
+
+def test_steadfast_gains_speed_when_flinched():
+    """Flinch itself is cleared by end-of-turn residuals; the Speed boost it left behind persists."""
+    moves = MoveSet(FAKE_OUT, TACKLE, EMBER, SWORDS_DANCE)
+    steady = _mk("B", ability=Ability.STEADFAST)
+    state = _battle([_mk("A", moves=moves)], [steady])
+    step(state, {0: USE_FIRST, 1: USE_SWORDS_DANCE})
+    assert steady.stat_stages.SPEED == 1
+
+
+def _hit_count(move, attacker: Pokemon, defender: Pokemon, field: FieldState | None = None, trials: int = 1000) -> int:
+    from battle_sim.engine.moves import _accuracy_check
+
+    resolved_field = field or FieldState()
+    return sum(1 for seed in range(trials) if _accuracy_check(move, attacker, defender, resolved_field, RNG(seed=seed)))
+
+
+def test_compound_eyes_boosts_own_accuracy():
+    plain = _hit_count(STONE_EDGE, _mk("A"), _mk("B"))
+    boosted = _hit_count(STONE_EDGE, _mk("A", ability=Ability.COMPOUND_EYES), _mk("B"))
+    assert boosted > plain
+
+
+def test_snow_cloak_lowers_incoming_accuracy_in_snow():
+    field = FieldState(weather=Weather.SNOW, weather_turns_left=5)
+    plain = _hit_count(STONE_EDGE, _mk("A"), _mk("B"), field=field)
+    cloaked = _hit_count(STONE_EDGE, _mk("A"), _mk("B", ability=Ability.SNOW_CLOAK), field=field)
+    assert cloaked < plain
+
+
+def test_snow_cloak_does_nothing_outside_snow():
+    plain = _hit_count(STONE_EDGE, _mk("A"), _mk("B"))
+    cloaked = _hit_count(STONE_EDGE, _mk("A"), _mk("B", ability=Ability.SNOW_CLOAK))
+    assert cloaked == plain
+
+
+THUNDER = get_move("Thunder")  # 70% accuracy, unless weather overrides it
+HURRICANE = get_move("Hurricane")  # 70% accuracy, unless weather overrides it
+BLIZZARD = get_move("Blizzard")  # 70% accuracy, unless hail overrides it
+
+
+def test_thunder_never_misses_in_rain():
+    field = FieldState(weather=Weather.RAIN, weather_turns_left=5)
+    assert _hit_count(THUNDER, _mk("A"), _mk("B"), field=field) == 1000
+
+
+def test_thunder_never_misses_in_heavy_rain():
+    """Primordial Sea counts as rain here, same as Rain Dance."""
+    field = FieldState(weather=Weather.HEAVY_RAIN, weather_turns_left=5)
+    assert _hit_count(THUNDER, _mk("A"), _mk("B"), field=field) == 1000
+
+
+def test_thunder_accuracy_is_halved_in_sun():
+    clear = _hit_count(THUNDER, _mk("A"), _mk("B"))
+    sunny = _hit_count(THUNDER, _mk("A"), _mk("B"), field=FieldState(weather=Weather.SUN, weather_turns_left=5))
+    assert sunny < clear
+
+
+def test_hurricane_never_misses_in_rain():
+    field = FieldState(weather=Weather.RAIN, weather_turns_left=5)
+    assert _hit_count(HURRICANE, _mk("A"), _mk("B"), field=field) == 1000
+
+
+def test_hurricane_accuracy_is_halved_in_sun():
+    clear = _hit_count(HURRICANE, _mk("A"), _mk("B"))
+    sunny = _hit_count(HURRICANE, _mk("A"), _mk("B"), field=FieldState(weather=Weather.SUN, weather_turns_left=5))
+    assert sunny < clear
+
+
+def test_blizzard_never_misses_in_snow():
+    field = FieldState(weather=Weather.SNOW, weather_turns_left=5)
+    assert _hit_count(BLIZZARD, _mk("A"), _mk("B"), field=field) == 1000
+
+
+def test_blizzard_accuracy_is_unaffected_by_sun():
+    """Unlike Thunder and Hurricane, Blizzard's guarantee is hail-only — sun does nothing to it."""
+    clear = _hit_count(BLIZZARD, _mk("A"), _mk("B"))
+    sunny = _hit_count(BLIZZARD, _mk("A"), _mk("B"), field=FieldState(weather=Weather.SUN, weather_turns_left=5))
+    assert sunny == clear
+
+
+def test_tangled_feet_lowers_accuracy_while_confused():
+    confused = _mk("B")
+    confused.volatiles[ExtraStatus.CONFUSION] = 3
+    tangled = _mk("B", ability=Ability.TANGLED_FEET)
+    tangled.volatiles[ExtraStatus.CONFUSION] = 3
+    plain = _hit_count(STONE_EDGE, _mk("A"), confused)
+    dodgy = _hit_count(STONE_EDGE, _mk("A"), tangled)
+    assert dodgy < plain
+
+
+def test_hustle_lowers_own_physical_accuracy():
+    plain = _hit_count(STONE_EDGE, _mk("A"), _mk("B"))
+    hustled = _hit_count(STONE_EDGE, _mk("A", ability=Ability.HUSTLE), _mk("B"))
+    assert hustled < plain
+
+
+def test_hustle_boosts_own_physical_attack():
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    hustled = _duel_damage(_mk("A", ability=Ability.HUSTLE), _mk("B"), USE_TACKLE)
+    assert hustled > plain
+
+
+# -- Legendary/mythical ability coverage (Sam, 2026-08-22) --------------------------
+
+
+def test_multitype_takes_the_type_of_its_held_plate():
+    arceus = _mk("A", ability=Ability.MULTITYPE, item=Item.FLAME_PLATE)
+    state = _battle([arceus], [_mk("B")])
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert arceus.types == (Type.FIRE, None)
+
+
+def test_multitype_is_normal_type_with_no_plate():
+    arceus = _mk("A", ability=Ability.MULTITYPE)
+    state = _battle([arceus], [_mk("B")])
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert arceus.types == (Type.NORMAL, None)
+
+
+def test_rks_system_takes_the_type_of_its_held_memory():
+    silvally = _mk("A", ability=Ability.RKS_SYSTEM, item=Item.WATER_MEMORY)
+    state = _battle([silvally], [_mk("B")])
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert silvally.types == (Type.WATER, None)
+
+
+def test_beast_boost_raises_its_highest_stat_on_ko():
+    beast = _mk(
+        "A",
+        ability=Ability.BEAST_BOOST,
+        base_stats=BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    weak = _mk("W", base_stats=BaseStats(HP=1, ATTACK=1, DEFENCE=1, SP_ATTACK=1, SP_DEFENCE=1, SPEED=1))
+    state = _battle([beast], [weak])
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert weak.is_fainted()
+    assert beast.stat_stages.SPEED == 1
+    assert beast.stat_stages.ATTACK == 0
+
+
+def test_turboblaze_ignores_the_defenders_ability():
+    earthquake = get_move("Earthquake")
+    attacker = _mk(
+        "A",
+        ability=Ability.TURBOBLAZE,
+        moves=MoveSet(earthquake, TACKLE, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    defender = _mk("B", ability=Ability.LEVITATE)
+    state = _battle([attacker], [defender])
+    use_eq = Action(action=ActionType.USE_MOVE, target=Target.ALL_ADJACENT, move=MoveSlot.FIRST)
+    step(state, {0: use_eq, 1: USE_SWORDS_DANCE})
+    assert defender.live_stats.HP < defender.stat_totals.HP
+
+
+def test_shadow_shield_halves_damage_at_full_hp():
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    shielded = _duel_damage(_mk("A"), _mk("B", ability=Ability.SHADOW_SHIELD), USE_TACKLE)
+    assert 0 < shielded < plain
+
+
+def test_neuroforce_boosts_super_effective_damage():
+    plain = _duel_damage(_mk("A", types=(Type.FIRE, None)), _mk("B", types=(Type.GRASS, None)), USE_EMBER)
+    boosted = _duel_damage(
+        _mk("A", types=(Type.FIRE, None), ability=Ability.NEUROFORCE), _mk("B", types=(Type.GRASS, None)), USE_EMBER
+    )
+    assert boosted > plain
+
+
+def test_neuroforce_does_not_boost_neutral_damage():
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    same = _duel_damage(_mk("A", ability=Ability.NEUROFORCE), _mk("B"), USE_TACKLE)
+    assert same == plain
+
+
+def test_victory_star_boosts_own_accuracy():
+    plain = _hit_count(STONE_EDGE, _mk("A"), _mk("B"))
+    starred = _hit_count(STONE_EDGE, _mk("A", ability=Ability.VICTORY_STAR), _mk("B"))
+    assert starred > plain
+
+
+def test_fairy_aura_boosts_fairy_type_moves():
+    moonblast = get_move("Moonblast")
+    moves = MoveSet(moonblast, TACKLE, EMBER, SWORDS_DANCE)
+    plain = _duel_damage(_mk("A", types=(Type.FAIRY, None), moves=moves), _mk("B"), USE_FIRST)
+    boosted = _duel_damage(
+        _mk("A", types=(Type.FAIRY, None), moves=moves), _mk("B", ability=Ability.FAIRY_AURA), USE_FIRST
+    )
+    assert boosted > plain
+
+
+def test_aura_break_flips_fairy_aura_to_a_reduction():
+    moonblast = get_move("Moonblast")
+    moves = MoveSet(moonblast, TACKLE, EMBER, SWORDS_DANCE)
+    boosted = _duel_damage(
+        _mk("A", types=(Type.FAIRY, None), moves=moves), _mk("B", ability=Ability.FAIRY_AURA), USE_FIRST
+    )
+    broken = _duel_damage(
+        _mk("A", types=(Type.FAIRY, None), moves=moves), _mk("B", ability=Ability.AURA_BREAK), USE_FIRST
+    )
+    assert broken < boosted
+
+
+def test_synchronize_mirrors_status_onto_the_inflictor():
+    wisp = get_move("Will-O-Wisp")
+    attacker = _mk("A", moves=MoveSet(wisp, TACKLE, EMBER, SWORDS_DANCE))
+    mew = _mk("B", ability=Ability.SYNCHRONIZE)
+    state = _battle([attacker], [mew])
+    step(state, {0: USE_FIRST, 1: USE_SWORDS_DANCE})
+    assert mew.status is Status.BURN
+    assert attacker.status is Status.BURN
+
+
+def test_slow_start_halves_speed_for_five_turns_then_wears_off():
+    slow_stats = BaseStats(HP=100, ATTACK=160, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=110)
+    regigigas = _mk("A", ability=Ability.SLOW_START, base_stats=slow_stats)
+    reference = _mk("X", base_stats=slow_stats)
+    state = _battle([regigigas], [_mk("B")])
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert ExtraStatus.SLOW_START in regigigas.volatiles  # switch-in set 5; this turn's residual already ticked it once
+    assert (
+        effective_speed(regigigas, state.sides[0], state.field)
+        == effective_speed(reference, state.sides[0], state.field) // 2
+    )
+    for _ in range(5):
+        step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert ExtraStatus.SLOW_START not in regigigas.volatiles
+    assert effective_speed(regigigas, state.sides[0], state.field) == effective_speed(
+        reference, state.sides[0], state.field
+    )
+
+
+def test_slow_start_halves_physical_damage():
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    slowed = _duel_damage(_mk("A", ability=Ability.SLOW_START), _mk("B"), USE_TACKLE)
+    assert 0 < slowed < plain
+
+
+def test_keen_eye_blocks_accuracy_drops():
+    from battle_sim.mechanics.log import BattleLog
+    from battle_sim.mechanics.stages import apply_stage_changes
+
+    mon = _mk("B", ability=Ability.KEEN_EYE)
+    apply_stage_changes(mon, 0, {Stats.ACCURACY: -1}, BattleLog(), inflicted_by_opponent=True)
+    assert mon.stat_stages.ACCURACY == 0
+
+
+def test_hyper_cutter_blocks_only_its_own_stat_from_a_multi_stat_drop():
+    """Tickle drops Attack and Defense together; Hyper Cutter must guard only Attack."""
+    from battle_sim.mechanics.log import BattleLog
+    from battle_sim.mechanics.stages import apply_stage_changes
+
+    mon = _mk("B", ability=Ability.HYPER_CUTTER)
+    apply_stage_changes(mon, 0, {Stats.ATTACK: -1, Stats.DEFENCE: -1}, BattleLog(), inflicted_by_opponent=True)
+    assert mon.stat_stages.ATTACK == 0
+    assert mon.stat_stages.DEFENCE == -1
+
+
+def test_big_pecks_blocks_only_its_own_stat_from_a_multi_stat_drop():
+    from battle_sim.mechanics.log import BattleLog
+    from battle_sim.mechanics.stages import apply_stage_changes
+
+    mon = _mk("B", ability=Ability.BIG_PECKS)
+    apply_stage_changes(mon, 0, {Stats.ATTACK: -1, Stats.DEFENCE: -1}, BattleLog(), inflicted_by_opponent=True)
+    assert mon.stat_stages.ATTACK == -1
+    assert mon.stat_stages.DEFENCE == 0
+
+
+def test_hyper_cutter_does_not_block_its_own_raises():
+    from battle_sim.mechanics.log import BattleLog
+    from battle_sim.mechanics.stages import apply_stage_changes
+
+    mon = _mk("B", ability=Ability.HYPER_CUTTER)
+    apply_stage_changes(mon, 0, {Stats.ATTACK: 1}, BattleLog(), inflicted_by_opponent=True)
+    assert mon.stat_stages.ATTACK == 1
+
+
+def test_tickle_through_the_full_engine_respects_hyper_cutter():
+    moves = MoveSet(TICKLE, TACKLE, EMBER, SWORDS_DANCE)
+    cut = _mk("B", ability=Ability.HYPER_CUTTER, moves=IDLE_MOVES)
+    state = _battle([_mk("A", moves=moves)], [cut])
+    step(state, {0: USE_FIRST, 1: USE_SPLASH})
+    assert cut.stat_stages.ATTACK == 0
+    assert cut.stat_stages.DEFENCE == -1
+
+
+def test_truant_acts_the_switch_in_turn_then_loafs_every_other_turn():
+    truant = _mk("Slaking", ability=Ability.TRUANT)
+    defender = _mk("B", moves=IDLE_MOVES)
+    state = _battle([truant], [defender])
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    assert hp > defender.live_stats.HP  # free to act the turn it switches in
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    assert hp == defender.live_stats.HP  # loafs the very next turn
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    assert hp > defender.live_stats.HP  # then acts again
+
+
+def test_truant_logs_that_it_is_loafing_when_it_skips():
+    truant = _mk(ability=Ability.TRUANT)
+    state = _battle([truant], [_mk("B", moves=IDLE_MOVES)])
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    log = step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    assert any(isinstance(entry, CantAct) and entry.reason == "loafing" for entry in log)
+
+
+def test_a_fresh_switch_in_can_act_immediately_even_mid_loaf():
+    """`volatiles.clear()` on switch-out resets Truant, so the replacement is never born loafing."""
+    truant = _mk("Slaking", ability=Ability.TRUANT)
+    bench = _mk("Backup", ability=Ability.TRUANT)
+    defender = _mk("B", moves=IDLE_MOVES)
+    state = _battle([truant, bench], [defender])
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})  # truant acts, then would loaf next
+    step(state, {0: Action(action=ActionType.SWITCH_OUT, switch_in=bench), 1: USE_SPLASH})
+
+    hp = defender.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SPLASH})
+    assert hp > defender.live_stats.HP
+
+
+# -- Coverage-audit repairs: abilities that loaded with no mechanics at all --
+
+KINGS_SHIELD = get_move("King's Shield")
+BANEFUL_BUNKER = get_move("Baneful Bunker")
+SPIKY_SHIELD = get_move("Spiky Shield")
+PROTECT = get_move("Protect")
+IRON_HEAD = get_move("Iron Head")
+USE_SELF_FIRST = Action(action=ActionType.USE_MOVE, target=Target.SELF, move=MoveSlot.FIRST)
+
+
+def _damage_through(guard: Move) -> int:
+    """What a Tackle gets through `guard`, put up by the defender on the same turn."""
+    protector = _mk("B", moves=MoveSet(guard, TACKLE, EMBER, SWORDS_DANCE))
+    state = _battle([_mk("A")], [protector])
+    hp_before = protector.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SELF_FIRST})
+    return hp_before - protector.live_stats.HP
+
+
+@pytest.mark.parametrize("guard", [PROTECT, KINGS_SHIELD, BANEFUL_BUNKER, SPIKY_SHIELD])
+def test_every_protect_variant_actually_blocks_the_hit(guard: Move) -> None:
+    assert _damage_through(guard) == 0
+
+
+def test_a_turn_spent_guarding_is_not_a_turn_spent_doing_nothing() -> None:
+    """The regression that started this: the variants loaded with no effects and were free hits."""
+    assert _damage_through(TACKLE) > 0  # the control: no guard up, damage lands
+
+
+def test_iron_barbs_spikes_a_contact_attacker_like_rough_skin() -> None:
+    attacker = _mk("A")
+    state = _battle([attacker], [_mk("B", ability=Ability.IRON_BARBS)])
+    hp_before = attacker.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert hp_before > attacker.live_stats.HP
+
+
+def test_long_reach_keeps_a_contact_move_off_iron_barbs() -> None:
+    attacker = _mk("A", ability=Ability.LONG_REACH)
+    state = _battle([attacker], [_mk("B", ability=Ability.IRON_BARBS)])
+    hp_before = attacker.live_stats.HP
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert hp_before == attacker.live_stats.HP
+
+
+def test_galvanize_makes_a_normal_move_electric() -> None:
+    """Tested through a Ground-type, which a real Electric move cannot touch at all."""
+    grounded = _mk("B", types=(Type.GROUND, None))
+    assert _duel_damage(_mk("A"), grounded, USE_TACKLE) > 0
+    assert _duel_damage(_mk("A", ability=Ability.GALVANIZE), grounded, USE_TACKLE) == 0
+
+
+def test_defeatist_halves_offence_below_half_health() -> None:
+    healthy = _mk("A", ability=Ability.DEFEATIST)
+    assert _duel_damage(healthy, _mk("B"), USE_TACKLE) > 0
+
+    weakened = _mk("A", ability=Ability.DEFEATIST)
+    weakened.live_stats.HP = weakened.stat_totals.HP // 2
+    plain = _mk("A")
+    plain.live_stats.HP = plain.stat_totals.HP // 2
+    assert _duel_damage(weakened, _mk("B"), USE_TACKLE) < _duel_damage(plain, _mk("B"), USE_TACKLE)
+
+
+def test_marvel_scale_toughens_a_statused_defender() -> None:
+    plain = _duel_damage(_mk("A"), _mk("B", status=Status.BURN), USE_TACKLE)
+    scaled = _duel_damage(_mk("A"), _mk("B", ability=Ability.MARVEL_SCALE, status=Status.BURN), USE_TACKLE)
+    assert 0 < scaled < plain
+
+
+def test_marvel_scale_does_nothing_while_healthy() -> None:
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    scaled = _duel_damage(_mk("A"), _mk("B", ability=Ability.MARVEL_SCALE), USE_TACKLE)
+    assert scaled == plain
+
+
+def test_fur_coat_halves_physical_damage() -> None:
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    coated = _duel_damage(_mk("A"), _mk("B", ability=Ability.FUR_COAT), USE_TACKLE)
+    assert 0 < coated < plain
+
+
+def test_fur_coat_leaves_special_damage_alone() -> None:
+    attacker = _mk("A", types=(Type.FIRE, None))
+    plain = _duel_damage(attacker, _mk("B"), USE_EMBER)
+    coated = _duel_damage(attacker, _mk("B", ability=Ability.FUR_COAT), USE_EMBER)
+    assert coated == plain
+
+
+def test_steelworker_boosts_steel_moves() -> None:
+    moves = MoveSet(IRON_HEAD, TACKLE, EMBER, SWORDS_DANCE)
+    plain = _duel_damage(_mk("A", moves=moves), _mk("B"), USE_FIRST)
+    worked = _duel_damage(_mk("A", ability=Ability.STEELWORKER, moves=moves), _mk("B"), USE_FIRST)
+    assert worked > plain
+
+
+def test_queenly_majesty_blocks_a_priority_move() -> None:
+    guarded = _mk("B", ability=Ability.QUEENLY_MAJESTY)
+    state = _battle([_mk("A")], [guarded])
+    hp_before = guarded.live_stats.HP
+    step(state, {0: USE_QUICK_ATTACK, 1: USE_SWORDS_DANCE})
+    assert hp_before == guarded.live_stats.HP
+
+
+def test_queenly_majesty_leaves_ordinary_moves_alone() -> None:
+    guarded = _mk("B", ability=Ability.QUEENLY_MAJESTY)
+    assert _duel_damage(_mk("A"), guarded, USE_TACKLE) > 0
+
+
+def test_stakeout_doubles_damage_against_something_that_just_came_in() -> None:
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    staked = _duel_damage(_mk("A", ability=Ability.STAKEOUT), _mk("B"), USE_TACKLE)
+    assert staked > plain
+
+
+def test_merciless_always_crits_a_poisoned_target() -> None:
+    plain = _duel_damage(_mk("A"), _mk("B", status=Status.POISON), USE_TACKLE)
+    merciless = _duel_damage(_mk("A", ability=Ability.MERCILESS), _mk("B", status=Status.POISON), USE_TACKLE)
+    assert merciless > plain
+
+
+def test_merciless_is_ordinary_against_an_unpoisoned_target() -> None:
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    merciless = _duel_damage(_mk("A", ability=Ability.MERCILESS), _mk("B"), USE_TACKLE)
+    assert merciless == plain
+
+
+def test_surge_surfer_doubles_speed_on_electric_terrain() -> None:
+    raichu = _mk("A", ability=Ability.SURGE_SURFER)
+    side = SideState(team=[raichu])
+    plain = effective_speed(raichu, side, FieldState())
+    surfed = effective_speed(raichu, side, FieldState(terrain=Terrain.ELECTRIC, terrain_turns_left=5))
+    assert surfed == plain * 2
+
+
+def test_surge_surfer_does_nothing_on_other_terrain() -> None:
+    raichu = _mk("A", ability=Ability.SURGE_SURFER)
+    side = SideState(team=[raichu])
+    plain = effective_speed(raichu, side, FieldState())
+    grassy = effective_speed(raichu, side, FieldState(terrain=Terrain.GRASSY, terrain_turns_left=5))
+    assert grassy == plain
+
+
+# -- Coverage-audit repairs, round two (2026-09-08) ---------------------------------
+
+FLAIL = get_move("Flail")
+RETURN = get_move("Return")
+
+
+def test_fluffy_halves_contact_damage() -> None:
+    plain = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    fluffy = _duel_damage(_mk("A"), _mk("B", ability=Ability.FLUFFY), USE_TACKLE)
+    assert 0 < fluffy < plain
+
+
+def test_fluffy_doubles_fire_damage() -> None:
+    attacker = _mk("A", types=(Type.FIRE, None))
+    plain = _duel_damage(attacker, _mk("B"), USE_EMBER)
+    fluffy = _duel_damage(attacker, _mk("B", ability=Ability.FLUFFY), USE_EMBER)
+    assert fluffy > plain
+
+
+def test_storm_drain_absorbs_water_and_takes_a_boost_for_it() -> None:
+    surf = get_move("Surf")
+    moves = MoveSet(surf, TACKLE, EMBER, SWORDS_DANCE)
+    drainer = _mk("B", ability=Ability.STORM_DRAIN)
+    state = _battle([_mk("A", moves=moves)], [drainer])
+    hp_before = drainer.live_stats.HP
+
+    step(state, {0: USE_FIRST, 1: USE_SWORDS_DANCE})
+
+    assert hp_before == drainer.live_stats.HP
+    assert drainer.stat_stages.SP_ATTACK == 1
+
+
+def test_comatose_cannot_be_statused() -> None:
+    komala = _mk("B", ability=Ability.COMATOSE)
+    moves = MoveSet(get_move("Thunder Wave"), TACKLE, EMBER, SWORDS_DANCE)
+    state = _battle([_mk("A", moves=moves)], [komala])
+    step(state, {0: USE_FIRST, 1: USE_SWORDS_DANCE})
+    assert komala.status is Status.NONE
+
+
+def test_super_luck_lands_more_criticals() -> None:
+    lucky = _hit_count(STONE_EDGE, _mk("A", ability=Ability.SUPER_LUCK), _mk("B"))
+    assert lucky > 0  # accuracy is untouched; the crit rate is what changed
+    plain_damage = _duel_damage(_mk("A"), _mk("B"), USE_TACKLE)
+    lucky_damage = max(_duel_damage(_mk("A", ability=Ability.SUPER_LUCK), _mk("B"), USE_TACKLE) for _ in range(20))
+    assert lucky_damage >= plain_damage
+
+
+def test_simple_doubles_a_stat_change() -> None:
+    plain = _mk("A")
+    simple = _mk("A", ability=Ability.SIMPLE)
+    for pokemon in (plain, simple):
+        state = _battle([pokemon], [_mk("B")])
+        step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert simple.stat_stages.ATTACK == 2 * plain.stat_stages.ATTACK
+
+
+def test_analytic_boosts_a_move_that_goes_second() -> None:
+    """Side 1 acts first here, so side 0's Analytic holder is the one moving last."""
+    slow = _mk(
+        "A",
+        ability=Ability.ANALYTIC,
+        base_stats=BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=1),
+    )
+    plain = _mk("A", base_stats=BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=1))
+    dealt = []
+    for attacker in (slow, plain):
+        defender = _mk("B")
+        state = _battle([attacker], [defender])
+        before = defender.live_stats.HP
+        step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+        dealt.append(before - defender.live_stats.HP)
+    assert dealt[0] > dealt[1]
+
+
+def test_emergency_exit_pulls_its_holder_out_at_half_health() -> None:
+    golisopod = _mk("A", ability=Ability.EMERGENCY_EXIT)
+    bench = _mk("A2")
+    state = _battle([golisopod, bench], [_mk("B")])
+    golisopod.live_stats.HP = golisopod.stat_totals.HP // 2 + 12  # a Tackle takes it under the line
+
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_TACKLE})
+
+    assert state.sides[0].needs_switch
+
+
+def test_emergency_exit_stays_put_with_nobody_to_switch_to() -> None:
+    golisopod = _mk("A", ability=Ability.EMERGENCY_EXIT)
+    state = _battle([golisopod], [_mk("B")])
+    golisopod.live_stats.HP = golisopod.stat_totals.HP // 2 + 12
+
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_TACKLE})
+
+    assert not state.sides[0].needs_switch
+
+
+def test_return_is_a_real_attack_again() -> None:
+    """Return loaded with no damage effect, so it spent a turn doing nothing."""
+    moves = MoveSet(RETURN, TACKLE, EMBER, SWORDS_DANCE)
+    assert _duel_damage(_mk("A", moves=moves), _mk("B"), USE_FIRST) > 0
+
+
+def test_flail_hits_harder_the_closer_its_user_is_to_fainting() -> None:
+    moves = MoveSet(FLAIL, TACKLE, EMBER, SWORDS_DANCE)
+    healthy = _mk("A", moves=moves)
+    dying = _mk("A", moves=moves)
+    dying.live_stats.HP = 1
+
+    assert _duel_damage(dying, _mk("B"), USE_FIRST) > _duel_damage(healthy, _mk("B"), USE_FIRST)
+
+
+def test_heal_bell_clears_the_whole_team_bench_included() -> None:
+    moves = MoveSet(get_move("Heal Bell"), TACKLE, EMBER, SWORDS_DANCE)
+    cleric = _mk("A", moves=moves, status=Status.BURN)
+    benched = _mk("A2", status=Status.PARALYSIS)
+    state = _battle([cleric, benched], [_mk("B")])
+
+    step(state, {0: USE_SELF_FIRST, 1: USE_SWORDS_DANCE})
+
+    assert cleric.status is Status.NONE
+    assert benched.status is Status.NONE
+
+
+# -- Conditional moves that loaded as unconditional attacks --
+
+# Fast enough to get into the air before the opponent swings.
+_SWIFT = BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200)
+FOCUS_PUNCH = get_move("Focus Punch")
+SHELL_TRAP = get_move("Shell Trap")
+REVENGE = get_move("Revenge")
+BRINE = get_move("Brine")
+FLY = get_move("Fly")
+EARTHQUAKE = get_move("Earthquake")
+
+
+def _damage_dealt(attacker: Pokemon, defender: Pokemon, their_action: Action) -> int:
+    """What the attacker's first move gets through, with the defender doing `their_action`."""
+    state = _battle([attacker], [defender])
+    hp_before = defender.live_stats.HP
+    step(state, {0: USE_FIRST, 1: their_action})
+    return hp_before - defender.live_stats.HP
+
+
+def test_focus_punch_is_lost_if_its_user_is_hit() -> None:
+    moves = MoveSet(FOCUS_PUNCH, TACKLE, EMBER, SWORDS_DANCE)
+    assert _damage_dealt(_mk("A", moves=moves), _mk("B"), USE_TACKLE) == 0
+
+
+def test_focus_punch_lands_if_its_user_is_left_alone() -> None:
+    moves = MoveSet(FOCUS_PUNCH, TACKLE, EMBER, SWORDS_DANCE)
+    assert _damage_dealt(_mk("A", moves=moves), _mk("B", moves=IDLE_MOVES), USE_SPLASH) > 0
+
+
+def test_shell_trap_fails_unless_something_physical_sets_it_off() -> None:
+    moves = MoveSet(SHELL_TRAP, TACKLE, EMBER, SWORDS_DANCE)
+    assert _damage_dealt(_mk("A", moves=moves), _mk("B", moves=IDLE_MOVES), USE_SPLASH) == 0
+
+
+def test_shell_trap_goes_off_when_a_physical_hit_lands() -> None:
+    moves = MoveSet(SHELL_TRAP, TACKLE, EMBER, SWORDS_DANCE)
+    assert _damage_dealt(_mk("A", moves=moves), _mk("B"), USE_TACKLE) > 0
+
+
+def test_revenge_doubles_after_taking_a_hit() -> None:
+    moves = MoveSet(REVENGE, TACKLE, EMBER, SWORDS_DANCE)
+    hit = _damage_dealt(_mk("A", moves=moves), _mk("B"), USE_TACKLE)
+    untouched = _damage_dealt(_mk("A", moves=moves), _mk("B", moves=IDLE_MOVES), USE_SPLASH)
+    assert hit > untouched > 0
+
+
+def test_brine_doubles_against_a_wounded_target() -> None:
+    moves = MoveSet(BRINE, TACKLE, EMBER, SWORDS_DANCE)
+    healthy = _duel_damage(_mk("A", moves=moves), _mk("B"), USE_FIRST)
+    hurt = _mk("B")
+    hurt.live_stats.HP = hurt.stat_totals.HP // 3
+    assert _duel_damage(_mk("A", moves=moves), hurt, USE_FIRST) > healthy
+
+
+def test_a_pokemon_mid_fly_cannot_be_touched() -> None:
+    """The charge turn already worked; being out of reach during it is what pays for the wait."""
+    flier = _mk("A", moves=MoveSet(FLY, TACKLE, EMBER, SWORDS_DANCE), base_stats=_SWIFT)
+    state = _battle([flier], [_mk("B")])
+    hp_before = flier.live_stats.HP
+
+    step(state, {0: USE_FIRST, 1: USE_TACKLE})  # Fly's charge turn
+
+    assert hp_before == flier.live_stats.HP
+
+
+def test_the_right_move_still_reaches_something_underground() -> None:
+    """Earthquake on a Dig is the answer everyone knows, so it has to keep working."""
+    digger = _mk("A", moves=MoveSet(get_move("Dig"), TACKLE, EMBER, SWORDS_DANCE), base_stats=_SWIFT)
+    quaker = _mk("B", moves=MoveSet(EARTHQUAKE, TACKLE, EMBER, SWORDS_DANCE))
+    state = _battle([digger], [quaker])
+    hp_before = digger.live_stats.HP
+
+    step(state, {0: USE_FIRST, 1: USE_FIRST})
+
+    assert hp_before > digger.live_stats.HP
+
+
+def test_an_ordinary_charge_leaves_its_user_in_plain_sight() -> None:
+    """Solar Beam is a two-turn move, not a disappearing act."""
+    charger = _mk("A", moves=MoveSet(get_move("Solar Beam"), TACKLE, EMBER, SWORDS_DANCE), base_stats=_SWIFT)
+    state = _battle([charger], [_mk("B")])
+    hp_before = charger.live_stats.HP
+
+    step(state, {0: USE_FIRST, 1: USE_TACKLE})
+
+    assert hp_before > charger.live_stats.HP
+
+
+def test_fury_cutter_builds_while_it_keeps_connecting() -> None:
+    moves = MoveSet(get_move("Fury Cutter"), TACKLE, EMBER, SWORDS_DANCE)
+    cutter = _mk("A", moves=moves)
+    defender = _mk("B", moves=IDLE_MOVES)
+    state = _battle([cutter], [defender])
+
+    dealt = []
+    for _ in range(3):
+        before = defender.live_stats.HP
+        step(state, {0: USE_FIRST, 1: USE_SPLASH})
+        dealt.append(before - defender.live_stats.HP)
+
+    assert dealt[1] > dealt[0] and dealt[2] > dealt[1]
+
+
+# -- Catching a Pokemon on the way out (2026-09-08) ---------------------------------
+
+PURSUIT = get_move("Pursuit")
+PURSUIT_BASE_POWER = 40
+
+
+def _damage_effect(move: Move) -> DamageEffect:
+    return next(effect for effect in move.effects if isinstance(effect, DamageEffect))
+
+
+def _pursuit_battle() -> tuple[Pokemon, Pokemon, Pokemon, BattleState]:
+    chaser = _mk("Chaser", moves=MoveSet(PURSUIT, TACKLE, EMBER, SWORDS_DANCE))
+    fleeing = _mk("Runner", moves=IDLE_MOVES)
+    bench = _mk("Bench")
+    state = _battle([chaser], [fleeing, bench])
+    return chaser, fleeing, bench, state
+
+
+def test_pursuit_catches_its_target_before_the_switch_completes() -> None:
+    """The whole move: leaving is exactly when it is supposed to hurt."""
+    _, fleeing, bench, state = _pursuit_battle()
+    hp_before = fleeing.live_stats.HP
+
+    step(state, {0: USE_FIRST, 1: Action(action=ActionType.SWITCH_OUT, switch_in=bench)})
+
+    assert hp_before > fleeing.live_stats.HP  # hit on the way out, not after it had gone
+    assert state.sides[1].active_pokemon is bench  # and the switch still happened
+
+
+def test_pursuit_hits_harder_against_a_target_that_is_leaving() -> None:
+    chaser, fleeing, bench, state = _pursuit_battle()
+    switching = Action(action=ActionType.SWITCH_OUT, switch_in=bench)
+    state.sides[1].chosen_action = switching
+    caught = effective_power(PURSUIT, _damage_effect(PURSUIT), chaser, fleeing, state)
+
+    state.sides[1].chosen_action = USE_SPLASH
+    standing = effective_power(PURSUIT, _damage_effect(PURSUIT), chaser, fleeing, state)
+
+    assert caught == 2 * standing
+
+
+def test_pursuit_is_an_ordinary_move_against_a_target_that_stays() -> None:
+    _, fleeing, _, state = _pursuit_battle()
+    hp_before = fleeing.live_stats.HP
+
+    step(state, {0: USE_FIRST, 1: USE_SPLASH})
+
+    assert hp_before - fleeing.live_stats.HP > 0
+
+
+def test_a_target_that_already_moved_cannot_be_caught_leaving() -> None:
+    chaser, fleeing, bench, state = _pursuit_battle()
+    state.sides[1].chosen_action = Action(action=ActionType.SWITCH_OUT, switch_in=bench)
+    state.sides[1].acted_this_turn = True
+
+    assert effective_power(PURSUIT, _damage_effect(PURSUIT), chaser, fleeing, state) == PURSUIT_BASE_POWER
+
+
+def test_arena_trap_pins_a_grounded_opponent() -> None:
+    """Dugtrio's entire reason for existing, and it was missing from the trapping list."""
+    trapped = _mk("A")
+    state = _battle([trapped], [_mk("B", ability=Ability.ARENA_TRAP), _mk("B2")])
+    assert not any(action.action is ActionType.SWITCH_OUT for action in legal_actions(state, 0))
+
+
+def test_arena_trap_cannot_hold_something_off_the_ground() -> None:
+    flier = _mk("A", types=(Type.FLYING, None))
+    state = _battle([flier, _mk("A2")], [_mk("B", ability=Ability.ARENA_TRAP)])
+    assert any(action.action is ActionType.SWITCH_OUT for action in legal_actions(state, 0))
+
+
+def test_nine_lives_rises_whole_and_burns_the_status_away():
+    """Nine Lives is Sturdy with a counter and a full heal."""
+    glass_cannon = _mk(
+        "Glass",
+        base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    butler = _mk(
+        "Butler",
+        base_stats=BaseStats(HP=1, ATTACK=1, DEFENCE=1, SP_ATTACK=1, SP_DEFENCE=1, SPEED=1),
+        ability=Ability.NINE_LIVES,
+    )
+    butler.status = Status.BURN
+    state = _battle([glass_cannon], [butler])
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert butler.live_stats.HP == butler.stat_totals.HP  # back to full, not left on 1
+    assert butler.status is Status.NONE  # and the burn went with it
+    assert butler.lives_used == 1
+
+
+def test_nine_lives_runs_out():
+    """Ten killing blows, not nine: the last one lands."""
+    glass_cannon = _mk(
+        "Glass",
+        base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    butler = _mk(
+        "Butler",
+        base_stats=BaseStats(HP=1, ATTACK=1, DEFENCE=1, SP_ATTACK=1, SP_DEFENCE=1, SPEED=1),
+        ability=Ability.NINE_LIVES,
+    )
+    state = _battle([glass_cannon], [butler])
+    for _ in range(NINE_LIVES):
+        step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+        assert not butler.is_fainted()
+    assert butler.lives_used == NINE_LIVES
+    # The tenth blow is the last stand: he takes it standing, at one hit point, and yields.
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert not butler.is_fainted() and butler.made_last_stand and butler.live_stats.HP == 1
+    # And the eleventh is simply a Pokemon being knocked out.
+    state.outcome = None  # the concession ended the battle; this test is about what is left of him
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert butler.is_fainted()
+
+
+def test_an_ordinary_hit_neither_spends_a_life_nor_heals_him():
+    """The restore is gated on a life actually being spent."""
+    tickler = _mk("Tickle", base_stats=BaseStats(HP=100, ATTACK=1, DEFENCE=100, SP_ATTACK=1, SP_DEFENCE=100, SPEED=200))
+    butler = _mk(
+        "Butler",
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=1),
+        ability=Ability.NINE_LIVES,
+    )
+    state = _battle([tickler], [butler])
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert 0 < butler.live_stats.HP < butler.stat_totals.HP  # hurt, and left hurt
+    assert butler.lives_used == 0
+
+
+def _knocked_off_butler() -> tuple[BattleState, Pokemon]:
+    """A butler holding Leftovers, a thief fast enough to take them off him first."""
+    thief = _mk(
+        "Thief",
+        moves=MoveSet(get_move("Knock Off"), QUICK_ATTACK, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    butler = _mk(
+        "Butler",
+        ability=Ability.NINE_LIVES,
+        item=Item.LEFTOVERS,
+        base_stats=BaseStats(HP=200, ATTACK=1, DEFENCE=100, SP_ATTACK=1, SP_DEFENCE=100, SPEED=1),
+    )
+    return _battle([thief], [butler]), butler
+
+
+def test_a_knocked_off_item_comes_back_when_a_life_is_spent():
+    """An item knocked off before a life is spent comes back with him."""
+    state, butler = _knocked_off_butler()
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})  # slot one is Knock Off
+    knocked_off = butler.item
+    assert knocked_off is Item.NONE, "Knock Off did not take the item"
+    remembered = butler.stripped_item
+    assert remembered is Item.LEFTOVERS, "nothing remembered what was taken"
+
+    butler.live_stats.HP = 1
+    step(state, {0: USE_QUICK_ATTACK, 1: USE_SWORDS_DANCE})
+
+    assert butler.lives_used == 1, "the setup did not actually spend a life"
+    assert butler.item is Item.LEFTOVERS, "he rose again without what was taken from him"
+    assert butler.stripped_item is Item.NONE, "the same item could be restored twice"
+
+
+def test_the_restored_item_is_wired_back_up_rather_than_merely_held():
+    """The restored item's handlers are rebound, so a restored Leftovers heals."""
+    state, butler = _knocked_off_butler()
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    butler.live_stats.HP = 1
+    step(state, {0: USE_QUICK_ATTACK, 1: USE_SWORDS_DANCE})
+
+    butler.live_stats.HP = butler.stat_totals.HP - 60
+    hurt = butler.live_stats.HP
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+
+    assert hurt < butler.live_stats.HP, "the restored Leftovers is held but never run"
+
+
+def test_an_item_he_spent_himself_is_not_given_back():
+    """Only what an opponent took comes back; what he used up stays used."""
+    butler = _mk("Butler", ability=Ability.NINE_LIVES, item=Item.SITRUS_BERRY)
+    butler.consume_item()  # exactly what eating a berry does
+    assert butler.stripped_item is Item.NONE
+
+    butler.live_stats.HP = 1
+    butler.apply_damage(999)
+
+    assert butler.lives_used == 1
+    assert butler.item is Item.NONE, "an item he spent himself came back with him"
+
+
+def test_a_life_spent_clears_the_drops_an_opponent_put_on_him():
+    """Rising whole has to mean whole."""
+    butler = _mk("Butler", ability=Ability.NINE_LIVES)
+    butler.stat_stages[Stats.ATTACK] = -1  # 0.67x
+    butler.stat_stages[Stats.DEFENCE] = -2
+    butler.stat_stages[Stats.SPEED] = -6
+
+    butler.live_stats.HP = 1
+    butler.apply_damage(999)
+
+    assert butler.lives_used == 1
+    for stat in (Stats.ATTACK, Stats.DEFENCE, Stats.SPEED):
+        assert butler.stat_stages[stat] == 0, f"{stat.name} was still down after he rose again"
+
+
+def test_a_life_spent_leaves_his_own_boosts_where_they_are():
+    """Only the drops clear; his own boosts stay."""
+    butler = _mk("Butler", ability=Ability.NINE_LIVES)
+    butler.stat_stages[Stats.ATTACK] = 4  # two Swords Dances of his own
+    butler.stat_stages[Stats.SPEED] = -3  # and a Sticky Web on top
+
+    butler.live_stats.HP = 1
+    butler.apply_damage(999)
+
+    assert butler.stat_stages[Stats.ATTACK] == 4, "his own boost went with the drops"
+    assert butler.stat_stages[Stats.SPEED] == 0
+
+
+def test_the_drop_clearing_covers_accuracy_and_evasion_too():
+    """Every stage clears, read from the stage model's own fields."""
+    butler = _mk("Butler", ability=Ability.NINE_LIVES)
+    butler.stat_stages.ACCURACY = -3
+    butler.stat_stages.EVASION = -2
+
+    butler.live_stats.HP = 1
+    butler.apply_damage(999)
+
+    assert butler.stat_stages.ACCURACY == 0
+    assert butler.stat_stages.EVASION == 0
+
+
+def test_an_intimidate_that_lands_after_a_revival_still_sticks():
+    """The clearing happens at the revival only; it is not a standing immunity to drops."""
+    butler = _mk("Butler", ability=Ability.NINE_LIVES)
+    butler.live_stats.HP = 1
+    butler.apply_damage(999)
+
+    butler.stat_stages[Stats.ATTACK] = -1
+
+    assert butler.stat_stages[Stats.ATTACK] == -1, "he shrugged off a drop he should have taken"
+
+
+def _butler_about_to_lose_a_life() -> tuple[BattleState, Pokemon, Pokemon]:
+    """A butler on 1 HP and something fast enough to finish him. Returns (state, butler, foe)."""
+    foe = _mk(
+        "Foe",
+        base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    butler = _mk(
+        "Butler",
+        ability=Ability.NINE_LIVES,
+        base_stats=BaseStats(HP=200, ATTACK=1, DEFENCE=100, SP_ATTACK=1, SP_DEFENCE=100, SPEED=1),
+    )
+    butler.live_stats.HP = 1
+    return _battle([foe], [butler]), butler, foe
+
+
+def test_rising_again_sweeps_the_board_the_other_side_had_built_up():
+    """Stacked evasion clears when he rises."""
+    state, butler, foe = _butler_about_to_lose_a_life()
+    foe.stat_stages[Stats.EVASION] = 3
+    foe.stat_stages[Stats.ATTACK] = 4
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert butler.lives_used == 1, "the setup did not actually spend a life"
+    assert foe.stat_stages[Stats.EVASION] == 0, "evasion survived him rising again"
+    assert foe.stat_stages[Stats.ATTACK] == 0, "a sweep set up once would be paid off nine times"
+
+
+def test_the_sweep_takes_the_other_side_s_own_drops_with_it():
+    """The opponent's own drops clear too, since the board is reset rather than confiscated."""
+    state, _, foe = _butler_about_to_lose_a_life()
+    foe.stat_stages[Stats.DEFENCE] = -2
+    foe.stat_stages[Stats.SP_DEFENCE] = -1
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert foe.stat_stages[Stats.DEFENCE] == 0
+    assert foe.stat_stages[Stats.SP_DEFENCE] == 0
+
+
+def test_the_sweep_is_announced_so_it_does_not_read_as_a_bug():
+    """The stage sweep is announced."""
+    state, _, foe = _butler_about_to_lose_a_life()
+    foe.stat_stages[Stats.EVASION] = 3
+    swept = step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert any(isinstance(entry, StatChangesSwept) for entry in swept.entries)
+
+    clean_state, _, _ = _butler_about_to_lose_a_life()
+    quiet = step(clean_state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert not any(isinstance(entry, StatChangesSwept) for entry in quiet.entries), "announced an empty sweep"
+
+
+def test_rising_again_takes_down_the_screens_the_other_side_was_hiding_behind():
+    """Screens come down when he rises."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    state.sides[0].screens = {Hazards.REFLECT: 5, Hazards.LIGHT_SCREEN: 5}
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert butler.lives_used == 1, "the setup did not actually spend a life"
+    assert state.sides[0].screens == {}, "he rose behind the same walls he went down to"
+
+
+def test_each_screen_that_goes_is_named():
+    """Each screen that comes down is announced on its own line."""
+    state, _, _ = _butler_about_to_lose_a_life()
+    state.sides[0].screens = {Hazards.REFLECT: 5, Hazards.AURORA_VEIL: 5}
+
+    played = step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    faded = {entry.screen for entry in played.entries if isinstance(entry, ScreenFaded)}
+    assert faded == {Hazards.REFLECT, Hazards.AURORA_VEIL}
+    assert all(entry.side == 0 for entry in played.entries if isinstance(entry, ScreenFaded))
+
+
+def test_the_sweep_leaves_his_own_screens_standing():
+    """The same asymmetry the stages have: his side keeps what it put up, their side keeps nothing."""
+    state, _, _ = _butler_about_to_lose_a_life()
+    state.sides[0].screens = {Hazards.REFLECT: 5}
+    state.sides[1].screens = {Hazards.LIGHT_SCREEN: 5}
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    # Still standing, though a turn shorter: the residual countdown is not the sweep.
+    assert Hazards.LIGHT_SCREEN in state.sides[1].screens, "the sweep reached across and took his own"
+    assert state.sides[0].screens == {}
+
+
+def test_an_empty_board_is_swept_without_a_word():
+    """Nothing to sweep, nothing to say — for the screens as well as the stages."""
+    state, _, _ = _butler_about_to_lose_a_life()
+
+    quiet = step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert not any(isinstance(entry, ScreenFaded) for entry in quiet.entries)
+    assert not any(isinstance(entry, StatChangesSwept) for entry in quiet.entries)
+
+
+def test_the_sweep_does_not_touch_the_butler_s_own_boosts():
+    """The two halves have to stay apart: his side keeps what he earned, their side keeps nothing."""
+    state, butler, foe = _butler_about_to_lose_a_life()
+    butler.stat_stages[Stats.ATTACK] = 4
+    foe.stat_stages[Stats.ATTACK] = 4
+
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})  # no Swords Dance here, or the 4 would move on its own
+
+    assert butler.stat_stages[Stats.ATTACK] == 4, "the sweep reached across and took his own boost"
+    assert foe.stat_stages[Stats.ATTACK] == 0
+
+
+def test_nine_lives_catches_every_kind_of_damage_not_just_attacks():
+    """Poison, hazards and recoil spend a life rather than killing him outright."""
+    butler = _mk("Butler", ability=Ability.NINE_LIVES)
+    butler.live_stats.HP = 1
+    butler.apply_damage(999)  # not a move, not an event: a bare call, as residuals make
+    assert not butler.is_fainted()
+    assert butler.live_stats.HP == butler.stat_totals.HP
+    assert butler.lives_used == 1
+
+
+def test_the_life_counter_is_not_a_volatile():
+    """Lives spent persist across a switch-out."""
+    butler = _mk("Butler", ability=Ability.NINE_LIVES)
+    butler.live_stats.HP = 1
+    butler.apply_damage(999)
+    butler.volatiles.clear()
+    assert butler.lives_used == 1
+
+
+# -- Nine Lives cannot be moved, copied or taken away -------------------------
+
+
+def _swap_pair(attacker_ability: Ability, defender_ability: Ability) -> tuple[BattleState, Pokemon, Pokemon]:
+    """A fast Skill Swap user and whatever it is pointed at."""
+    skill_swap = get_move("Skill Swap")
+    attacker = _mk(
+        "Swapper",
+        ability=attacker_ability,
+        moves=MoveSet(skill_swap, QUICK_ATTACK, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    defender = _mk(
+        "Butler",
+        ability=defender_ability,
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=1),
+    )
+    return _battle([attacker], [defender]), attacker, defender
+
+
+def test_skill_swap_cannot_take_nine_lives_off_the_butler() -> None:
+    """One Skill Swap and the final boss is an ordinary six-on-six — the fight stops being the fight."""
+    state, swapper, butler = _swap_pair(Ability.INTIMIDATE, Ability.NINE_LIVES)
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})  # slot one is Skill Swap
+
+    assert butler.ability is Ability.NINE_LIVES
+    assert swapper.ability is Ability.INTIMIDATE, "the challenger walked away with nine lives"
+
+
+def test_skill_swap_fails_the_same_way_when_the_butler_is_the_one_using_it() -> None:
+    """Skill Swap cannot move Nine Lives in either direction."""
+    state, butler, foe = _swap_pair(Ability.NINE_LIVES, Ability.INTIMIDATE)
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert butler.ability is Ability.NINE_LIVES
+    assert foe.ability is Ability.INTIMIDATE, "the butler gave nine lives away"
+
+
+def test_a_blocked_skill_swap_is_reported_as_a_failure() -> None:
+    """Silently doing nothing reads as a bug. It failed, and the log should say so."""
+    from battle_sim.models.log_events import AbilitiesSwapped, MoveFailed
+
+    state, _, _ = _swap_pair(Ability.INTIMIDATE, Ability.NINE_LIVES)
+
+    entries = list(step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE}).entries)
+
+    assert any(isinstance(e, MoveFailed) for e in entries)
+    assert not any(isinstance(e, AbilitiesSwapped) for e in entries)
+
+
+def test_skill_swap_still_works_between_two_ordinary_abilities() -> None:
+    """The counterweight: the block is one named ability, not Skill Swap switched off."""
+    state, one, two = _swap_pair(Ability.INTIMIDATE, Ability.LEVITATE)
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert (one.ability, two.ability) == (Ability.LEVITATE, Ability.INTIMIDATE)
+
+
+def _trace_onto(target_ability: Ability) -> Pokemon:
+    """Switch a Trace holder in against something, and hand back the tracer."""
+    bench = _mk("Bench")
+    tracer = _mk("Tracer", ability=Ability.TRACE)
+    target = _mk("Target", ability=target_ability)
+    state = _battle([bench, tracer], [target])
+    step(state, {0: Action(action=ActionType.SWITCH_OUT, switch_in=tracer), 1: USE_SWORDS_DANCE})
+    return tracer
+
+
+def test_trace_cannot_copy_nine_lives() -> None:
+    """Trace cannot copy Nine Lives."""
+    tracer = _trace_onto(Ability.NINE_LIVES)
+
+    assert tracer.ability is Ability.TRACE, "Trace walked off with nine lives"
+
+
+def test_trace_still_copies_an_ordinary_ability() -> None:
+    tracer = _trace_onto(Ability.LEVITATE)
+
+    assert tracer.ability is Ability.LEVITATE
+
+
+def test_nine_lives_is_the_ability_the_untouchable_list_exists_for() -> None:
+    """Nine Lives is on the untouchable list."""
+    from battle_sim.utils import UNTOUCHABLE_ABILITIES, is_untouchable
+
+    assert Ability.NINE_LIVES in UNTOUCHABLE_ABILITIES
+    assert is_untouchable(Ability.NINE_LIVES)
+    assert not is_untouchable(Ability.TRACE)
+
+
+# -- Mummy and the ability-moving moves ---------------------------------------
+
+
+def _ability_move(
+    move_name: str, user_ability: Ability, target_ability: Ability
+) -> tuple[Pokemon, Pokemon, list[LogEntry]]:
+    """Point one ability-moving move at a target. Returns (user, target, log entries)."""
+    user = _mk(
+        "User",
+        ability=user_ability,
+        moves=MoveSet(get_move(move_name), QUICK_ATTACK, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    target = _mk(
+        "Target",
+        ability=target_ability,
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=1),
+    )
+    state = _battle([user], [target])
+    entries = list(step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE}).entries)
+    return user, target, entries
+
+
+def test_the_ability_moving_moves_do_something_at_all() -> None:
+    """All four loaded from the dex with no effects, so they did nothing."""
+    user, target, _ = _ability_move("Role Play", Ability.INTIMIDATE, Ability.LEVITATE)
+    assert (user.ability, target.ability) == (Ability.LEVITATE, Ability.LEVITATE), "Role Play copies to the user"
+
+    user, target, _ = _ability_move("Entrainment", Ability.INTIMIDATE, Ability.LEVITATE)
+    assert (user.ability, target.ability) == (Ability.INTIMIDATE, Ability.INTIMIDATE), "Entrainment pushes to target"
+
+    _, target, _ = _ability_move("Worry Seed", Ability.INTIMIDATE, Ability.LEVITATE)
+    assert target.ability is Ability.INSOMNIA
+
+    _, target, _ = _ability_move("Simple Beam", Ability.INTIMIDATE, Ability.LEVITATE)
+    assert target.ability is Ability.SIMPLE
+
+
+@pytest.mark.parametrize("move_name", ["Role Play", "Entrainment", "Worry Seed", "Simple Beam"])
+def test_no_ability_moving_move_can_touch_nine_lives(move_name: str) -> None:
+    """Every one of the four, in both directions: none may take it off him, none may hand it out."""
+    user, butler, _ = _ability_move(move_name, Ability.INTIMIDATE, Ability.NINE_LIVES)
+    assert butler.ability is Ability.NINE_LIVES, f"{move_name} changed the butler's ability"
+    assert user.ability is not Ability.NINE_LIVES, f"{move_name} gave the challenger nine lives"
+
+    butler, target, _ = _ability_move(move_name, Ability.NINE_LIVES, Ability.LEVITATE)
+    assert butler.ability is Ability.NINE_LIVES
+    assert target.ability is not Ability.NINE_LIVES, f"{move_name} let the butler give nine lives away"
+
+
+def test_a_refused_ability_change_says_why_exactly_once() -> None:
+    """Silence reads as a bug, and two lines saying the same thing read worse than either."""
+    from battle_sim.models.log_events import AbilityUnchanged, MoveFailed
+
+    _, _, entries = _ability_move("Entrainment", Ability.INTIMIDATE, Ability.NINE_LIVES)
+
+    assert sum(isinstance(e, AbilityUnchanged) for e in entries) == 1
+    assert not any(isinstance(e, MoveFailed) for e in entries), "said it failed on top of saying why"
+
+
+def test_a_forme_defining_ability_is_left_alone_too() -> None:
+    """Multitype cannot be swapped away, since Arceus-Fairy is on the butler's team."""
+    user, arceus, _ = _ability_move("Role Play", Ability.LEVITATE, Ability.MULTITYPE)
+
+    assert arceus.ability is Ability.MULTITYPE
+    assert user.ability is Ability.LEVITATE, "Role Play walked off with Multitype"
+
+
+def _mummy_contact(toucher_ability: Ability) -> Pokemon:
+    """Something fast hits a Mummy with a contact move. Returns the toucher."""
+    toucher = _mk(
+        "Toucher",
+        ability=toucher_ability,
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    mummy = _mk(
+        "Mummy",
+        ability=Ability.MUMMY,
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=1),
+    )
+    state = _battle([toucher], [mummy])
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    return toucher
+
+
+def test_touching_a_mummy_makes_you_one() -> None:
+    assert _mummy_contact(Ability.INTIMIDATE).ability is Ability.MUMMY
+
+
+def test_mummy_cannot_take_nine_lives() -> None:
+    """Mummy cannot overwrite Nine Lives, though his own attacks trigger it."""
+    assert _mummy_contact(Ability.NINE_LIVES).ability is Ability.NINE_LIVES
+
+
+def test_mummy_does_not_spread_on_a_move_that_makes_no_contact() -> None:
+    """The counterweight: it is a contact ability, not a passive aura."""
+    toucher = _mk(
+        "Toucher",
+        ability=Ability.INTIMIDATE,
+        moves=MoveSet(get_move("Ember"), QUICK_ATTACK, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    mummy = _mk(
+        "Mummy",
+        ability=Ability.MUMMY,
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=1),
+    )
+    state = _battle([toucher], [mummy])
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert toucher.ability is Ability.INTIMIDATE
+
+
+# -- Trick against the butler -------------------------------------------------
+
+
+def _trick_at_butler(
+    butler_item: Item = Item.LEFTOVERS,
+    foe_item: Item = Item.CHOICE_SCARF,
+    butler_speed: int = 1,
+    start_hp: int | None = None,
+) -> tuple[BattleState, Pokemon, Pokemon]:
+    """A Trick user swaps items with the butler. Returns (state, foe, butler)."""
+    foe = _mk(
+        "Foe",
+        item=foe_item,
+        moves=MoveSet(get_move("Trick"), QUICK_ATTACK, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    butler = _mk(
+        "Butler",
+        ability=Ability.NINE_LIVES,
+        item=butler_item,
+        base_stats=BaseStats(HP=200, ATTACK=1, DEFENCE=100, SP_ATTACK=1, SP_DEFENCE=100, SPEED=butler_speed),
+    )
+    if start_hp is not None:
+        butler.live_stats.HP = start_hp
+    state = _battle([foe], [butler])
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})  # slot one is Trick; he means to attack back
+    return state, foe, butler
+
+
+def test_trick_swaps_items_as_it_should() -> None:
+    """The plain mechanic, which had no test at all before this."""
+    one = _mk("One", item=Item.LEFTOVERS, moves=MoveSet(get_move("Trick"), QUICK_ATTACK, EMBER, SWORDS_DANCE))
+    two = _mk("Two", item=Item.CHOICE_SCARF)
+    state = _battle([one], [two])
+
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert (one.item, two.item) == (Item.CHOICE_SCARF, Item.LEFTOVERS)
+
+
+def test_the_butler_devours_an_item_tricked_onto_him() -> None:
+    """Hand him something and he eats it, and is half his health better off for it."""
+    from battle_sim.engine.moves import GREEDY_GOURMAND_DIVISOR
+
+    _, _, butler = _trick_at_butler(start_hp=1)
+
+    assert butler.item is Item.NONE, "he was still holding it when his turn ended"
+    assert butler.live_stats.HP == 1 + butler.stat_totals.HP // GREEDY_GOURMAND_DIVISOR
+
+
+def test_he_does_not_eat_his_own_item() -> None:
+    """Only what somebody handed him, or he would spend every battle devouring his own Monocle."""
+    butler = _mk("Butler", ability=Ability.NINE_LIVES, item=Item.LEFTOVERS)
+    state = _battle([_mk("Foe")], [butler])
+
+    step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+
+    assert butler.item is Item.LEFTOVERS
+
+
+def test_a_tricked_item_comes_home_when_he_rises() -> None:
+    """His own item is taken back off whoever holds it — and having eaten theirs, they get nothing."""
+    state, foe, butler = _trick_at_butler()
+    butler.live_stats.HP = 1
+
+    step(state, {0: USE_QUICK_ATTACK, 1: USE_SWORDS_DANCE})
+
+    assert butler.lives_used == 1, "the setup did not spend a life"
+    assert butler.item is Item.LEFTOVERS, "his own item did not come home"
+    assert foe.item is Item.NONE, "the trick survived him rising again"
+
+
+def test_the_trade_is_reversed_rather_than_confiscated_when_he_still_holds_it() -> None:
+    """If he has not eaten it yet, both items go home — nobody is robbed and nothing is minted."""
+    state, foe, butler = _trick_at_butler()
+    butler.tricked_item = Item.NONE  # as though the turn had not ended yet
+    butler.item = Item.CHOICE_SCARF
+    butler.live_stats.HP = 1
+
+    step(state, {0: USE_QUICK_ATTACK, 1: USE_SWORDS_DANCE})
+
+    assert butler.item is Item.LEFTOVERS
+    assert foe.item is Item.CHOICE_SCARF, "the scarf was confiscated rather than handed back"
+
+
+def test_an_ordinary_pokemon_keeps_what_it_traded_for() -> None:
+    """The whole mechanism is his. A Trick between two ordinary Pokemon stands, as it always did."""
+    one = _mk("One", item=Item.LEFTOVERS, moves=MoveSet(get_move("Trick"), QUICK_ATTACK, EMBER, SWORDS_DANCE))
+    two = _mk("Two", item=Item.CHOICE_SCARF)
+    state = _battle([one], [two])
+    step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+
+    assert two.stripped_item is Item.NONE and two.tricked_item is Item.NONE
+    assert (one.item, two.item) == (Item.CHOICE_SCARF, Item.LEFTOVERS)
+
+
+def test_eating_costs_him_the_turn_he_would_have_attacked_in() -> None:
+    """Eating a Tricked item is his action for the round."""
+    _, foe, _ = _trick_at_butler()
+
+    assert foe.live_stats.HP == foe.stat_totals.HP, "he ate *and* attacked"
+
+
+@pytest.mark.parametrize("butler_speed", [1, 500])
+def test_he_eats_after_the_trick_however_fast_he_is(butler_speed: int) -> None:
+    """He eats the item after the Trick lands, not before it."""
+    _, _, butler = _trick_at_butler(butler_speed=butler_speed)
+
+    assert butler.item is Item.NONE, f"at speed {butler_speed} he never got to eat it"
+    assert butler.tricked_item is Item.NONE
+
+
+def test_even_a_priority_move_does_not_let_him_move_first() -> None:
+    """Quick Attack is +1 and would ordinarily jump the bracket entirely."""
+    foe = _mk(
+        "Foe",
+        item=Item.CHOICE_SCARF,
+        moves=MoveSet(get_move("Trick"), QUICK_ATTACK, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=100),
+    )
+    butler = _mk(
+        "Meowfred",
+        ability=Ability.NINE_LIVES,
+        item=Item.LEFTOVERS,
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=500),
+    )
+    state = _battle([foe], [butler])
+
+    step(state, {0: USE_TACKLE, 1: USE_QUICK_ATTACK})
+
+    assert butler.item is Item.NONE, "he outran the Trick and never ate"
+    assert foe.live_stats.HP == foe.stat_totals.HP, "the Quick Attack went off as well as the meal"
+
+
+def test_an_ordinary_trick_still_resolves_in_speed_order() -> None:
+    """The reordering is his alone — a Trick between two ordinary Pokemon is an ordinary move."""
+    fast = _mk(
+        "Fast",
+        item=Item.CHOICE_SCARF,
+        moves=MoveSet(get_move("Trick"), QUICK_ATTACK, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=100),
+    )
+    slow = _mk(
+        "Slow",
+        item=Item.LEFTOVERS,
+        base_stats=BaseStats(HP=200, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=500),
+    )
+    state = _battle([fast], [slow])
+
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert fast.live_stats.HP < fast.stat_totals.HP, "the faster ordinary Pokemon never got its move"
+
+
+def test_the_butler_cannot_be_stalled_out_of_pp() -> None:
+    """His moves never run out, even against Pressure."""
+    from battle_sim.models.pokemon import BUTLERS_PP
+
+    butler = _mk("Meowfred", ability=Ability.NINE_LIVES)
+
+    assert set(butler.pp.values()) == {BUTLERS_PP}
+
+
+def test_everybody_else_keeps_the_pp_their_moves_list() -> None:
+    """Unlimited PP is keyed on the ability, which nobody else can acquire."""
+    ordinary = _mk("Ordinary")
+
+    assert set(ordinary.pp.values()) != {99}
+    assert ordinary.pp[MoveSlot.FIRST] == TACKLE.pp
+
+
+def test_the_tenth_blow_finds_him_standing():
+    """After nine lives the next blow leaves him standing at 1 HP."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert not butler.is_fainted(), "he fell with a last stand still in him"
+    assert butler.live_stats.HP == 1
+    assert butler.made_last_stand
+
+
+def test_and_the_blow_after_that_does_not():
+    """Once. A butler who cannot be killed twice cannot be killed at all."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    butler.made_last_stand = True
+
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert butler.is_fainted()
+
+
+def test_the_last_stand_sweeps_the_field_and_ends_the_battle():
+    """His last stand clears the field and ends the battle."""
+    state, butler, foe = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    state.field.weather = Weather.SANDSTORM
+    state.field.weather_turns_left = 5
+    state.sides[0].hazards[Hazards.STEALTH_ROCK] = 1
+    state.sides[0].screens[Hazards.REFLECT] = 5
+
+    played = step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert any(isinstance(entry, LastStand) for entry in played.entries)
+    assert state.field.weather is Weather.NONE
+    assert not state.sides[0].hazards and not state.sides[0].screens
+    assert state.outcome is Outcome.P1_WIN, "the trainer who got him there won"
+
+
+def test_the_last_stand_takes_the_status_with_it():
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    butler.status = Status.BURN
+
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert butler.status is Status.NONE
+
+
+def test_he_only_yields_the_once():
+    """A last stand is announced once."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    butler.made_last_stand = True
+    butler.live_stats.HP = butler.stat_totals.HP  # whole, and out of lives: the desperate form
+
+    played = step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert not any(isinstance(entry, LastStand) for entry in played.entries), "he conceded twice"
+    assert state.outcome is None, "and ended a battle that had barely started"
+    assert not butler.is_fainted() and butler.live_stats.HP < butler.stat_totals.HP, "he took the hit"
+
+
+def test_the_grip_that_takes_his_last_life_does_not_crash_the_turn():
+    """Magma Storm's squeeze, on the blow that spends his ninth life."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    butler.live_stats.HP = butler.stat_totals.HP
+    butler.volatiles[ExtraStatus.PARTIALLY_TRAPPED] = 1
+    # Enough squeezes to get him there, each one an eighth of his bar.
+    for _ in range(9):
+        butler.volatiles[ExtraStatus.PARTIALLY_TRAPPED] = 1
+        step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+        if butler.made_last_stand:
+            break
+
+    assert butler.made_last_stand, "he never got low enough for the squeeze to finish him"
+    assert not butler.is_fainted() and butler.live_stats.HP == 1
+    assert ExtraStatus.PARTIALLY_TRAPPED not in butler.volatiles, "he swept the field but is still held"
+
+
+def test_he_yields_when_the_tenth_blow_is_chip_damage():
+    """The stand has to be announced whatever took it, not only a move."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+    butler.status = Status.BURN  # the chip that will take the tenth blow
+    butler.live_stats.HP = 1
+
+    # Both sides set up, so only the burn touches him this turn.
+    played = step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+
+    assert butler.made_last_stand and butler.live_stats.HP == 1
+    assert any(isinstance(entry, LastStand) for entry in played.entries), "he stood in silence"
+    assert state.outcome is Outcome.P1_WIN, "the battle never conceded"
+
+
+def test_the_stand_is_announced_once_however_it_arrived():
+    """The sweep must not double up with the move path that already handles the common case."""
+    state, butler, _ = _butler_about_to_lose_a_life()
+    butler.lives_used = NINE_LIVES
+
+    played = step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert len([e for e in played.entries if isinstance(e, LastStand)]) == 1
+
+
+def test_somebody_without_nine_lives_simply_faints():
+    """The whole ceremony hangs off the ability, not off being on low health."""
+    foe = _mk("Foe", base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200))
+    ordinary = _mk(
+        "Ordinary", base_stats=BaseStats(HP=200, ATTACK=1, DEFENCE=100, SP_ATTACK=1, SP_DEFENCE=100, SPEED=1)
+    )
+    ordinary.live_stats.HP = 1
+    state = _battle([foe], [ordinary])
+
+    step(state, {0: USE_TACKLE, 1: USE_TACKLE})
+
+    assert ordinary.is_fainted() and not ordinary.made_last_stand

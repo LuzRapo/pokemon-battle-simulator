@@ -10,6 +10,12 @@ from battle_sim.models.pokemon import Pokemon
 from battle_sim.utils import Ability, ExtraStatus, Status
 
 
+def _release_anyone_it_was_holding(state: BattleState, side_index: int) -> None:
+    """A wrap ends when whoever was doing the wrapping leaves."""
+    victim = state.sides[1 - side_index].active_pokemon
+    victim.volatiles.pop(ExtraStatus.PARTIALLY_TRAPPED, None)
+
+
 def _execute_switch(state: BattleState, side_index: int, action: Action, log: BattleLog) -> None:
     assert action.switch_in is not None
     side = state.sides[side_index]
@@ -29,6 +35,8 @@ def _execute_switch(state: BattleState, side_index: int, action: Action, log: Ba
     outgoing.disabled_slot = None
     outgoing.locked_slot = None
     outgoing.charging_slot = None
+    outgoing.rolling_hits = 0
+    _release_anyone_it_was_holding(state, side_index)
     if outgoing.status is Status.TOXIC:
         outgoing.status_turns = 0
     unregister_active(state.bus, state.effects, outgoing)
@@ -37,6 +45,8 @@ def _execute_switch(state: BattleState, side_index: int, action: Action, log: Ba
     outgoing.paradox_boost = None
     outgoing.paradox_from_booster = False
     log.add(Switched(side=side_index, withdrew=outgoing.nickname, sent_out=incoming.nickname))
+    incoming.turns_active = 0
+    incoming.just_switched_in = True
     register_active(state.bus, state.effects, incoming)
     if Ability.NEUTRALIZING_GAS in (outgoing.ability, incoming.ability):
         _sync_neutralizing_gas(state)

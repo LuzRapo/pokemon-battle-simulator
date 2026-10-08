@@ -2,13 +2,26 @@ from battle_sim.database.loader import get_move
 from battle_sim.engine import step
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
+from battle_sim.mechanics.items import static_damage_modifiers
 from battle_sim.mechanics.priority import effective_speed
 from battle_sim.models.actions import Action, ActionType
-from battle_sim.models.log_events import MoveUsed
+from battle_sim.models.log_events import (
+    AirBalloonPopped,
+    AirBalloonRevealed,
+    DamageDealt,
+    Effectiveness,
+    FloatedOnAirBalloon,
+    MoveUsed,
+)
 from battle_sim.models.moves import MoveSet, MoveSlot
 from battle_sim.models.pokemon import Pokemon
+from battle_sim.models.spec import PokemonSpec
 from battle_sim.models.stats import BaseStats, EVs, IVs
+from battle_sim.teams import build_pokemon
 from battle_sim.utils import Ability, Hazards, Item, Nature, Stats, Status, Target, Type
+
+# Whatever is in the first slot, aimed at the other side: Knock Off or Trick, depending on the set.
+KNOCK = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
 
 TACKLE = get_move("Tackle")
 EMBER = get_move("Ember")
@@ -48,9 +61,14 @@ def _mk(
     )
 
 
-def _battle(side0: list[Pokemon], side1: list[Pokemon], seed: int = 0) -> BattleState:
+def _battle(
+    side0: list[Pokemon],
+    side1: list[Pokemon],
+    seed: int = 0,
+    side1_hazards: dict[Hazards, int] | None = None,
+) -> BattleState:
     return BattleState(
-        sides=(SideState(team=side0), SideState(team=side1)),
+        sides=(SideState(team=side0), SideState(team=side1, hazards=side1_hazards or {})),
         rng=RNG(seed=seed),
     )
 
@@ -230,6 +248,94 @@ def test_air_balloon_grants_ground_immunity():
     use_eq = Action(action=ActionType.USE_MOVE, target=Target.ALL_ADJACENT, move=MoveSlot.FIRST)
     step(state, {0: use_eq, 1: USE_SWORDS_DANCE})
     assert defender.live_stats.HP == defender.stat_totals.HP
+    assert defender.item is Item.AIR_BALLOON
+
+
+def test_air_balloon_says_why_the_ground_move_did_nothing():
+    """Air Balloon announces itself on switch-in."""
+    earthquake = get_move("Earthquake")
+    attacker = _mk(
+        "A",
+        moves=MoveSet(earthquake, TACKLE, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    defender = _mk("B", item=Item.AIR_BALLOON)
+    state = _battle([attacker], [defender])
+    use_eq = Action(action=ActionType.USE_MOVE, target=Target.ALL_ADJACENT, move=MoveSlot.FIRST)
+
+    log = step(state, {0: use_eq, 1: USE_SWORDS_DANCE})
+
+    assert any(isinstance(entry, FloatedOnAirBalloon) for entry in log)
+    # And it must not claim to be effective on the way to doing nothing.
+    assert not any(isinstance(entry, Effectiveness) for entry in log)
+    assert not any(isinstance(entry, DamageDealt) and entry.side == 1 for entry in log)
+
+
+def test_an_air_balloon_announces_itself_on_the_way_in():
+    """The balloon announcement tells the opponent not to use Ground moves."""
+    attacker = _mk("A")
+    first, balloon = _mk("B1"), _mk("B2", item=Item.AIR_BALLOON)
+    state = _battle([attacker], [first, balloon])
+    switch = Action(action=ActionType.SWITCH_OUT, switch_in=balloon)
+
+    log = step(state, {0: USE_SWORDS_DANCE, 1: switch})
+
+    assert any(isinstance(entry, AirBalloonRevealed) for entry in log)
+
+
+def test_nothing_is_announced_for_a_pokemon_carrying_no_balloon():
+    attacker = _mk("A")
+    first, plain = _mk("B1"), _mk("B2")
+    state = _battle([attacker], [first, plain])
+    switch = Action(action=ActionType.SWITCH_OUT, switch_in=plain)
+
+    log = step(state, {0: USE_SWORDS_DANCE, 1: switch})
+
+    assert not any(isinstance(entry, AirBalloonRevealed) for entry in log)
+
+
+def test_air_balloon_pops_on_any_damage_at_all_not_only_on_being_hit():
+    """House rule: any damage pops a balloon, not only an attack."""
+    attacker = _mk("A")
+    first = _mk("B1")
+    holder = _mk("B2", item=Item.AIR_BALLOON)
+    state = _battle([attacker], [first, holder], side1_hazards={Hazards.STEALTH_ROCK: 1})
+    switch = Action(action=ActionType.SWITCH_OUT, switch_in=holder)
+
+    log = step(state, {0: USE_SWORDS_DANCE, 1: switch})
+
+    assert any(isinstance(entry, AirBalloonPopped) for entry in log)
+    assert holder.item is Item.NONE
+    assert holder.live_stats.HP < holder.stat_totals.HP  # it really did take the hazard
+
+
+def test_a_balloon_survives_a_switch_in_that_costs_nothing():
+    """A balloon survives switching in; only damage pops it."""
+    attacker = _mk("A")
+    first, holder = _mk("B1"), _mk("B2", item=Item.AIR_BALLOON)
+    state = _battle([attacker], [first, holder])
+
+    log = step(state, {0: USE_SWORDS_DANCE, 1: Action(action=ActionType.SWITCH_OUT, switch_in=holder)})
+
+    assert not any(isinstance(entry, AirBalloonPopped) for entry in log)
+    assert holder.item is Item.AIR_BALLOON
+
+
+def test_a_ground_move_leaves_the_balloon_whole():
+    """The one attack that must not burst it: it never reached the holder, so it cannot have."""
+    earthquake = get_move("Earthquake")
+    attacker = _mk(
+        "A",
+        moves=MoveSet(earthquake, TACKLE, EMBER, SWORDS_DANCE),
+        base_stats=BaseStats(HP=100, ATTACK=200, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200),
+    )
+    defender = _mk("B", item=Item.AIR_BALLOON)
+    state = _battle([attacker], [defender])
+    use_eq = Action(action=ActionType.USE_MOVE, target=Target.ALL_ADJACENT, move=MoveSlot.FIRST)
+
+    log = step(state, {0: use_eq, 1: USE_SWORDS_DANCE})
+
+    assert not any(isinstance(entry, AirBalloonPopped) for entry in log)
     assert defender.item is Item.AIR_BALLOON
 
 
@@ -542,3 +648,80 @@ def test_wellspring_mask_boosts_its_ogerpon():
         return hp - defender.live_stats.HP
 
     assert dmg("Ogerpon-Wellspring") > dmg("TestMon")
+
+
+def test_the_monocle_is_technician_in_an_item():
+    """The butler's item boosts moves of 60 base power or less."""
+    monocled = _mk("Monocle", item=Item.MEOWFREDS_MONOCLE)
+    target = _mk("Target")
+    weak = static_damage_modifiers(TACKLE.type, TACKLE.category, monocled, target, 60)
+    strong = static_damage_modifiers(TACKLE.type, TACKLE.category, monocled, target, 61)
+    assert weak["power_mods_4096"] == [6144]
+    assert "power_mods_4096" not in strong
+
+
+def test_the_monocle_never_bites_back():
+    """A Life Orb costs a tenth of your health per attack. This costs nothing, which is the point."""
+    monocled = _mk("Monocle", item=Item.MEOWFREDS_MONOCLE)
+    orbed = _mk("Orb", item=Item.LIFE_ORB)
+    for attacker in (monocled, orbed):
+        step(_battle([attacker], [_mk("Dummy")]), {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
+    assert monocled.live_stats.HP == monocled.stat_totals.HP
+    assert orbed.live_stats.HP < orbed.stat_totals.HP
+
+
+# -- what cannot be taken off a Pokemon ----------------------------------------------------------
+
+
+def _holder(species: str, item: Item, moves: list[str]) -> Pokemon:
+    return build_pokemon(PokemonSpec(species=species, level=50, item=item, moves=moves))
+
+
+def _knock_off_at(target: Pokemon) -> Pokemon:
+    """One turn of Knock Off against `target`, returning the target."""
+    attacker = _holder("Tyranitar", Item.NONE, ["Knock Off"])
+    state = BattleState(sides=(SideState(team=[attacker]), SideState(team=[target])), rng=RNG(seed=1))
+    step(state, {0: KNOCK, 1: KNOCK})
+    return target
+
+
+def test_knock_off_cannot_take_a_mega_stone_from_the_pokemon_it_belongs_to() -> None:
+    """Mega Stones cannot be knocked off the Pokemon they belong to."""
+    assert _knock_off_at(_holder("Garchomp", Item.GARCHOMPITE, ["Outrage"])).item is Item.GARCHOMPITE
+
+
+def test_the_same_stone_on_somebody_else_is_an_ordinary_held_item() -> None:
+    """It is fused to the species it transforms, not to whoever picked it up."""
+    assert _knock_off_at(_holder("Snorlax", Item.GARCHOMPITE, ["Body Slam"])).item is Item.NONE
+
+
+def test_knock_off_cannot_take_a_z_crystal_from_anybody() -> None:
+    """Z-Crystals are tied to no species and still cannot be taken — the rule as written."""
+    assert _knock_off_at(_holder("Snorlax", Item.NORMALIUM_Z, ["Body Slam"])).item is Item.NORMALIUM_Z
+    assert _knock_off_at(_holder("Pikachu", Item.PIKANIUM_Z, ["Thunderbolt"])).item is Item.PIKANIUM_Z
+
+
+def test_knock_off_still_takes_an_ordinary_item() -> None:
+    """The fix must not have quietly disarmed the move."""
+    assert _knock_off_at(_holder("Snorlax", Item.LEFTOVERS, ["Body Slam"])).item is Item.NONE
+
+
+def test_trick_refuses_a_trade_either_half_of_which_is_welded_on() -> None:
+    """Otherwise Trick launders exactly what Knock Off cannot touch."""
+    garchomp = _holder("Garchomp", Item.GARCHOMPITE, ["Trick"])
+    snorlax = _holder("Snorlax", Item.LEFTOVERS, ["Body Slam"])
+    state = BattleState(sides=(SideState(team=[garchomp]), SideState(team=[snorlax])), rng=RNG(seed=1))
+
+    step(state, {0: KNOCK, 1: KNOCK})
+
+    assert garchomp.item is Item.GARCHOMPITE and snorlax.item is Item.LEFTOVERS
+
+
+def test_trick_still_trades_two_ordinary_items() -> None:
+    tricker = _holder("Alakazam", Item.CHOICE_SCARF, ["Trick"])
+    victim = _holder("Snorlax", Item.LEFTOVERS, ["Body Slam"])
+    state = BattleState(sides=(SideState(team=[tricker]), SideState(team=[victim])), rng=RNG(seed=1))
+
+    step(state, {0: KNOCK, 1: KNOCK})
+
+    assert tricker.item is Item.LEFTOVERS and victim.item is Item.CHOICE_SCARF

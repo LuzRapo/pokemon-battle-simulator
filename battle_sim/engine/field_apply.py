@@ -100,6 +100,10 @@ def _apply_side_condition(
         return
 
     if effect.kind in _SCREEN_HAZARDS:
+        # A screen already standing cannot be re-raised, as in the games.
+        if effect.kind in target_side.screens:
+            log.add(MoveFailed())
+            return
         target_side.screens[effect.kind] = 8 if attacker.item is Item.LIGHT_CLAY else (effect.duration_turns or 5)
         log.add(ScreenSet(side=target_index, screen=effect.kind))
         return

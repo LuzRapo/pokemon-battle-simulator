@@ -43,6 +43,7 @@ P1's Garchomp's Attack rose by 2!
 Sandstorm faded.
 -- turn 5 --
 P1's Garchomp used Dragon Claw!
+A critical hit!
 P2's Staraptor took 138 damage!
 P2's Staraptor fainted!
 P1's Garchomp was hurt by Life Orb! (35 HP)

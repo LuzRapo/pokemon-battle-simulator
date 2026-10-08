@@ -5,6 +5,8 @@ from battle_sim.utils import Nature, NatureEffect, StageBases, Stats
 
 
 def calculate_total_hp(base: int, iv: int, ev: int, lvl: int) -> int:
+    if base == 1:  # Shedinja: HP is always exactly 1, regardless of level/IVs/EVs
+        return 1
     return floor(((2 * base + iv + floor(ev / 4)) * lvl) / 100) + lvl + 10
 
 

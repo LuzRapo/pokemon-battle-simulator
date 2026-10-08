@@ -2,8 +2,16 @@ from dataclasses import asdict
 
 import pytest
 
+from battle_sim.maths.stats import calculate_total_hp
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.utils import Stats
+
+
+@pytest.mark.parametrize("level", [1, 50, 100])
+@pytest.mark.parametrize("iv", [0, 31])
+@pytest.mark.parametrize("ev", [0, 252])
+def test_shedinjas_hp_is_always_exactly_one(level: int, iv: int, ev: int) -> None:
+    assert calculate_total_hp(base=1, iv=iv, ev=ev, lvl=level) == 1
 
 
 def assert_stats(pokemon: Pokemon, expected: dict[str, int]) -> None:

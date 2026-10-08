@@ -1,27 +1,55 @@
+import json
+import re
 from datetime import date
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from loguru import logger
 
 SOURCES = {
     "moves.json": "https://play.pokemonshowdown.com/data/moves.json",
     "pokedex.json": "https://play.pokemonshowdown.com/data/pokedex.json",
+    "learnsets.json": "https://play.pokemonshowdown.com/data/learnsets.json",
+    "randbats_gen7.json": "https://pkmn.github.io/randbats/data/gen7randombattle.json",
 }
 
+# Showdown ships Gen 7 tiers as a TS module, which `_write_gen7_tiers` converts to plain JSON.
+GEN7_TIERS_SOURCE = "https://raw.githubusercontent.com/smogon/pokemon-showdown/master/data/mods/gen7/formats-data.ts"
+GEN7_TIERS_FILENAME = "gen7_tiers.json"
+
 VENDOR_DIR = Path(__file__).parent / "_vendor"
+_ENTRY_RE = re.compile(r"(\w+):\s*\{([^{}]*)\}")
+_TIER_RE = re.compile(r'tier:\s*"([^"]+)"')
 
 
 def refresh() -> None:
     VENDOR_DIR.mkdir(exist_ok=True)
     for filename, url in SOURCES.items():
-        logger.info(f"Fetching {url}")
-        with urlopen(url) as response:
-            payload = response.read()
-        (VENDOR_DIR / filename).write_bytes(payload)
-        logger.info(f"Wrote {filename} ({len(payload):,} bytes)")
-
+        (VENDOR_DIR / filename).write_bytes(_fetch(url))
+    _write_gen7_tiers()
     _write_source_manifest()
+
+
+def _fetch(url: str) -> bytes:
+    logger.info(f"Fetching {url}")
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})  # the CDN 403s python's default UA
+    with urlopen(request) as response:
+        payload: bytes = response.read()
+    logger.info(f"Fetched {url} ({len(payload):,} bytes)")
+    return payload
+
+
+def _write_gen7_tiers() -> None:
+    """`{species_id: tier}` parsed with a regex from Showdown's per-species TS blocks."""
+    source = _fetch(GEN7_TIERS_SOURCE).decode()
+    tiers = {
+        key: tier_match.group(1)
+        for key, body in _ENTRY_RE.findall(source)
+        if (tier_match := _TIER_RE.search(body)) is not None
+    }
+    payload = (json.dumps(tiers, indent=1, sort_keys=True) + "\n").encode()
+    (VENDOR_DIR / GEN7_TIERS_FILENAME).write_bytes(payload)
+    logger.info(f"Wrote {GEN7_TIERS_FILENAME} ({len(tiers):,} species)")
 
 
 def _write_source_manifest() -> None:
@@ -29,13 +57,12 @@ def _write_source_manifest() -> None:
     lines = [
         "# Vendored data",
         "",
-        "Source: https://play.pokemonshowdown.com/data/",
-        "",
         "| File | URL |",
         "| --- | --- |",
     ]
     for filename, url in SOURCES.items():
         lines.append(f"| `{filename}` | {url} |")
+    lines.append(f"| `{GEN7_TIERS_FILENAME}` | {GEN7_TIERS_SOURCE} (converted from TS to `{{id: tier}}` JSON) |")
     lines += [
         "",
         f"Fetched: {today}.",

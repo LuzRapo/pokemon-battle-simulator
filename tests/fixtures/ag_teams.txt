@@ -1,0 +1,1239 @@
+=== AG01 Arceus-Steel/Blissey/Giratina (131 games) ===
+
+Arceus-Steel @ Iron Plate
+Ability: Multitype
+Level: 50
+EVs: 252 SpA / 4 SpD / 252 Spe
+Timid Nature
+- Recover
+- Judgment
+- Calm Mind
+- Earth Power
+
+Blissey @ Shed Shell
+Ability: Natural Cure
+Level: 50
+EVs: 252 HP / 252 SpD
+Sassy Nature
+- Toxic
+- Soft-Boiled
+- Heal Bell
+- Confide
+
+Giratina @ Leftovers
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 204 Def / 52 SpD
+Relaxed Nature
+- Toxic
+- Will-O-Wisp
+- Defog
+- Rest
+
+Ho-Oh @ Leftovers
+Ability: Regenerator
+Level: 50
+EVs: 252 HP / 204 Def / 52 SpD
+Impish Nature
+- Sacred Fire
+- Toxic
+- Defog
+- Whirlwind
+
+Lugia @ Leftovers
+Ability: Multiscale
+Level: 50
+EVs: 248 HP / 8 SpA / 252 Spe
+Timid Nature
+- Toxic
+- Roost
+- Whirlwind
+- Aeroblast
+
+Sableye @ Sablenite
+Ability: Magic Bounce
+Level: 50
+EVs: 252 HP / 252 Def
+Impish Nature
+- Recover
+- Fake Out
+- Foul Play
+- Toxic
+
+=== AG02 Arceus-Ghost/Kyogre/Necrozma-Dusk-Mane (55 games) ===
+
+Arceus-Ghost @ Ghostium Z
+Ability: Multitype
+Level: 50
+EVs: 252 Atk / 4 Def / 252 Spe
+Jolly Nature
+- Swords Dance
+- Shadow Force
+- Extreme Speed
+- Brick Break
+
+Kyogre @ Blue Orb
+Ability: Primordial Sea
+Level: 50
+EVs: 4 Def / 252 SpA / 252 Spe
+Modest Nature
+- Ice Beam
+- Thunder
+- Origin Pulse
+- Water Spout
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Shuckle @ Mental Herb
+Ability: Sturdy
+Level: 50
+EVs: 252 Def / 4 SpD / 252 Spe
+Timid Nature
+- Stealth Rock
+- Sticky Web
+- Encore
+- Toxic
+
+Tentacruel @ Black Sludge
+Ability: Clear Body
+Level: 50
+EVs: 252 SpA / 4 SpD / 252 Spe
+Timid Nature
+- Scald
+- Toxic Spikes
+- Haze
+- Rapid Spin
+
+=== AG03 Arceus-Fairy/Groudon/Marshadow (45 games) ===
+
+Arceus-Fairy @ Pixie Plate
+Ability: Multitype
+Level: 50
+EVs: 252 HP / 4 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Recover
+- Defog
+- Toxic
+
+Groudon @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Stealth Rock
+- Precipice Blades
+- Fire Punch
+- Earthquake
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Yveltal @ Life Orb
+Ability: Dark Aura
+Level: 50
+EVs: 4 Atk / 252 SpA / 252 Spe
+Modest Nature
+- Oblivion Wing
+- Dark Pulse
+- Sucker Punch
+- Taunt
+
+=== AG04 Arceus-Steel/Groudon/Necrozma-Dusk-Mane (40 games) ===
+
+Arceus-Steel @ Iron Plate
+Ability: Multitype
+Level: 50
+EVs: 252 SpA / 4 SpD / 252 Spe
+Timid Nature
+- Recover
+- Judgment
+- Calm Mind
+- Earth Power
+
+Groudon @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Stealth Rock
+- Precipice Blades
+- Fire Punch
+- Earthquake
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Xerneas @ Power Herb
+Ability: Fairy Aura
+Level: 50
+EVs: 248 HP / 252 SpA / 8 SpD
+Modest Nature
+- Moonblast
+- Geomancy
+- Focus Blast
+- Thunder
+
+Zygarde @ Leftovers
+Ability: Power Construct
+Level: 50
+EVs: 48 HP / 216 Atk / 12 SpD / 232 Spe
+Adamant Nature
+- Thousand Arrows
+- Substitute
+- Glare
+- Dragon Dance
+
+=== AG05 Arceus-Fairy/Groudon/Marshadow (39 games) ===
+
+Arceus-Fairy @ Pixie Plate
+Ability: Multitype
+Level: 50
+EVs: 252 HP / 4 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Recover
+- Defog
+- Toxic
+
+Groudon @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Stealth Rock
+- Precipice Blades
+- Fire Punch
+- Earthquake
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Zygarde @ Leftovers
+Ability: Power Construct
+Level: 50
+EVs: 48 HP / 216 Atk / 12 SpD / 232 Spe
+Adamant Nature
+- Thousand Arrows
+- Substitute
+- Glare
+- Dragon Dance
+
+=== AG06 Arceus-Steel/Clefable/Giratina (37 games) ===
+
+Arceus-Steel @ Iron Plate
+Ability: Multitype
+Level: 50
+EVs: 252 SpA / 4 SpD / 252 Spe
+Timid Nature
+- Recover
+- Judgment
+- Calm Mind
+- Earth Power
+
+Clefable @ Leftovers
+Ability: Unaware
+Level: 50
+EVs: 252 HP / 252 SpA / 4 SpD
+Modest Nature
+- Moonblast
+- Cosmic Power
+- Calm Mind
+- Soft-Boiled
+
+Giratina @ Leftovers
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 204 Def / 52 SpD
+Relaxed Nature
+- Toxic
+- Will-O-Wisp
+- Defog
+- Rest
+
+Ho-Oh @ Leftovers
+Ability: Regenerator
+Level: 50
+EVs: 252 HP / 204 Def / 52 SpD
+Impish Nature
+- Sacred Fire
+- Toxic
+- Defog
+- Whirlwind
+
+Lugia @ Leftovers
+Ability: Multiscale
+Level: 50
+EVs: 248 HP / 8 SpA / 252 Spe
+Timid Nature
+- Toxic
+- Roost
+- Whirlwind
+- Aeroblast
+
+Tentacruel @ Black Sludge
+Ability: Clear Body
+Level: 50
+EVs: 252 SpA / 4 SpD / 252 Spe
+Timid Nature
+- Scald
+- Toxic Spikes
+- Haze
+- Rapid Spin
+
+=== AG07 Arceus/Arceus-Ground/Groudon (30 games) ===
+
+Arceus @ Leftovers
+Ability: Multitype
+Level: 50
+EVs: 252 HP / 252 Atk / 4 SpD
+Adamant Nature
+- Extreme Speed
+- Swords Dance
+- Shadow Claw
+- Earthquake
+
+Arceus-Ground @ Earth Plate
+Ability: Multitype
+Level: 50
+EVs: 4 Def / 252 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Ice Beam
+- Recover
+- Stealth Rock
+
+Groudon @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Stealth Rock
+- Precipice Blades
+- Fire Punch
+- Earthquake
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Xerneas @ Power Herb
+Ability: Fairy Aura
+Level: 50
+EVs: 248 HP / 252 SpA / 8 SpD
+Modest Nature
+- Moonblast
+- Geomancy
+- Focus Blast
+- Thunder
+
+=== AG08 Arceus-Flying/Arceus-Ground/Groudon (28 games) ===
+
+Arceus-Flying @ Sky Plate
+Ability: Multitype
+Level: 50
+EVs: 248 HP / 8 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Recover
+- Defog
+- Refresh
+
+Arceus-Ground @ Earth Plate
+Ability: Multitype
+Level: 50
+EVs: 4 Def / 252 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Ice Beam
+- Recover
+- Stealth Rock
+
+Groudon @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Stealth Rock
+- Precipice Blades
+- Fire Punch
+- Earthquake
+
+Lucario @ Lucarionite
+Ability: Adaptability
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Close Combat
+- Meteor Mash
+- Bullet Punch
+- Swords Dance
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Yveltal @ Life Orb
+Ability: Dark Aura
+Level: 50
+EVs: 4 Atk / 252 SpA / 252 Spe
+Modest Nature
+- Oblivion Wing
+- Dark Pulse
+- Sucker Punch
+- Taunt
+
+=== AG09 Arceus-Fairy/Arceus-Steel/Groudon (27 games) ===
+
+Arceus-Fairy @ Pixie Plate
+Ability: Multitype
+Level: 50
+EVs: 252 HP / 4 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Recover
+- Defog
+- Toxic
+
+Arceus-Steel @ Iron Plate
+Ability: Multitype
+Level: 50
+EVs: 252 SpA / 4 SpD / 252 Spe
+Timid Nature
+- Recover
+- Judgment
+- Calm Mind
+- Earth Power
+
+Groudon @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Stealth Rock
+- Precipice Blades
+- Fire Punch
+- Earthquake
+
+Kyogre @ Blue Orb
+Ability: Primordial Sea
+Level: 50
+EVs: 4 Def / 252 SpA / 252 Spe
+Modest Nature
+- Ice Beam
+- Thunder
+- Origin Pulse
+- Water Spout
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+=== AG10 Arceus-Fairy/Groudon/Necrozma-Dusk-Mane (26 games) ===
+
+Arceus-Fairy @ Pixie Plate
+Ability: Multitype
+Level: 50
+EVs: 252 HP / 4 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Recover
+- Defog
+- Toxic
+
+Groudon @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Stealth Rock
+- Precipice Blades
+- Fire Punch
+- Earthquake
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Yveltal @ Life Orb
+Ability: Dark Aura
+Level: 50
+EVs: 4 Atk / 252 SpA / 252 Spe
+Modest Nature
+- Oblivion Wing
+- Dark Pulse
+- Sucker Punch
+- Taunt
+
+Zygarde @ Leftovers
+Ability: Power Construct
+Level: 50
+EVs: 48 HP / 216 Atk / 12 SpD / 232 Spe
+Adamant Nature
+- Thousand Arrows
+- Substitute
+- Glare
+- Dragon Dance
+
+=== AG11 Arceus-Dark/Ho-Oh/Marshadow (22 games) ===
+
+Arceus-Dark @ Dread Plate
+Ability: Multitype
+Level: 50
+EVs: 248 HP / 244 Def / 16 Spe
+Bold Nature
+- Judgment
+- Recover
+- Calm Mind
+- Refresh
+
+Ho-Oh @ Leftovers
+Ability: Regenerator
+Level: 50
+EVs: 252 HP / 204 Def / 52 SpD
+Impish Nature
+- Sacred Fire
+- Toxic
+- Defog
+- Whirlwind
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Xerneas @ Power Herb
+Ability: Fairy Aura
+Level: 50
+EVs: 248 HP / 252 SpA / 8 SpD
+Modest Nature
+- Moonblast
+- Geomancy
+- Focus Blast
+- Thunder
+
+=== AG12 Arceus-Fairy/Ho-Oh/Marshadow (20 games) ===
+
+Arceus-Fairy @ Pixie Plate
+Ability: Multitype
+Level: 50
+EVs: 252 HP / 4 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Recover
+- Defog
+- Toxic
+
+Ho-Oh @ Leftovers
+Ability: Regenerator
+Level: 50
+EVs: 252 HP / 204 Def / 52 SpD
+Impish Nature
+- Sacred Fire
+- Toxic
+- Defog
+- Whirlwind
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Yveltal @ Life Orb
+Ability: Dark Aura
+Level: 50
+EVs: 4 Atk / 252 SpA / 252 Spe
+Modest Nature
+- Oblivion Wing
+- Dark Pulse
+- Sucker Punch
+- Taunt
+
+=== AG13 Arceus-Dark/Arceus-Fairy/Groudon (20 games) ===
+
+Arceus-Dark @ Dread Plate
+Ability: Multitype
+Level: 50
+EVs: 248 HP / 244 Def / 16 Spe
+Bold Nature
+- Judgment
+- Recover
+- Calm Mind
+- Refresh
+
+Arceus-Fairy @ Pixie Plate
+Ability: Multitype
+Level: 50
+EVs: 252 HP / 4 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Recover
+- Defog
+- Toxic
+
+Groudon @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Stealth Rock
+- Precipice Blades
+- Fire Punch
+- Earthquake
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+=== AG14 Chansey/Giratina/Ho-Oh (16 games) ===
+
+Chansey @ Eviolite
+Ability: Natural Cure
+Level: 50
+EVs: 248 HP / 252 Def / 8 SpD
+Bold Nature
+- Soft-Boiled
+- Toxic
+- Heal Bell
+- Seismic Toss
+
+Giratina @ Leftovers
+Ability: Pressure
+Level: 50
+EVs: 252 HP / 204 Def / 52 SpD
+Relaxed Nature
+- Toxic
+- Will-O-Wisp
+- Defog
+- Rest
+
+Ho-Oh @ Leftovers
+Ability: Regenerator
+Level: 50
+EVs: 252 HP / 204 Def / 52 SpD
+Impish Nature
+- Sacred Fire
+- Toxic
+- Defog
+- Whirlwind
+
+Kyogre @ Blue Orb
+Ability: Primordial Sea
+Level: 50
+EVs: 4 Def / 252 SpA / 252 Spe
+Modest Nature
+- Ice Beam
+- Thunder
+- Origin Pulse
+- Water Spout
+
+Skarmory @ Leftovers
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Roost
+- Whirlwind
+- Spikes
+- Toxic
+
+Tyranitar @ Tyranitarite
+Ability: Sand Stream
+Level: 50
+EVs: 252 Atk / 252 Def / 4 Spe
+Adamant Nature
+- Earthquake
+- Stone Edge
+- Crunch
+- Dragon Dance
+
+=== AG15 Arceus-Ghost/Groudon/Kartana (16 games) ===
+
+Arceus-Ghost @ Ghostium Z
+Ability: Multitype
+Level: 50
+EVs: 252 Atk / 4 Def / 252 Spe
+Jolly Nature
+- Swords Dance
+- Shadow Force
+- Extreme Speed
+- Brick Break
+
+Groudon @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Stealth Rock
+- Precipice Blades
+- Fire Punch
+- Earthquake
+
+Kartana @ Choice Scarf
+Ability: Beast Boost
+Level: 50
+EVs: 252 Atk / 48 Def / 208 Spe
+Adamant Nature
+- Leaf Blade
+- Sacred Sword
+- Smart Strike
+- Psycho Cut
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Shuckle @ Mental Herb
+Ability: Sturdy
+Level: 50
+EVs: 252 Def / 4 SpD / 252 Spe
+Timid Nature
+- Stealth Rock
+- Sticky Web
+- Encore
+- Toxic
+
+Yveltal @ Life Orb
+Ability: Dark Aura
+Level: 50
+EVs: 4 Atk / 252 SpA / 252 Spe
+Modest Nature
+- Oblivion Wing
+- Dark Pulse
+- Sucker Punch
+- Taunt
+
+=== AG16 Arceus-Poison/Arceus-Water/Marshadow (15 games) ===
+
+Arceus-Poison @ Toxic Plate
+Ability: Multitype
+Level: 50
+EVs: 252 HP / 4 SpD / 252 Spe
+Timid Nature
+- Recover
+- Defog
+- Poison Jab
+- Stealth Rock
+
+Arceus-Water @ Splash Plate
+Ability: Multitype
+Level: 50
+EVs: 252 HP / 4 SpA / 252 Spe
+Timid Nature
+- Recover
+- Judgment
+- Toxic
+- Defog
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Tapu Koko @ Light Clay
+Ability: Electric Surge
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Taunt
+- U-turn
+- Volt Switch
+- Dazzling Gleam
+
+=== AG17 Ho-Oh/Marshadow/Necrozma-Dusk-Mane (14 games) ===
+
+Ho-Oh @ Leftovers
+Ability: Regenerator
+Level: 50
+EVs: 252 HP / 204 Def / 52 SpD
+Impish Nature
+- Sacred Fire
+- Toxic
+- Defog
+- Whirlwind
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Tapu Koko @ Light Clay
+Ability: Electric Surge
+Level: 50
+EVs: 4 HP / 252 SpA / 252 Spe
+Timid Nature
+- Taunt
+- U-turn
+- Volt Switch
+- Dazzling Gleam
+
+Zekrom @ Life Orb
+Ability: Teravolt
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Bolt Strike
+- Fusion Bolt
+- Outrage
+- Haze
+
+=== AG18 Arceus-Ground/Chansey/Lugia (14 games) ===
+
+Arceus-Ground @ Earth Plate
+Ability: Multitype
+Level: 50
+EVs: 4 Def / 252 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Ice Beam
+- Recover
+- Stealth Rock
+
+Chansey @ Eviolite
+Ability: Natural Cure
+Level: 50
+EVs: 248 HP / 252 Def / 8 SpD
+Bold Nature
+- Soft-Boiled
+- Toxic
+- Heal Bell
+- Seismic Toss
+
+Lugia @ Leftovers
+Ability: Multiscale
+Level: 50
+EVs: 248 HP / 8 SpA / 252 Spe
+Timid Nature
+- Toxic
+- Roost
+- Whirlwind
+- Aeroblast
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Skarmory @ Leftovers
+Ability: Sturdy
+Level: 50
+EVs: 252 HP / 252 Def / 4 SpD
+Bold Nature
+- Roost
+- Whirlwind
+- Spikes
+- Toxic
+
+Tyranitar @ Tyranitarite
+Ability: Sand Stream
+Level: 50
+EVs: 252 Atk / 252 Def / 4 Spe
+Adamant Nature
+- Earthquake
+- Stone Edge
+- Crunch
+- Dragon Dance
+
+=== AG19 Kyogre/Marshadow/Necrozma-Dusk-Mane (14 games) ===
+
+Kyogre @ Blue Orb
+Ability: Primordial Sea
+Level: 50
+EVs: 4 Def / 252 SpA / 252 Spe
+Modest Nature
+- Ice Beam
+- Thunder
+- Origin Pulse
+- Water Spout
+
+Marshadow @ Focus Sash
+Ability: Technician
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Spectral Thief
+- Shadow Sneak
+- Close Combat
+- Bulk Up
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Xerneas @ Power Herb
+Ability: Fairy Aura
+Level: 50
+EVs: 248 HP / 252 SpA / 8 SpD
+Modest Nature
+- Moonblast
+- Geomancy
+- Focus Blast
+- Thunder
+
+Zygarde @ Leftovers
+Ability: Power Construct
+Level: 50
+EVs: 48 HP / 216 Atk / 12 SpD / 232 Spe
+Adamant Nature
+- Thousand Arrows
+- Substitute
+- Glare
+- Dragon Dance
+
+=== AG20 Arceus-Fairy/Deoxys-Attack/Groudon (13 games) ===
+
+Arceus-Fairy @ Pixie Plate
+Ability: Multitype
+Level: 50
+EVs: 252 HP / 4 SpA / 252 Spe
+Timid Nature
+- Judgment
+- Recover
+- Defog
+- Toxic
+
+Deoxys-Attack @ Focus Sash
+Ability: Pressure
+Level: 50
+EVs: 252 Atk / 4 SpA / 252 Spe
+Lonely Nature
+- Psycho Boost
+- Extreme Speed
+- Ice Beam
+- Superpower
+
+Groudon @ Red Orb
+Ability: Desolate Land
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Stealth Rock
+- Precipice Blades
+- Fire Punch
+- Earthquake
+
+Necrozma-Dusk-Mane @ Ultranecrozium Z
+Ability: Prism Armor
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Jolly Nature
+- Sunsteel Strike
+- Earthquake
+- Swords Dance
+- Photon Geyser
+
+Rayquaza @ Life Orb
+Ability: Delta Stream
+Level: 50
+EVs: 252 Atk / 4 SpD / 252 Spe
+Adamant Nature
+- Dragon Ascent
+- Extreme Speed
+- V-create
+- Dragon Dance
+
+Tapu Lele @ Terrain Extender
+Ability: Psychic Surge
+Level: 50
+EVs: 252 SpA / 4 SpD / 252 Spe
+Timid Nature
+- Moonblast
+- Psychic
+- Taunt
+- Psyshock

@@ -1,6 +1,7 @@
 import json
 from collections import Counter
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from functools import cache
 from pathlib import Path
 from typing import Literal
@@ -86,12 +87,20 @@ _VOLATILE_MAP: dict[str, ExtraStatus] = {
     "foresight": ExtraStatus.IDENTIFIED,
     "miracleeye": ExtraStatus.MIRACLE_EYE,
     "leechseed": ExtraStatus.LEECH_SEED,
+    # Wrap, Bind, Clamp, Fire Spin, Whirlpool, Sand Tomb, Infestation, Magma Storm, Snap Trap and Thunder Cage.
+    "partiallytrapped": ExtraStatus.PARTIALLY_TRAPPED,
     "lockedmove": ExtraStatus.LOCKED_MOVE,
     "nightmare": ExtraStatus.NIGHTMARE,
     "protect": ExtraStatus.PROTECT,
     "substitute": ExtraStatus.SUBSTITUTE,
     "taunt": ExtraStatus.TAUNT,
     "burningbulwark": ExtraStatus.PROTECT,  # the contact-burn rider is not modelled
+    # Every Protect variant shares Protect's own volatile; their riders go unmodelled.
+    "kingsshield": ExtraStatus.PROTECT,
+    "banefulbunker": ExtraStatus.PROTECT,
+    "spikyshield": ExtraStatus.PROTECT,
+    "obstruct": ExtraStatus.PROTECT,
+    "silktrap": ExtraStatus.PROTECT,
     "saltcure": ExtraStatus.SALT_CURE,
     "endure": ExtraStatus.ENDURE,
     "destinybond": ExtraStatus.DESTINY_BOND,
@@ -143,6 +152,7 @@ _CODED_EFFECTS: dict[str, tuple[MoveEffect, ...]] = {
     "morningsun": (CodedEffect(kind=CodedMoveKind.WEATHER_HEAL),),
     "moonlight": (CodedEffect(kind=CodedMoveKind.WEATHER_HEAL),),
     "synthesis": (CodedEffect(kind=CodedMoveKind.WEATHER_HEAL),),
+    "shoreup": (CodedEffect(kind=CodedMoveKind.WEATHER_HEAL),),  # sand rather than sun, but the same shape
     "painsplit": (CodedEffect(kind=CodedMoveKind.PAIN_SPLIT),),
     "strengthsap": (CodedEffect(kind=CodedMoveKind.STRENGTH_SAP),),
     "bellydrum": (CodedEffect(kind=CodedMoveKind.BELLY_DRUM),),
@@ -162,6 +172,8 @@ _CODED_EFFECTS: dict[str, tuple[MoveEffect, ...]] = {
     "partingshot": (
         StatStageChangeEffect(target="TARGET", stages={Stats.ATTACK: -1, Stats.SP_ATTACK: -1}, probability=1.0),
     ),
+    "healbell": (CodedEffect(kind=CodedMoveKind.CURE_PARTY),),
+    "aromatherapy": (CodedEffect(kind=CodedMoveKind.CURE_PARTY),),
     "curse": (CodedEffect(kind=CodedMoveKind.CURSE),),
     "perishsong": (CodedEffect(kind=CodedMoveKind.PERISH_SONG),),
     "revivalblessing": (CodedEffect(kind=CodedMoveKind.REVIVAL_BLESSING),),
@@ -171,8 +183,22 @@ _CODED_EFFECTS: dict[str, tuple[MoveEffect, ...]] = {
     "trick": (CodedEffect(kind=CodedMoveKind.TRICK),),
     "switcheroo": (CodedEffect(kind=CodedMoveKind.TRICK),),
     "skillswap": (CodedEffect(kind=CodedMoveKind.SKILL_SWAP),),
+    # The rest of the ability-moving family.
+    "roleplay": (CodedEffect(kind=CodedMoveKind.ROLE_PLAY),),
+    "entrainment": (CodedEffect(kind=CodedMoveKind.ENTRAINMENT),),
+    "worryseed": (CodedEffect(kind=CodedMoveKind.WORRY_SEED),),
+    "simplebeam": (CodedEffect(kind=CodedMoveKind.SIMPLE_BEAM),),
+    "futuresight": (CodedEffect(kind=CodedMoveKind.FUTURE_SIGHT),),
+    "doomdesire": (CodedEffect(kind=CodedMoveKind.FUTURE_SIGHT),),
     "ruination": (FixedDamageEffect(amount_formula="HALF_TARGET_HP", set_amount=None),),
     "superfang": (FixedDamageEffect(amount_formula="HALF_TARGET_HP", set_amount=None),),
+    "naturesmadness": (FixedDamageEffect(amount_formula="HALF_TARGET_HP", set_amount=None),),
+    "psywave": (FixedDamageEffect(amount_formula="PSYWAVE", set_amount=None),),
+    # The OHKO moves, whose 30% accuracy in the vendored data does the gating.
+    "fissure": (FixedDamageEffect(amount_formula="TARGET_HP", set_amount=None),),
+    "horndrill": (FixedDamageEffect(amount_formula="TARGET_HP", set_amount=None),),
+    "guillotine": (FixedDamageEffect(amount_formula="TARGET_HP", set_amount=None),),
+    "sheercold": (FixedDamageEffect(amount_formula="TARGET_HP", set_amount=None),),
     "endeavor": (FixedDamageEffect(amount_formula="ENDEAVOR", set_amount=None),),
     "counter": (FixedDamageEffect(amount_formula="COUNTER", set_amount=None),),
     "mirrorcoat": (FixedDamageEffect(amount_formula="MIRROR_COAT", set_amount=None),),
@@ -181,10 +207,22 @@ _CODED_EFFECTS: dict[str, tuple[MoveEffect, ...]] = {
 # Revival Blessing's selfSwitch in data only drives PS's revive prompt; the user stays in.
 # Shed Tail's switch and substitute are both handled by its coded effect.
 _SUPPRESS_SELF_SWITCH = frozenset({"revivalblessing", "shedtail"})
+# Gen 7 PP for the recovery moves whose vendor PP carries Generation 9's halving.
+_GEN7_PP: dict[str, int] = {
+    "recover": 10,
+    "roost": 10,
+    "softboiled": 10,
+    "milkdrink": 10,
+    "slackoff": 10,
+    "rest": 10,
+    "shoreup": 10,
+}
 _SUPPRESS_VOLATILE = frozenset({"shedtail"})
 
 _EXCLUDE_NONSTANDARD_SPECIES = frozenset({"CAP", "Custom"})
-_EXCLUDE_NONSTANDARD_MOVES = frozenset({"CAP", "Custom", "LGPE", "Gigantamax", "Unobtainable"})
+# Showdown's "Unobtainable" judges the current generation, so legality is left to `scope.gen7_movepool`.
+_EXCLUDE_NONSTANDARD_MOVES = frozenset({"CAP", "Custom", "LGPE", "Gigantamax"})
+_LEGENDARY_OR_MYTHICAL_TAGS = frozenset({"Sub-Legendary", "Restricted Legendary", "Mythical"})
 
 
 @dataclass
@@ -239,6 +277,12 @@ def _adapt_species(raw: RawSpeciesData) -> BaseSpecies:
         height_m=raw.height_m,
         weight_kg=raw.weight_kg,
         fully_evolved=not raw.evos,
+        evolutions=tuple(raw.evos),
+        pre_evolution=raw.prevo,
+        is_legendary_or_mythical=bool(_LEGENDARY_OR_MYTHICAL_TAGS.intersection(raw.tags)),
+        base_species=raw.base_species,
+        required_item=raw.required_item,
+        required_move=raw.required_move,
     )
 
 
@@ -261,7 +305,29 @@ def _build_boost_effect(
 
 
 # Damaging moves whose base power is 0 in data because it lives in a PS callback (engine/power.py).
-_FORMULA_POWER_MOVES = frozenset({"lowkick", "grassknot", "heavyslam", "heatcrash", "electroball", "beatup"})
+# `willCrit` moves crit at the top stage, so Battle Armor and Shell Armor still refuse them.
+_ALWAYS_CRIT_STAGE = 3
+
+_FORMULA_POWER_MOVES = frozenset(
+    {
+        "lowkick",
+        "grassknot",
+        "heavyslam",
+        "heatcrash",
+        "electroball",
+        "beatup",
+        "gyroball",
+        # These loaded with no damage effect, so each did nothing when used.
+        "return",
+        "frustration",
+        "flail",
+        "reversal",
+        "crushgrip",
+        "wringout",
+        "punishment",
+        "magnitude",
+    }
+)
 
 
 def _damage_effects(raw: RawMoveData, category: Category) -> list[MoveEffect]:
@@ -273,7 +339,7 @@ def _damage_effects(raw: RawMoveData, category: Category) -> list[MoveEffect]:
             DamageEffect(
                 power=raw.base_power or None,
                 category=category,
-                crit_stage=(raw.crit_ratio or 1) - 1,
+                crit_stage=_ALWAYS_CRIT_STAGE if raw.will_crit else (raw.crit_ratio or 1) - 1,
                 contact=bool(raw.flags.get("contact")),
                 multi_hit=multi_hit,
                 recoil_percent=raw.recoil[0] / raw.recoil[1] if raw.recoil else None,
@@ -412,7 +478,7 @@ def _adapt_move(raw: RawMoveData, diag: LoaderDiagnostics) -> Move | None:
         category=category,
         accuracy_probability=_accuracy(raw.accuracy),
         priority=PriorityLevel(raw.priority),
-        pp=raw.pp,
+        pp=_GEN7_PP.get(normalize_id(raw.name), raw.pp),
         target=target,
         effects=tuple(effects),
         self_switch=bool(raw.self_switch) and normalize_id(raw.name) not in _SUPPRESS_SELF_SWITCH,
@@ -422,6 +488,8 @@ def _adapt_move(raw: RawMoveData, diag: LoaderDiagnostics) -> Move | None:
         slicing=bool(raw.flags.get("slicing")),
         sound=bool(raw.flags.get("sound")),
         punching=bool(raw.flags.get("punch")),
+        biting=bool(raw.flags.get("bite")),
+        pulse=bool(raw.flags.get("pulse")),
         wind=bool(raw.flags.get("wind")),
         bullet=bool(raw.flags.get("bullet")),
         healing=bool(raw.flags.get("heal")),
@@ -431,7 +499,27 @@ def _adapt_move(raw: RawMoveData, diag: LoaderDiagnostics) -> Move | None:
         recharges=raw.self_effects is not None and raw.self_effects.volatile_status == "mustrecharge",
         force_switch=raw.force_switch,
         typeless=raw.struggle_recoil,  # only Struggle; its typelessness lives in PS code (onEffectiveness -> 0)
+        has_crash_damage=raw.has_crash_damage,
+        defrosts_user=bool(raw.flags.get("defrost")),
+        thaws_target=raw.thaws_target,
     )
+
+
+# Species that exist only here.
+_HOUSE_SPECIES: dict[str, BaseSpecies] = {
+    "meowfredunbound": BaseSpecies(
+        name="Meowfred Unbound",
+        dex_number=0,
+        types=(Type.FAIRY, Type.STEEL),
+        base_stats=BaseStats(HP=120, ATTACK=120, DEFENCE=120, SP_ATTACK=120, SP_DEFENCE=120, SPEED=120),
+        regular_abilities=("9 Lives",),
+        hidden_ability=None,
+        height_m=1.1,
+        weight_kg=12.0,
+        fully_evolved=True,
+        is_legendary_or_mythical=True,
+    ),
+}
 
 
 @cache
@@ -447,7 +535,58 @@ def get_all_species() -> dict[str, BaseSpecies]:
         if raw.num is None or raw.base_stats is None:
             continue
         result[key] = _adapt_species(raw)
+    for key, abilities in _ABILITY_HOUSE_RULES.items():
+        if key in result:
+            result[key] = replace(result[key], regular_abilities=abilities, hidden_ability=None)
+    result.update(_HOUSE_SPECIES)
     return result
+
+
+@cache
+def get_all_z_moves() -> dict[str, Move]:
+    """Z-Crystal id -> the Z-move it unleashes."""
+    raw_data = json.loads((_VENDOR_DIR / "moves.json").read_text())
+    diag = LoaderDiagnostics()
+    result: dict[str, Move] = {}
+    for entry in raw_data.values():
+        raw = RawMoveData.model_validate(entry)
+        if not isinstance(raw.is_z, str) or raw.is_max is not None:
+            continue
+        move = _adapt_move(raw, diag)
+        if move is not None:
+            result[raw.is_z] = move
+    return result
+
+
+# House rules that deliberately diverge from the vendored data, kept here so a refresh cannot undo them.
+_ABILITY_HOUSE_RULES: dict[str, tuple[str, ...]] = {
+    "garchompmegaz": ("Levitate",),
+}
+
+_MOVE_HOUSE_RULES: dict[str, Callable[[Move], Move]] = {
+    "darkvoid": lambda move: replace(move, accuracy_probability=0.8),
+    # Order Up's stat raise is granted unconditionally, since no Commander pairing can form here.
+    "orderup": lambda move: replace(
+        move,
+        effects=(
+            DamageEffect(power=80, category=Category.PHYSICAL, crit_stage=0, contact=False),
+            StatStageChangeEffect(target="SELF", stages={Stats.ATTACK: 1}, probability=1.0),
+        ),
+    ),
+}
+
+
+# Moves that exist only here, each a named copy of a real one with a tweak.
+_HOUSE_MOVE_NAMES = {"hottea": "hot tea", "warmdinner": "warm dinner"}
+_HOUSE_MOVES: dict[str, tuple[str, int]] = {
+    "hottea": ("Scald", 60),
+    "warmdinner": ("Torch Song", 60),
+}
+
+
+def _house_move(name: str, source: Move, power: int) -> Move:
+    effects = tuple(replace(e, power=power) if isinstance(e, DamageEffect) else e for e in source.effects)
+    return replace(source, name=name, effects=effects)
 
 
 @cache
@@ -463,7 +602,12 @@ def get_all_moves() -> dict[str, Move]:
             continue
         move = _adapt_move(raw, diag)
         if move is not None:
-            result[key] = move
+            house_rule = _MOVE_HOUSE_RULES.get(key)
+            result[key] = house_rule(move) if house_rule else move
+    for key, (source_name, power) in _HOUSE_MOVES.items():
+        source = result.get(normalize_id(source_name))
+        if source is not None:
+            result[key] = _house_move(" ".join(w.capitalize() for w in _HOUSE_MOVE_NAMES[key].split()), source, power)
     diag.log_summary("moves.json")
     return result
 
@@ -490,3 +634,15 @@ def get_move(name: str) -> Move:
     if key not in moves:
         raise KeyError(f"Unknown move: {name!r}")
     return moves[key]
+
+
+@cache
+def _gen7_singles_tiers() -> dict[str, str]:
+    """`{species_id: tier}` with Gen 7's own competitive placement, not the current generation's."""
+    raw: dict[str, str] = json.loads((_VENDOR_DIR / "gen7_tiers.json").read_text())
+    return raw
+
+
+def gen7_singles_tier(name: str) -> str | None:
+    """A species' Gen 7 singles tier (`"OU"`, `"UU"`, `"Uber"`, ...), or None if it was never placed."""
+    return _gen7_singles_tiers().get(normalize_id(name))

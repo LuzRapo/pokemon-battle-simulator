@@ -16,12 +16,15 @@ from battle_sim.mechanics.log import BattleLog
 from battle_sim.mechanics.stages import apply_stage_changes
 from battle_sim.models.log_events import (
     AirBalloonPopped,
+    AirBalloonRevealed,
     BerryWeakened,
+    FloatedOnAirBalloon,
     ItemChipDamage,
     ItemHealed,
     SelfSwitchPending,
     SurvivedAtOneHp,
 )
+from battle_sim.models.moves import DamageEffect
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.type_matchups import type_effectiveness
 from battle_sim.utils import Category, Item, Stats, Status, Terrain, Type, Weather
@@ -37,6 +40,25 @@ def item(kind: Item) -> Callable[[ItemBinder], ItemBinder]:
         return binder
 
     return register
+
+
+MONOCLE_MOD_4096 = 6144  # 1.5x
+MONOCLE_POWER_CAP = 60  # only the weak moves, exactly as Technician reads it
+
+
+@item(Item.MEOWFREDS_MONOCLE)
+def _bind_meowfreds_monocle(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Technician in an item: anything at 60 base power or less hits half again as hard."""
+
+    def boost(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is not pokemon or pokemon.item is not Item.MEOWFREDS_MONOCLE or context.move is None:
+            return None
+        damage = next((e for e in context.move.effects if isinstance(e, DamageEffect)), None)
+        if damage is not None and damage.power is not None and damage.power <= MONOCLE_POWER_CAP:
+            payload.setdefault("power_mods_4096", []).append(MONOCLE_MOD_4096)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost, priority=EventPriority.ITEM, owner=owner)
 
 
 @item(Item.LIFE_ORB)
@@ -161,15 +183,42 @@ def _bind_rocky_helmet(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> N
 
 @item(Item.AIR_BALLOON)
 def _bind_air_balloon(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
-    def pop(context: EventContext, payload: Payload) -> HandlerResult | None:
-        if context.defender is not pokemon or pokemon.item is not Item.AIR_BALLOON:
-            return None
-        if payload["dealt"] > 0:
-            pokemon.consume_item()
-            context.log.add(AirBalloonPopped(side=payload["defender_index"], pokemon=pokemon.nickname))
+    """The balloon keeps its holder off the ground and bursts when hit."""
+
+    def announce(context: EventContext, payload: Payload) -> HandlerResult | None:
+        # The balloon announces itself on the way in, as in the games.
+        if pokemon.item is Item.AIR_BALLOON:
+            context.log.add(AirBalloonRevealed(side=payload.get("side_index", 0), pokemon=pokemon.nickname))
         return None
 
-    bus.on(Event.ON_AFTER_HIT, pop, priority=EventPriority.ITEM, owner=owner)
+    def float_over(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or pokemon.item is not Item.AIR_BALLOON:
+            return None
+        if payload["move_type"] is not Type.GROUND:
+            return None
+        context.log.add(FloatedOnAirBalloon(side=payload["defender_index"], pokemon=pokemon.nickname))
+        return HandlerResult(cancel=True, updated_payload={"absorbed": True, "immune_reason": "air_balloon"})
+
+    # The last HP this Pokemon was seen at, so any drop at all can be noticed however it happened.
+    seen = [pokemon.live_stats.HP]
+
+    def pop(context: EventContext, payload: Payload) -> HandlerResult | None:
+        """Burst the balloon the moment its holder has lost any HP at all."""
+        if pokemon.item is not Item.AIR_BALLOON:
+            seen[0] = pokemon.live_stats.HP
+            return None
+        now = pokemon.live_stats.HP
+        if now < seen[0]:
+            pokemon.consume_item()
+            context.log.add(AirBalloonPopped(side=payload.get("defender_index", 0), pokemon=pokemon.nickname))
+        seen[0] = now
+        return None
+
+    bus.on(Event.ON_SWITCH_IN, announce, priority=EventPriority.ITEM, owner=owner)
+    bus.on(Event.ON_BEFORE_MOVE, float_over, priority=EventPriority.ITEM, owner=owner)
+    # Every point a turn can pause at after HP has moved.
+    for moment in (Event.ON_AFTER_HIT, Event.ON_ACTION_RESOLVE, Event.ON_RESIDUAL, Event.ON_TURN_END):
+        bus.on(moment, pop, priority=EventPriority.ITEM, owner=owner)
 
 
 @item(Item.LEFTOVERS)
@@ -304,6 +353,10 @@ ITEM_BINDERS[Item.SOUL_DEW] = _bind_legend_orb(
 ITEM_BINDERS[Item.GRISEOUS_CORE] = _bind_legend_orb(
     Item.GRISEOUS_CORE, frozenset({"Giratina", "Giratina-Origin"}), frozenset({Type.GHOST, Type.DRAGON})
 )
+# Gen 4-7 called it the Griseous Orb, which is the name every Gen 7 set is written with; identical item.
+ITEM_BINDERS[Item.GRISEOUS_ORB] = _bind_legend_orb(
+    Item.GRISEOUS_ORB, frozenset({"Giratina", "Giratina-Origin"}), frozenset({Type.GHOST, Type.DRAGON})
+)
 
 
 def _bind_ogerpon_mask(kind: Item, bearer: str) -> ItemBinder:
@@ -378,6 +431,24 @@ def _bind_sitrus_berry(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> N
     bus.on(Event.ON_AFTER_HIT, ripen, priority=EventPriority.ITEM, owner=owner)
 
 
+@item(Item.WIKI_BERRY)
+def _bind_wiki_berry(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """A pinch berry: a third of its holder's health back, once, at a quarter or less."""
+
+    def ripen(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or pokemon.item is not Item.WIKI_BERRY or pokemon.is_fainted():
+            return None
+        if 4 * pokemon.live_stats.HP > pokemon.stat_totals.HP:
+            return None
+        pokemon.consume_item()
+        healed = pokemon.apply_healing(max(1, pokemon.stat_totals.HP // 3))
+        if healed > 0:
+            context.log.add(ItemHealed(side=payload["defender_index"], pokemon=pokemon.nickname, item=Item.WIKI_BERRY))
+        return None
+
+    bus.on(Event.ON_AFTER_HIT, ripen, priority=EventPriority.ITEM, owner=owner)
+
+
 @item(Item.WEAKNESS_POLICY)
 def _bind_weakness_policy(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
     def trigger(context: EventContext, payload: Payload) -> HandlerResult | None:
@@ -410,7 +481,8 @@ def _bind_status_orb(kind: Item, status: Status) -> ItemBinder:
                 return None
             from battle_sim.engine.status_apply import _apply_main_status  # lazy: avoids a mechanics->engine cycle
 
-            _apply_main_status(status, pokemon, payload["side_index"], context.rng, context.log)
+            teams = (context.battle.sides[0].team, context.battle.sides[1].team)
+            _apply_main_status(status, pokemon, payload["side_index"], context.rng, context.log, teams)
             return None
 
         bus.on(Event.ON_RESIDUAL, afflict, priority=ResidualOrder.ORB, owner=owner)
@@ -503,3 +575,51 @@ def _bind_punching_glove(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) ->
         return None
 
     bus.on(Event.ON_DAMAGE_CALC, boost_punches, priority=EventPriority.ITEM, owner=owner)
+
+
+# What a damage estimate needs to know about items without running the event bus.
+_CHOICE_BOOSTS: dict[Item, Category] = {Item.CHOICE_BAND: Category.PHYSICAL, Item.CHOICE_SPECS: Category.SPECIAL}
+# The legendary orbs: 1.2x on two types, only for the line that owns the orb.
+_LEGEND_ORBS: dict[Item, tuple[frozenset[str], frozenset[Type]]] = {
+    Item.SOUL_DEW: (frozenset({"Latios", "Latias"}), frozenset({Type.PSYCHIC, Type.DRAGON})),
+    Item.GRISEOUS_CORE: (frozenset({"Giratina", "Giratina-Origin"}), frozenset({Type.GHOST, Type.DRAGON})),
+    Item.GRISEOUS_ORB: (frozenset({"Giratina", "Giratina-Origin"}), frozenset({Type.GHOST, Type.DRAGON})),
+}
+
+
+def _monocle_power_mods(attacker: Pokemon, base_power: int | None) -> list[int]:
+    """The Monocle's Technician boost, for the estimator. Kept beside the binder it mirrors."""
+    if attacker.item is not Item.MEOWFREDS_MONOCLE or base_power is None or base_power > MONOCLE_POWER_CAP:
+        return []
+    return [MONOCLE_MOD_4096]
+
+
+def static_damage_modifiers(
+    move_type: Type, category: Category, attacker: Pokemon, defender: Pokemon, base_power: int | None = None
+) -> dict[str, list[int]]:
+    """The item multipliers a damage estimate can work out on its own, keyed as the payload wants."""
+    final: list[int] = []
+    defense: list[int] = []
+    power: list[int] = _monocle_power_mods(attacker, base_power)
+    if _CHOICE_BOOSTS.get(attacker.item) is category:
+        final.append(6144)
+    if attacker.item is Item.LIFE_ORB:
+        final.append(5324)
+
+    if attacker.item is Item.EXPERT_BELT and type_effectiveness(move_type, defender.types) >= 2:
+        final.append(4915)
+    orb = _LEGEND_ORBS.get(attacker.item)
+    if orb is not None and attacker.name in orb[0] and move_type in orb[1]:
+        final.append(4915)
+    if defender.item is Item.EVIOLITE and not defender.fully_evolved:
+        defense.append(6144)
+    if defender.item is Item.ASSAULT_VEST and category is Category.SPECIAL:
+        defense.append(6144)
+    modifiers: dict[str, list[int]] = {}
+    if final:
+        modifiers["final_mods_4096"] = final
+    if defense:
+        modifiers["defense_mods_4096"] = defense
+    if power:
+        modifiers["power_mods_4096"] = power
+    return modifiers

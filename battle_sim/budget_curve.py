@@ -76,6 +76,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--workers", type=int, default=os.cpu_count())
     parser.add_argument("--root-k", type=int, default=5, help="actions per side kept at the search root")
+    parser.add_argument("--top-k", type=int, default=3, help="opponent replies kept per node")
     parser.add_argument("--chance-samples", type=int, default=2, help="roll realizations averaged per root cell")
     parser.add_argument("--determinizations", type=int, default=1, help="sampled belief worlds hedged per decision")
     args = parser.parse_args()
@@ -100,6 +101,7 @@ def main() -> None:
                 SearchProfile(
                     budget=budget,
                     root_k=args.root_k,
+                    top_k=args.top_k,
                     chance_samples=args.chance_samples,
                     determinizations=args.determinizations,
                 )
