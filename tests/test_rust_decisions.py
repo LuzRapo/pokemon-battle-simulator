@@ -183,3 +183,33 @@ def test_future_sight_is_queued_against_a_target_immune_to_it() -> None:
     _, expected = _played(team_a, team_b, _preferring(("Future Sight", "Tackle")))
     events = expected[0]["events"]
     assert {"type": "FutureAttackQueued", "side": 0, "pokemon": "A0", "move": "Future Sight"} in events, events
+
+
+@needs_bridge
+@pytest.mark.parametrize(
+    ("attacker", "target", "expected"),
+    [
+        (_spec("Breloom", "A0", ["Spore"]), _spec("Venusaur", "B0", ["Tackle"]), "NoEffect"),
+        (
+            _spec("Vileplume", "A0", ["Sleep Powder"]),
+            _spec("Forretress", "B0", ["Tackle"], ability=Ability.OVERCOAT),
+            "DoesNotAffect",
+        ),
+        (
+            _spec("Excadrill", "A0", ["Spore"], ability=Ability.MOLD_BREAKER),
+            _spec("Forretress", "B0", ["Tackle"], ability=Ability.OVERCOAT),
+            "StatusInflicted",
+        ),
+        (_spec("Breloom", "A0", ["Spore"]), _spec("Tauros", "B0", ["Tackle"]), "StatusInflicted"),
+    ],
+    ids=["grass-type", "overcoat", "mold-breaker-through-overcoat", "ordinary-target"],
+)
+def test_powder_moves_do_not_affect_grass_types_or_overcoat(
+    attacker: PokemonSpec, target: PokemonSpec, expected: str
+) -> None:
+    """Spore and the other powder moves have no effect on Grass types or Overcoat."""
+    _, played = _played([attacker], [target], _preferring(("Spore", "Sleep Powder", "Tackle")))
+    events = played[0]["events"]
+    assert any(event["type"] == expected for event in events), events
+    if expected != "StatusInflicted":
+        assert not any(event["type"] == "StatusInflicted" for event in events), events

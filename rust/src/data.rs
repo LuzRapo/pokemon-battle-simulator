@@ -110,6 +110,9 @@ pub struct Move {
     /// Bulletproof's class of move.
     #[serde(default)]
     pub bullet: bool,
+    /// PS flag `powder`: no effect on a Grass type, or on Overcoat.
+    #[serde(default)]
+    pub powder: bool,
     /// PS flag `wind`: absorbed by Wind Rider.
     #[serde(default)]
     pub wind: bool,

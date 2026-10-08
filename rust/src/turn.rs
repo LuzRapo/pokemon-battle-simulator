@@ -1544,6 +1544,23 @@ fn resolve_move(
         return Ok(());
     }
 
+    // Powder moves (Spore, Sleep Powder, Stun Spore, ...) have no effect on a Grass type, or on an
+    // Overcoat holder unless a Mold Breaker is using the move. Before accuracy, as the Python and
+    // the games ask it, so no draw is spent on a target that was never going to be affected.
+    if the_move.powder && DEFENDER_FACING.contains(&the_move.target.as_str()) {
+        let attacker_ability = state.sides[side].active_pokemon().ability.clone();
+        let defender = state.sides[other].active_pokemon();
+        let nickname = defender.nickname.clone();
+        if defender.battle_types().iter().flatten().any(|t| t == "GRASS") {
+            log.push(Event::NoEffect { side: other as i32, pokemon: nickname });
+            return Ok(());
+        }
+        if defender.ability == "OVERCOAT" && !crate::hooks::MOLD_BREAKERS.contains(&attacker_ability.as_str()) {
+            log.push(Event::DoesNotAffect { side: other as i32, pokemon: nickname });
+            return Ok(());
+        }
+    }
+
     // Accuracy first, and only when the move has one — `_accuracy_check` returns True without
     // drawing when `accuracy_probability` is None, which is how a never-missing move leaves the
     // tape untouched.
