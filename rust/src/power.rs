@@ -1,0 +1,675 @@
+//! The moves whose power is not the number in their data.
+//!
+//! Fifty of the hundred-and-something moves the Python special-cases by name are here, and they
+//! are the mechanical half: a formula that reads the board (Gyro Ball off the speed difference,
+//! Eruption off the user's health) or a condition that doubles it (Facade when statused, Brine
+//! against a target under half).
+//!
+//! `effective_power` runs **once per move**, not once per hit, and after the hit count has been
+//! rolled. That matters for exactly one move — Magnitude draws its own number — but it is the kind
+//! of thing that is invisible until a multi-hit variant appears and then wrong forever.
+
+use crate::battle::{Pokemon, State, Status};
+use crate::data::{Database, Move};
+use crate::tape::Tape;
+use crate::turn::Refusal;
+
+/// Coded moves whose power rule is implemented here. They come off the by-name refusal.
+pub const PORTED: [&str; 55] = [
+    // `_POWER_FORMULAS`
+    "Low Kick",
+    "Grass Knot",
+    "Heavy Slam",
+    "Heat Crash",
+    "Electro Ball",
+    "Gyro Ball",
+    "Stored Power",
+    "Power Trip",
+    "Last Respects",
+    "Rage Fist",
+    "Beat Up",
+    "Fury Cutter",
+    "Rollout",
+    "Ice Ball",
+    "Water Spout",
+    "Eruption",
+    "Dragon Energy",
+    "Return",
+    "Frustration",
+    "Flail",
+    "Reversal",
+    "Crush Grip",
+    "Wring Out",
+    "Punishment",
+    "Magnitude",
+    // `_POWER_CONDITIONS`
+    "Facade",
+    "Hex",
+    "Infernal Parade",
+    "Barb Barrage",
+    "Acrobatics",
+    "Avalanche",
+    "Revenge",
+    "Payback",
+    "Assurance",
+    "Brine",
+    "Venoshock",
+    "Wake-Up Slap",
+    "Smelling Salts",
+    "Rising Voltage",
+    "Knock Off",
+    "Expanding Force",
+    "Psyblade",
+    "Hydro Steam",
+    "Pursuit",
+    // `_SE_BONUS_MOVES`, `_HITS_PHYSICAL_DEFENCE`, and two of `payload_overrides`
+    "Electro Drift",
+    "Collision Course",
+    "Psyshock",
+    "Psystrike",
+    "Secret Sword",
+    // `payload_overrides`' stat swaps, and the one per-move effectiveness override
+    "Body Press",
+    "Foul Play",
+    "Photon Geyser",
+    "Light That Burns the Sky",
+    "Freeze-Dry",
+    // only ever named in the weather-accuracy tables, which are ported
+    "Blizzard",
+];
+
+/// `_STAGED_STATS`, in the Python's enum order.
+const STAGED: [&str; 7] = ["ATTACK", "DEFENCE", "SP_ATTACK", "SP_DEFENCE", "SPEED", "ACCURACY", "EVASION"];
+
+fn positive_stages(pokemon: &Pokemon) -> i32 {
+    STAGED.iter().map(|stat| pokemon.stage(stat).max(0)).sum()
+}
+
+fn formula(
+    name: &str,
+    state: &State,
+    side: usize,
+    speed: impl Fn(usize) -> i32,
+    tape: &mut Tape,
+) -> Result<Option<i32>, Refusal> {
+    let attacker = state.sides[side].active_pokemon();
+    let defender = state.sides[1 - side].active_pokemon();
+    Ok(Some(match name {
+        "Low Kick" | "Grass Knot" => match defender.weight_kg {
+            w if w >= 200.0 => 120,
+            w if w >= 100.0 => 100,
+            w if w >= 50.0 => 80,
+            w if w >= 25.0 => 60,
+            w if w >= 10.0 => 40,
+            _ => 20,
+        },
+        "Heavy Slam" | "Heat Crash" => match attacker.weight_kg / defender.weight_kg {
+            r if r >= 5.0 => 120,
+            r if r >= 4.0 => 100,
+            r if r >= 3.0 => 80,
+            r if r >= 2.0 => 60,
+            _ => 40,
+        },
+        "Electro Ball" => match speed(side) as f64 / std::cmp::max(1, speed(1 - side)) as f64 {
+            r if r >= 4.0 => 150,
+            r if r >= 3.0 => 120,
+            r if r >= 2.0 => 80,
+            r if r >= 1.0 => 60,
+            _ => 40,
+        },
+        // The slower the user next to its target, the harder it hits.
+        "Gyro Ball" => std::cmp::min(150, 25 * speed(1 - side) / std::cmp::max(1, speed(side)) + 1),
+        "Stored Power" | "Power Trip" => 20 + 20 * positive_stages(attacker),
+        "Punishment" => std::cmp::min(200, 60 + 20 * positive_stages(defender)),
+        "Last Respects" => 50 * (1 + state.sides[side].team.iter().filter(|p| p.fainted()).count() as i32),
+        "Rage Fist" => std::cmp::min(350, 50 * (1 + attacker.times_hit)),
+        // PS hits once per healthy ally; approximated as one hit carrying the summed power. Each
+        // member's *current* base Attack, as the Python reads `base_stats.ATTACK` — a Transformed
+        // or Mega-Evolved member counts with the stats it is fighting with, not the ones it was
+        // built with.
+        "Beat Up" => {
+            let total: i32 = state.sides[side]
+                .team
+                .iter()
+                .filter(|m| !m.fainted() && m.status == Status::None)
+                .map(|m| 5 + m.base_stats.attack / 10)
+                .sum();
+            if total == 0 {
+                5
+            } else {
+                total
+            }
+        }
+        "Fury Cutter" => [40, 80, 160][std::cmp::min(attacker.rolling_hits as usize, 2)],
+        "Rollout" | "Ice Ball" => {
+            ROLLING_POWERS[std::cmp::min(attacker.rolling_hits as usize, ROLLING_POWERS.len() - 1)]
+        }
+        "Water Spout" | "Eruption" | "Dragon Energy" => {
+            std::cmp::max(1, 150 * attacker.hp / attacker.totals.hp)
+        }
+        // Both come out at 102: their power is friendship-scaled, friendship is not modelled, and
+        // a competitive set is always built at whichever end its move wants.
+        "Return" | "Frustration" => 102,
+        "Flail" | "Reversal" => match 48 * attacker.hp / std::cmp::max(1, attacker.totals.hp) {
+            s if s < 1 => 200,
+            s if s < 4 => 150,
+            s if s < 9 => 100,
+            s if s < 16 => 80,
+            s if s < 32 => 40,
+            _ => 20,
+        },
+        "Crush Grip" | "Wring Out" => {
+            std::cmp::max(1, 120 * defender.hp / std::cmp::max(1, defender.totals.hp))
+        }
+        "Magnitude" => match tape.integer(1, 20)? {
+            r if r <= 1 => 10,
+            r if r <= 3 => 30,
+            r if r <= 7 => 50,
+            r if r <= 13 => 70,
+            r if r <= 17 => 90,
+            r if r <= 19 => 110,
+            _ => 150,
+        },
+        _ => return Ok(None),
+    }))
+}
+
+/// `_POWER_CONDITIONS`: the multiplier and the question that earns it.
+fn condition(name: &str, state: &State, side: usize) -> Option<(bool, i32, i32)> {
+    let attacker = state.sides[side].active_pokemon();
+    let defender = state.sides[1 - side].active_pokemon();
+    let grounded = |p: &Pokemon| crate::field::is_grounded(p);
+    let met = match name {
+        "Facade" => attacker.status != Status::None,
+        "Hex" | "Infernal Parade" => defender.status != Status::None,
+        "Barb Barrage" | "Venoshock" => matches!(defender.status, Status::Poison | Status::Toxic),
+        "Acrobatics" => attacker.item == "NONE",
+        // "Hit by the target this turn", which is what `last_hit_taken` records and why it is
+        // cleared at the top of every turn.
+        "Avalanche" | "Revenge" => attacker.last_hit_taken > 0,
+        "Payback" => state.sides[1 - side].acted_this_turn,
+        "Assurance" => defender.last_hit_taken > 0,
+        "Brine" => defender.hp * 2 <= defender.totals.hp,
+        // Weather Ball is in two tables: it changes type *and* doubles. Porting only the type
+        // override made it a Fire move at half strength, which is most of the move missing.
+        "Weather Ball" => crate::hooks::effective_weather(state) != "NONE",
+        // Pursuit doubles against a target caught on its way out. A side whose chosen action is a
+        // switch has no move slot recorded, which is exactly the question being asked.
+        "Pursuit" => !state.sides[1 - side].acted_this_turn && state.sides[1 - side].chosen_slot.is_none(),
+        "Wake-Up Slap" => defender.status == Status::Sleep,
+        "Smelling Salts" => defender.status == Status::Paralysis,
+        "Rising Voltage" => state.field.terrain == "ELECTRIC" && grounded(defender),
+        "Knock Off" => return Some((defender.item != "NONE", 3, 2)),
+        "Expanding Force" => return Some((state.field.terrain == "PSYCHIC" && grounded(attacker), 3, 2)),
+        "Psyblade" => return Some((state.field.terrain == "ELECTRIC" && grounded(attacker), 3, 2)),
+        "Hydro Steam" => {
+            return Some((matches!(crate::hooks::effective_weather(state).as_str(), "SUN" | "HARSH_SUN"), 3, 2))
+        }
+        _ => return None,
+    };
+    Some((met, 2, 1))
+}
+
+/// `effective_power`, whole: the formula, then the condition, then the super-effective bonus.
+pub fn effective_power(
+    the_move: &Move,
+    listed: Option<i32>,
+    state: &State,
+    side: usize,
+    db: &Database,
+    tape: &mut Tape,
+) -> Result<Option<i32>, Refusal> {
+    let speed = |which: usize| {
+        crate::turn::effective_speed(state.sides[which].active_pokemon(), &state.sides[which], &state.field)
+    };
+    let mut power = match formula(&the_move.name, state, side, speed, tape)? {
+        Some(computed) => computed,
+        None => match listed {
+            Some(listed) => listed,
+            None => return Ok(None),
+        },
+    };
+    if let Some((met, numerator, denominator)) = condition(&the_move.name, state, side) {
+        if met {
+            power = power * numerator / denominator;
+        }
+    }
+    if matches!(the_move.name.as_str(), "Electro Drift" | "Collision Course") {
+        let types = state.sides[1 - side].active_pokemon().battle_types();
+        if db.effectiveness(&the_move.move_type, &types) >= 2.0 {
+            power = power * 5461 / 4096;
+        }
+    }
+    Ok(Some(power))
+}
+
+/// `payload_overrides`: **one** of these, not several.
+///
+/// The Python writes it as an if-chain of early returns, so a move that matches an earlier clause
+/// never reaches a later one. That is load-bearing rather than incidental: Facade carried by an
+/// `-ate` holder takes `ignore_burn` and *not* the 1.2x, because the chain returns at Facade.
+/// Applying both put a Facade five points over.
+///
+/// Body Press, Photon Geyser and Foul Play sit above these in the chain and are all still refused:
+/// each needs a different stat *owner* rather than a different stat.
+#[derive(Debug, Default)]
+pub struct Overrides {
+    pub attack_stat: Option<&'static str>,
+    pub use_target_attack: bool,
+    pub defense_stat: Option<&'static str>,
+    pub ignore_burn: bool,
+    pub ignore_weather_drop: bool,
+    pub ate_power_mod: Option<i64>,
+}
+
+pub fn payload_overrides(the_move: &Move, listed_type: &str, attacker: &Pokemon) -> Overrides {
+    if the_move.name == "Body Press" {
+        // It attacks with its Defence — the same Pokemon's, just a different stat.
+        return Overrides { attack_stat: Some("DEFENCE"), ..Default::default() };
+    }
+    if matches!(the_move.name.as_str(), "Psyshock" | "Psystrike" | "Secret Sword") {
+        // Special moves that land on physical Defence — not expressible as a category, which is
+        // why the Python overrides the stat rather than the move.
+        return Overrides { defense_stat: Some("DEFENCE"), ..Default::default() };
+    }
+    if matches!(the_move.name.as_str(), "Photon Geyser" | "Light That Burns the Sky") {
+        // Listed Special, but it uses whichever attacking stat is higher *after* boosts, and swaps
+        // the defending stat to match. An early return either way, so no later clause applies.
+        if attacker.effective("ATTACK") > attacker.effective("SP_ATTACK") {
+            return Overrides {
+                attack_stat: Some("ATTACK"),
+                defense_stat: Some("DEFENCE"),
+                ..Default::default()
+            };
+        }
+        return Overrides::default();
+    }
+    if the_move.name == "Foul Play" {
+        // It attacks with the *target's* Attack, which is a different owner, not a different stat.
+        return Overrides { use_target_attack: true, ..Default::default() };
+    }
+    if the_move.name == "Facade" {
+        // The reason its own doubling is worth anything: a burned Pokemon using it does not also
+        // take the burn's halving, so the move really is twice as hard.
+        return Overrides { ignore_burn: true, ..Default::default() };
+    }
+    if the_move.name == "Hydro Steam" {
+        // It thrives in the sun instead of wilting in it.
+        return Overrides { ignore_weather_drop: true, ..Default::default() };
+    }
+    if ate_boost_applies(listed_type, attacker) {
+        return Overrides { ate_power_mod: Some(ATE_POWER_MOD_4096), ..Default::default() };
+    }
+    Overrides::default()
+}
+
+/// Coded moves and abilities whose *type* is decided at use time, not read from the data.
+pub const PORTED_TYPE_OVERRIDES: [&str; 6] =
+    ["Weather Ball", "Ivy Cudgel", "Raging Bull", "Judgment", "Multi-Attack", "Techno Blast"];
+/// The `-ate` abilities, which turn a Normal move into their own type and boost it for the trouble.
+pub const PORTED_ATE_ABILITIES: [&str; 4] = ["AERILATE", "PIXILATE", "REFRIGERATE", "GALVANIZE"];
+/// `_ATE_POWER_MOD_4096`.
+pub const ATE_POWER_MOD_4096: i64 = 4915;
+
+fn ate_type(ability: &str) -> Option<&'static str> {
+    Some(match ability {
+        "AERILATE" => "FLYING",
+        "PIXILATE" => "FAIRY",
+        "REFRIGERATE" => "ICE",
+        "GALVANIZE" => "ELECTRIC",
+        _ => return None,
+    })
+}
+
+/// `move_type_override`: what this move actually resolves as.
+///
+/// Checked in the Python's order, which matters — an `-ate` ability claims a Normal move before
+/// Liquid Voice gets a look at a sound one, before any of the by-name cases run.
+pub fn type_override(the_move: &Move, attacker: &Pokemon, state: &State) -> Option<String> {
+    if the_move.move_type == "NORMAL" {
+        if let Some(became) = ate_type(&attacker.ability) {
+            return Some(became.to_string());
+        }
+    }
+    if attacker.ability == "LIQUID_VOICE" && the_move.sound {
+        // No power boost rides along with this one — `_ate_boost_applies` only ever reads the
+        // four `_NORMAL_TYPE_ABILITIES`, so Liquid Voice is purely a type change.
+        return Some("WATER".to_string());
+    }
+    let by_name = match the_move.name.as_str() {
+        "Weather Ball" => match crate::hooks::effective_weather(state).as_str() {
+            "SUN" | "HARSH_SUN" => Some("FIRE"),
+            "RAIN" | "HEAVY_RAIN" => Some("WATER"),
+            "SANDSTORM" => Some("ROCK"),
+            "SNOW" => Some("ICE"),
+            _ => None,
+        },
+        // Ogerpon's masks and Tauros's forms carry the type on the Pokemon, not the item.
+        "Ivy Cudgel" => Some(match attacker.species_name.as_str() {
+            "Ogerpon-Wellspring" => "WATER",
+            "Ogerpon-Hearthflame" => "FIRE",
+            "Ogerpon-Cornerstone" => "ROCK",
+            _ => "GRASS",
+        }),
+        "Raging Bull" => match attacker.species_name.as_str() {
+            "Tauros-Paldea-Combat" => Some("FIGHTING"),
+            "Tauros-Paldea-Blaze" => Some("FIRE"),
+            "Tauros-Paldea-Aqua" => Some("WATER"),
+            _ => None,
+        },
+        "Judgment" => plate_type(&attacker.item),
+        "Multi-Attack" => memory_type(&attacker.item),
+        "Techno Blast" => match attacker.item.as_str() {
+            "DOUSE_DRIVE" => Some("WATER"),
+            "SHOCK_DRIVE" => Some("ELECTRIC"),
+            "BURN_DRIVE" => Some("FIRE"),
+            "CHILL_DRIVE" => Some("ICE"),
+            _ => None,
+        },
+        _ => None,
+    };
+    by_name.map(str::to_string)
+}
+
+/// The Arceus plates. Each is also a 1.2x type booster, which `items.rs` handles separately —
+/// they are refused there for exactly this reason, because being a booster is only half of one.
+fn plate_type(item: &str) -> Option<&'static str> {
+    let stripped = item.strip_suffix("_PLATE")?;
+    Some(match stripped {
+        "FIST" => "FIGHTING",
+        "SKY" => "FLYING",
+        "TOXIC" => "POISON",
+        "EARTH" => "GROUND",
+        "STONE" => "ROCK",
+        "INSECT" => "BUG",
+        "SPOOKY" => "GHOST",
+        "IRON" => "STEEL",
+        "FLAME" => "FIRE",
+        "SPLASH" => "WATER",
+        "MEADOW" => "GRASS",
+        "ZAP" => "ELECTRIC",
+        "MIND" => "PSYCHIC",
+        "ICICLE" => "ICE",
+        "DRACO" => "DRAGON",
+        "DREAD" => "DARK",
+        "PIXIE" => "FAIRY",
+        _ => return None,
+    })
+}
+
+/// Silvally's memories, which are named after the type they confer.
+fn memory_type(item: &str) -> Option<&'static str> {
+    let stripped = item.strip_suffix("_MEMORY")?;
+    const TYPES: [&str; 17] = [
+        "BUG", "DARK", "DRAGON", "ELECTRIC", "FAIRY", "FIGHTING", "FIRE", "FLYING", "GHOST", "GRASS", "GROUND",
+        "ICE", "POISON", "PSYCHIC", "ROCK", "STEEL", "WATER",
+    ];
+    TYPES.contains(&stripped).then_some(TYPES[TYPES.iter().position(|t| *t == stripped)?])
+}
+
+/// `_ate_boost_applies`: true once an `-ate` ability has actually converted this move, not merely
+/// stood next to one.
+///
+/// Takes the move's *listed* type, because by the time anybody asks, `move_type` is already the
+/// converted one — asking it would always say no. A naturally Flying move used by an Aerilate
+/// holder must not get this boost, which is why the listed type is the only reliable question.
+pub fn ate_boost_applies(listed_type: &str, attacker: &Pokemon) -> bool {
+    listed_type == "NORMAL" && ate_type(&attacker.ability).is_some()
+}
+
+/// Base moves that a signature Z-crystal upgrades, and moves that reach a semi-invulnerable
+/// target. Both groups are named by hand in the Python and both are *ordinary* here.
+///
+/// A Z-move is a different action, not a different move — `zmove:` is refused where actions are
+/// parsed — so using Psychic normally has nothing special about it. And reaching through a charge
+/// only matters against a target that is mid-charge, which cannot happen while every charging move
+/// is refused. Both of those are conditions on something else being unported; if charges or
+/// Z-moves land, these come back off this list until they are handled properly.
+pub const PORTED_ORDINARY_DESPITE_BEING_NAMED: [&str; 24] = [
+    // `zmoves._SIGNATURE_BASES`
+    "Thunderbolt",
+    "Spirit Shackle",
+    "Darkest Lariat",
+    "Clanging Scales",
+    "Moongeist Beam",
+    "Stone Edge",
+    "Spectral Thief",
+    "Psychic",
+    "Play Rough",
+    "Volt Tackle",
+    "Sparkling Aria",
+    "Giga Impact",
+    "Sunsteel Strike",
+    // `_UP_IN_THE_AIR` and `_REACHES_THROUGH`'s values — the reachers, not the charges
+    "Gust",
+    "Twister",
+    "Thunder",
+    "Hurricane",
+    "Sky Uppercut",
+    "Smack Down",
+    "Thousand Arrows",
+    "Earthquake",
+    "Fissure",
+    "Surf",
+    "Whirlpool",
+];
+
+/// `_EFFECTIVENESS_OVERRIDES`: Freeze-Dry is super effective against Water whatever the chart says.
+pub fn effectiveness_override(move_name: &str, defender: &Pokemon, natural: f64, db: &Database) -> f64 {
+    if move_name != "Freeze-Dry" {
+        return natural;
+    }
+    if !defender.types.iter().flatten().any(|t| t == "WATER") {
+        return natural;
+    }
+    // The forced value replaces what Water alone contributed, leaving the other half of a dual
+    // type standing — so Water/Ground is 2x from the override and 2x from Ground's own Ice
+    // weakness, not a flat 2x overall.
+    let from_water = db.effectiveness(move_name_type(), &[Some("WATER".to_string()), None]);
+    if from_water == 0.0 {
+        return natural;
+    }
+    natural / from_water * 2.0
+}
+
+fn move_name_type() -> &'static str {
+    "ICE" // Freeze-Dry is the only entry in the table
+}
+
+/// Delta Stream's whole reason for existing: while its strong winds blow, whatever would be super
+/// effective against a Flying type is cut back to neutral — most of why the format's best Pokemon
+/// is its best Pokemon, since without it a Dragon/Flying's 2x Ice, Rock and Electric weaknesses
+/// stand untouched. Applied to the *natural* multiplier, before `effectiveness_override`, exactly
+/// where the Python's own `type_effectiveness` applies it — a dual type's other half is untouched,
+/// so Flying/Ground under Ice takes the negation on Flying's own 2x and still eats Ground's neutral.
+pub fn strong_winds_negation(multiplier: f64, move_type: &str, defender: &Pokemon, weather: &str, db: &Database) -> f64 {
+    if weather != "STRONG_WINDS" || !defender.battle_types().iter().flatten().any(|t| t == "FLYING") {
+        return multiplier;
+    }
+    let against_flying = db.effectiveness(move_type, &[Some("FLYING".to_string()), None]);
+    if against_flying > 1.0 { multiplier / against_flying } else { multiplier }
+}
+
+/// `_SCREEN_BREAKERS`: these take the opponent's screens down before they hit.
+pub const SCREEN_BREAKERS: [&str; 3] = ["Psychic Fangs", "Raging Bull", "Brick Break"];
+
+/// Coded moves this engine has learned to fail. `coded_move_fails`, minus the ones needing state
+/// it does not keep: Belch wants the last consumed item, Shell Trap the category of the last hit
+/// taken by category *and* that it was this turn.
+pub const PORTED_FAILURES: [&str; 10] = [
+    "Poltergeist",
+    "Sucker Punch",
+    "Thunderclap",
+    "Dream Eater",
+    "Fake Out",
+    "First Impression",
+    "Focus Punch",
+    "Shell Trap",
+    "Last Resort",
+    "Belch",
+];
+
+pub fn coded_move_fails(the_move: &Move, state: &State, side: usize, db: &Database) -> bool {
+    let attacker = state.sides[side].active_pokemon();
+    let defender = state.sides[1 - side].active_pokemon();
+    match the_move.name.as_str() {
+        "Poltergeist" => defender.item == "NONE",
+        "Sucker Punch" | "Thunderclap" => !target_is_about_to_attack(state, 1 - side, db),
+        "Dream Eater" => defender.status != Status::Sleep,
+        // Only on the turn it arrived, which `turns_active` counts and a switch resets.
+        "Fake Out" | "First Impression" => attacker.turns_active > 0,
+        // The turn-start commitment moves: priority -3, so the opponent almost always acts first,
+        // and what happened in between is the whole move.
+        // Lost if anything hit its user, which is the whole of the move — not gated on it.
+        "Focus Punch" => attacker.last_hit_taken > 0,
+        "Shell Trap" => !(attacker.last_hit_taken > 0 && attacker.last_hit_category.as_deref() == Some("PHYSICAL")),
+        "Last Resort" => !every_other_move_used(attacker, db),
+        // Not quite the real rule — it wants a berry actually eaten — but that is what the Python
+        // reads, and a name ending in _BERRY is how it decides.
+        "Belch" => !attacker.last_consumed_item.ends_with("_BERRY"),
+        _ => false,
+    }
+}
+
+/// `_every_other_move_used`, read off spent PP: a slot at full PP has certainly not been used.
+fn every_other_move_used(attacker: &Pokemon, db: &Database) -> bool {
+    crate::battle::SLOT_NAMES.iter().zip(&attacker.moves).all(|(slot, name)| {
+        name == "Last Resort"
+            || db.move_named(name).is_none_or(|listed| attacker.pp.get(*slot).copied().unwrap_or(0) < listed.pp)
+    })
+}
+
+/// `ROLLING_MOVES`: Rollout and Ice Ball, which pay for doubling their power with a lock.
+pub const ROLLING_MOVES: [&str; 2] = ["Rollout", "Ice Ball"];
+/// `_ROLLING_POWERS`: doubles per connected hit, then holds. Its length is also
+/// `ROLLING_LOCK_TURNS` — the run is committed for as many turns as the table has entries.
+const ROLLING_POWERS: [i32; 5] = [30, 60, 120, 240, 480];
+pub const ROLLING_LOCK_TURNS: i32 = ROLLING_POWERS.len() as i32;
+
+/// The 17 charge (two-turn) moves: `move.charge` in `models/moves.py`. All of them are ported —
+/// this is the whole set, not a subset — so `unsupported` reads this rather than refusing every
+/// charging move outright.
+pub const PORTED_CHARGES: [&str; 17] = [
+    "Fly",
+    "Bounce",
+    "Dig",
+    "Dive",
+    "Sky Drop",
+    "Phantom Force",
+    "Shadow Force",
+    "Solar Beam",
+    "Solar Blade",
+    "Meteor Beam",
+    "Electro Shot",
+    "Freeze Shock",
+    "Geomancy",
+    "Ice Burn",
+    "Razor Wind",
+    "Skull Bash",
+    "Sky Attack",
+];
+
+/// `_CHARGE_TURN_BOOSTS`: applied on the charging turn itself, whether or not the charge is
+/// skipped — a Power Herb Meteor Beam still gets the Special Attack raise even though it fires the
+/// same turn.
+fn charge_turn_boost(move_name: &str) -> Option<&'static str> {
+    match move_name {
+        "Meteor Beam" | "Electro Shot" => Some("SP_ATTACK"),
+        _ => None,
+    }
+}
+
+/// `_SUN_SKIP_CHARGE`: Solar Beam and Solar Blade fire the same turn in harsh sunlight.
+fn sun_skips_charge(move_name: &str) -> bool {
+    matches!(move_name, "Solar Beam" | "Solar Blade")
+}
+
+/// `_skips_charge_turn`: applies the charge-turn boost unconditionally, then says whether the
+/// charge itself is skipped — by the weather, or (checked last, in the Python's own order) by a
+/// consumed Power Herb.
+pub fn skips_charge_turn(state: &mut crate::battle::State, side: usize, the_move: &Move, log: &mut crate::log::Log) -> bool {
+    if let Some(stat) = charge_turn_boost(&the_move.name) {
+        crate::turn::apply_stage_changes(state, side, &[(stat.to_string(), 1)], "move", log);
+    }
+    if sun_skips_charge(&the_move.name) && matches!(crate::hooks::effective_weather(state).as_str(), "SUN" | "HARSH_SUN") {
+        return true;
+    }
+    if state.sides[side].active_pokemon().item == "POWER_HERB" {
+        let pokemon = state.sides[side].active_mut();
+        pokemon.last_consumed_item = pokemon.item.clone();
+        pokemon.item = "NONE".to_string();
+        pokemon.item_consumed = true;
+        return true;
+    }
+    false
+}
+
+/// `_UP_IN_THE_AIR` and `_REACHES_THROUGH`: which charges are semi-invulnerable, and what still
+/// finds them there. A charge absent from this map is an ordinary two-turn move — its user stands
+/// in plain sight, which is why Solar Beam and the rest are not listed at all.
+fn reaches_through(charging_move: &str) -> Option<&'static [&'static str]> {
+    const UP_IN_THE_AIR: [&str; 7] =
+        ["Gust", "Twister", "Thunder", "Hurricane", "Sky Uppercut", "Smack Down", "Thousand Arrows"];
+    const DIG: [&str; 3] = ["Earthquake", "Magnitude", "Fissure"];
+    const DIVE: [&str; 2] = ["Surf", "Whirlpool"];
+    const NONE: [&str; 0] = [];
+    Some(match charging_move {
+        "Fly" | "Bounce" | "Sky Drop" => &UP_IN_THE_AIR,
+        "Dig" => &DIG,
+        "Dive" => &DIVE,
+        // Vanish outright: nothing reaches a Phantom Force or Shadow Force user, unlike the flying
+        // and burrowing charges above.
+        "Phantom Force" | "Shadow Force" => &NONE,
+        _ => return None,
+    })
+}
+
+/// `_out_of_reach`: whether the defender is mid-charge somewhere this move cannot follow. Takes no
+/// draw either way — the Python returns before its accuracy roll, and this must too.
+pub fn out_of_reach(defender: &Pokemon, the_move: &Move, db: &Database) -> bool {
+    if !defender.volatiles.contains_key("CHARGING") {
+        return false;
+    }
+    let Some(slot) = defender.charging_slot else { return false };
+    let Some(charging_name) = defender.moves.get(slot) else { return false };
+    let Some(charging) = db.move_named(charging_name) else { return false };
+    let Some(reaches) = reaches_through(&charging.name) else { return false };
+    !reaches.contains(&the_move.name.as_str())
+}
+
+/// `_sleep_talk_choice`: a move drawn evenly from the *padded* moveset — the same four slots the
+/// digest compares, repeats and all, since a short moveset's repeated first move is exactly as
+/// likely to come up as if it had been chosen for real. `None` means nothing was left to call —
+/// only possible when the whole moveset is Sleep Talk itself plus charges, so a Pokemon holding
+/// only those and Sleep Talk fails outright.
+pub fn sleep_talk_choice(attacker: &Pokemon, db: &Database, tape: &mut Tape) -> Result<Option<Move>, Refusal> {
+    let options: Vec<&Move> = attacker
+        .moves
+        .iter()
+        .filter_map(|name| db.move_named(name))
+        .filter(|m| m.name != "Sleep Talk" && !m.charge)
+        .collect();
+    if options.is_empty() {
+        return Ok(None);
+    }
+    let picked = tape.integer(0, options.len() as i32)? as usize;
+    Ok(Some(options[picked].clone()))
+}
+
+/// `_target_is_about_to_attack`: has this side still got a damaging move coming this turn?
+///
+/// Asked of the database rather than of a set carried on the state — the answer is a property of
+/// the move, and building the set per battle cost a third of the engine's throughput.
+fn target_is_about_to_attack(state: &State, side: usize, db: &Database) -> bool {
+    if state.sides[side].acted_this_turn {
+        return false;
+    }
+    let Some(slot) = state.sides[side].chosen_slot else { return false };
+    let Some(name) = state.sides[side].active_pokemon().moves.get(slot) else { return false };
+    db.move_named(name).is_some_and(|chosen| {
+        chosen
+            .effects
+            .iter()
+            .any(|e| matches!(e, crate::data::Effect::DamageEffect { .. } | crate::data::Effect::FixedDamageEffect { .. }))
+    })
+}

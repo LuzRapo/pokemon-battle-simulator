@@ -126,6 +126,7 @@ def _clone_side(side: SideState, mapping: dict[int, Pokemon]) -> SideState:
         pending_substitute=side.pending_substitute,
         has_mega_evolved=side.has_mega_evolved,  # without this every lookahead line would mega again
         has_ultra_bursted=side.has_ultra_bursted,  # likewise, and it is a separate once-per-battle
+        has_primal_reverted=side.has_primal_reverted,  # and so is this one
         has_used_z_move=side.has_used_z_move,  # likewise: one Z-move per line, not per node
     )
 
