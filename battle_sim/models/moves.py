@@ -162,6 +162,7 @@ class Move:
     pulse: bool = False  # PS flag `pulse`: boosted by Mega Launcher
     wind: bool = False  # PS flag `wind`: absorbed by Wind Rider
     bullet: bool = False  # PS flag `bullet`: blocked by Bulletproof
+    powder: bool = False  # PS flag `powder`: no effect on Grass types or Overcoat (Spore, Stun Spore, ...)
     healing: bool = False  # PS flag `heal`: Triage priority
     reflectable: bool = False  # PS flag `reflectable`: bounced by Magic Bounce
     charge: bool = False  # PS flag `charge`: two-turn moves (Solar Beam, Meteor Beam)
