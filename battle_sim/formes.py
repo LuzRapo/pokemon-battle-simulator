@@ -200,6 +200,26 @@ def mega_stones() -> frozenset[Item]:
     return frozenset(item for _, item in _forme_by_base_and_item())
 
 
+def is_primal(forme: str) -> bool:
+    """Whether reaching this forme is Primal Reversion rather than Mega Evolution."""
+    return forme.endswith("-Primal")
+
+
+@cache
+def primal_orbs() -> frozenset[Item]:
+    """The subset of `mega_stones` that trigger Primal Reversion — the Red and Blue Orbs."""
+    return frozenset(item for (_, item), forme in _forme_by_base_and_item().items() if is_primal(forme))
+
+
+def forme_item_kind(item: Item) -> str | None:
+    """ "Primal orb" or "Mega Stone" for an item that transforms its holder, else None."""
+    if item in primal_orbs():
+        return "Primal orb"
+    if item in mega_stones():
+        return "Mega Stone"
+    return None
+
+
 def apply_forme(pokemon: Pokemon, forme: str) -> None:
     """Swap a live Pokemon onto another forme's species data, in place."""
     species = get_species(forme)

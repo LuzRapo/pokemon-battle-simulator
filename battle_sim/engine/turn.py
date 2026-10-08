@@ -5,7 +5,7 @@ from battle_sim.engine.damage_apply import concede_if_stood
 from battle_sim.engine.outcome import _update_outcome
 from battle_sim.engine.residuals import _apply_residuals
 from battle_sim.engine.switching import _execute_switch, _sync_neutralizing_gas
-from battle_sim.formes import apply_forme, hp_forme, mega_forme, swap_forme, ultra_bursts
+from battle_sim.formes import apply_forme, hp_forme, is_primal, mega_forme, swap_forme, ultra_bursts
 from battle_sim.mechanics.abilities import ABILITY_WEATHER
 from battle_sim.mechanics.battle import BattleState
 from battle_sim.mechanics.effects import rewire_active
@@ -93,17 +93,20 @@ def _resolve_mega_evolution(state: BattleState, log: BattleLog) -> None:
         active = side.active_pokemon
         if active.is_fainted():
             continue
-        burst = ultra_bursts(active.name, active.item)
-        if side.has_ultra_bursted if burst else side.has_mega_evolved:
-            continue
         known = [move.name for move in active.moves.to_list() if move is not None]
         forme = mega_forme(active.name, active.item, known)
         if forme is None:
+            continue
+        # Ultra Burst, Primal Reversion and Mega Evolution are three separate once-per-battle allowances.
+        burst, primal = ultra_bursts(active.name, active.item), is_primal(forme)
+        if side.has_ultra_bursted if burst else side.has_primal_reverted if primal else side.has_mega_evolved:
             continue
         apply_forme(active, forme)
         rewire_active(state.bus, state.effects, active)  # the new forme's ability replaces the old one's handlers
         if burst:
             side.has_ultra_bursted = True
+        elif primal:
+            side.has_primal_reverted = True
         else:
             side.has_mega_evolved = True
         log.add(FormeChanged(side=side_index, pokemon=active.nickname, forme=active.name))

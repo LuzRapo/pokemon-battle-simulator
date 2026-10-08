@@ -16,5 +16,14 @@ jobs:
           enable-cache: true
       - name: Install project (dev)
         run: uv sync --locked --all-extras --all-groups
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Build the Rust engine
+        working-directory: rust
+        run: cargo build --release
+        env:
+          PYO3_PYTHON: ${{ github.workspace }}/.venv/bin/python
       - name: Run tests
         run: uv run pytest -q tests

@@ -6,8 +6,10 @@ from battle_sim.formes import (
     _forme_by_base_and_item,
     _is_transformed_forme,
     apply_forme,
+    forme_item_kind,
     mega_forme,
     mega_stones,
+    primal_orbs,
     ultra_bursts,
     unplayable_formes,
 )
@@ -292,3 +294,10 @@ def test_a_forme_we_cannot_model_is_held_back_with_a_reason():
     assert mega_forme("Victreebel", Item.VICTREEBELITE) is None
     # Nothing that already worked is caught by it.
     assert not {n for n in held if n.startswith(("Charizard", "Mewtwo", "Rayquaza", "Groudon", "Kyogre"))}
+
+
+def test_forme_items_come_in_two_kinds() -> None:
+    assert primal_orbs() == {Item.RED_ORB, Item.BLUE_ORB}
+    assert forme_item_kind(Item.RED_ORB) == "Primal orb"
+    assert forme_item_kind(Item.CHARIZARDITE_X) == "Mega Stone"
+    assert forme_item_kind(Item.LEFTOVERS) is None

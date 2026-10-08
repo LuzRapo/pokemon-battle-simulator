@@ -1,0 +1,4055 @@
+{
+ "Rayquaza": [
+  {
+   "support": 129,
+   "set": {
+    "species": "Rayquaza",
+    "nickname": null,
+    "level": 50,
+    "ability": "AIR_LOCK",
+    "item": "LIFE_ORB",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Dragon Ascent",
+     "Dragon Dance",
+     "Earthquake",
+     "Extreme Speed"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 30,
+   "set": {
+    "species": "Rayquaza",
+    "nickname": null,
+    "level": 50,
+    "ability": "AIR_LOCK",
+    "item": "LIFE_ORB",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Draco Meteor",
+     "Dragon Ascent",
+     "Extreme Speed",
+     "V-create"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Fairy": [
+  {
+   "support": 368,
+   "set": {
+    "species": "Arceus-Fairy",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "PIXIE_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 4,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Defog",
+     "Judgment",
+     "Recover",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Groudon": [
+  {
+   "support": 72,
+   "set": {
+    "species": "Groudon",
+    "nickname": null,
+    "level": 50,
+    "ability": "DROUGHT",
+    "item": "RED_ORB",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Dragon Tail",
+     "Precipice Blades",
+     "Stealth Rock",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 54,
+   "set": {
+    "species": "Groudon",
+    "nickname": null,
+    "level": 50,
+    "ability": "DROUGHT",
+    "item": "RED_ORB",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Earthquake",
+     "Overheat",
+     "Stealth Rock",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Necrozma-Dusk-Mane": [
+  {
+   "support": 129,
+   "set": {
+    "species": "Necrozma-Dusk-Mane",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRISM_ARMOR",
+    "item": "LEFTOVERS",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Morning Sun",
+     "Stealth Rock",
+     "Sunsteel Strike",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 70,
+   "set": {
+    "species": "Necrozma-Dusk-Mane",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRISM_ARMOR",
+    "item": "SOLGANIUM_Z",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Earthquake",
+     "Rock Polish",
+     "Sunsteel Strike",
+     "Swords Dance"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Marshadow": [
+  {
+   "support": 147,
+   "set": {
+    "species": "Marshadow",
+    "nickname": null,
+    "level": 50,
+    "ability": "TECHNICIAN",
+    "item": "LIFE_ORB",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Close Combat",
+     "Shadow Sneak",
+     "Spectral Thief",
+     "Substitute"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Yveltal": [
+  {
+   "support": 94,
+   "set": {
+    "species": "Yveltal",
+    "nickname": null,
+    "level": 50,
+    "ability": "DARK_AURA",
+    "item": "LEFTOVERS",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 4,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Foul Play",
+     "Roost",
+     "Taunt",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 81,
+   "set": {
+    "species": "Yveltal",
+    "nickname": null,
+    "level": 50,
+    "ability": "DARK_AURA",
+    "item": "LIFE_ORB",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 4,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Dark Pulse",
+     "Oblivion Wing",
+     "Sucker Punch",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Ground": [
+  {
+   "support": 162,
+   "set": {
+    "species": "Arceus-Ground",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "EARTH_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 4,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Defog",
+     "Ice Beam",
+     "Judgment",
+     "Recover"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 40,
+   "set": {
+    "species": "Arceus-Ground",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "EARTH_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 4,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Ice Beam",
+     "Judgment",
+     "Magic Coat",
+     "Stealth Rock"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus": [
+  {
+   "support": 136,
+   "set": {
+    "species": "Arceus",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "LIFE_ORB",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Earthquake",
+     "Extreme Speed",
+     "Substitute",
+     "Swords Dance"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 41,
+   "set": {
+    "species": "Arceus",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "LIFE_ORB",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Extreme Speed",
+     "Shadow Claw",
+     "Swords Dance",
+     "Thunder Wave"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Steel": [
+  {
+   "support": 118,
+   "set": {
+    "species": "Arceus-Steel",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "IRON_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Earth Power",
+     "Judgment",
+     "Recover"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 45,
+   "set": {
+    "species": "Arceus-Steel",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "IRON_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Judgment",
+     "Perish Song",
+     "Recover",
+     "Stealth Rock"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Xerneas": [
+  {
+   "support": 52,
+   "set": {
+    "species": "Xerneas",
+    "nickname": null,
+    "level": 50,
+    "ability": "FAIRY_AURA",
+    "item": "POWER_HERB",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 8,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Focus Blast",
+     "Geomancy",
+     "Moonblast",
+     "Thunder"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 14,
+   "set": {
+    "species": "Xerneas",
+    "nickname": null,
+    "level": 50,
+    "ability": "FAIRY_AURA",
+    "item": "POWER_HERB",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 8,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Geomancy",
+     "Ingrain",
+     "Moonblast",
+     "Rest"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Zygarde": [
+  {
+   "support": 124,
+   "set": {
+    "species": "Zygarde",
+    "nickname": null,
+    "level": 50,
+    "ability": "POWER_CONSTRUCT",
+    "item": "LEFTOVERS",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 48,
+     "ATTACK": 216,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 12,
+     "SPEED": 232
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Coil",
+     "Glare",
+     "Rest",
+     "Thousand Arrows"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 114,
+   "set": {
+    "species": "Zygarde",
+    "nickname": null,
+    "level": 50,
+    "ability": "POWER_CONSTRUCT",
+    "item": "LEFTOVERS",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 48,
+     "ATTACK": 216,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 12,
+     "SPEED": 232
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Dragon Dance",
+     "Dragon Tail",
+     "Substitute",
+     "Thousand Arrows"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Kyogre": [
+  {
+   "support": 43,
+   "set": {
+    "species": "Kyogre",
+    "nickname": null,
+    "level": 50,
+    "ability": "DRIZZLE",
+    "item": "BLUE_ORB",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 4,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Ice Beam",
+     "Origin Pulse",
+     "Thunder"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Ho-Oh": [
+  {
+   "support": 151,
+   "set": {
+    "species": "Ho-Oh",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "LEFTOVERS",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 4,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 24,
+     "SPEED": 228
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Brave Bird",
+     "Recover",
+     "Sacred Fire",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 34,
+   "set": {
+    "species": "Ho-Oh",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "LEFTOVERS",
+    "nature": "IMPISH",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 204,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 52,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Defog",
+     "Flamethrower",
+     "Toxic",
+     "Whirlwind"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Dark": [
+  {
+   "support": 103,
+   "set": {
+    "species": "Arceus-Dark",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "DREAD_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 4,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Judgment",
+     "Recover",
+     "Refresh"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 51,
+   "set": {
+    "species": "Arceus-Dark",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "DREAD_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 4,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Defog",
+     "Judgment",
+     "Recover",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Gengar": [
+  {
+   "support": 66,
+   "set": {
+    "species": "Gengar",
+    "nickname": null,
+    "level": 50,
+    "ability": "CURSED_BODY",
+    "item": "GENGARITE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Hex",
+     "Hypnosis",
+     "Sludge Wave",
+     "Substitute"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 30,
+   "set": {
+    "species": "Gengar",
+    "nickname": null,
+    "level": 50,
+    "ability": "CURSED_BODY",
+    "item": "GENGARITE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Shadow Ball",
+     "Sludge Wave",
+     "Substitute",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Poison": [
+  {
+   "support": 91,
+   "set": {
+    "species": "Arceus-Poison",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "TOXIC_PLATE",
+    "nature": "IMPISH",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 4,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Poison Jab",
+     "Recover",
+     "Stealth Rock",
+     "Will-O-Wisp"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 24,
+   "set": {
+    "species": "Arceus-Poison",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "TOXIC_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Perish Song",
+     "Poison Jab",
+     "Recover",
+     "Whirlpool"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Ferrothorn": [
+  {
+   "support": 130,
+   "set": {
+    "species": "Ferrothorn",
+    "nickname": null,
+    "level": 50,
+    "ability": "IRON_BARBS",
+    "item": "LEFTOVERS",
+    "nature": "RELAXED",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 4,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Gyro Ball",
+     "Leech Seed",
+     "Protect",
+     "Stealth Rock"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 31,
+   "set": {
+    "species": "Ferrothorn",
+    "nickname": null,
+    "level": 50,
+    "ability": "IRON_BARBS",
+    "item": "LEFTOVERS",
+    "nature": "RELAXED",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 4,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Leech Seed",
+     "Power Whip",
+     "Protect",
+     "Spikes"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Smeargle": [
+  {
+   "support": 49,
+   "set": {
+    "species": "Smeargle",
+    "nickname": null,
+    "level": 50,
+    "ability": "OWN_TEMPO",
+    "item": "FOCUS_SASH",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Baton Pass",
+     "King's Shield",
+     "Shell Smash",
+     "Spore"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 35,
+   "set": {
+    "species": "Smeargle",
+    "nickname": null,
+    "level": 50,
+    "ability": "OWN_TEMPO",
+    "item": "LEFTOVERS",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Baton Pass",
+     "Spiky Shield",
+     "Substitute",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Ghost": [
+  {
+   "support": 57,
+   "set": {
+    "species": "Arceus-Ghost",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "SPOOKY_PLATE",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 4,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Brick Break",
+     "Extreme Speed",
+     "Shadow Force",
+     "Swords Dance"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Mewtwo": [
+  {
+   "support": 40,
+   "set": {
+    "species": "Mewtwo",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "LEFTOVERS",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Psystrike",
+     "Recover",
+     "Taunt",
+     "Will-O-Wisp"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 17,
+   "set": {
+    "species": "Mewtwo",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "MEWTWONITE_Y",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Fire Blast",
+     "Ice Beam",
+     "Psystrike",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Water": [
+  {
+   "support": 36,
+   "set": {
+    "species": "Arceus-Water",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "SPLASH_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 4,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Judgment",
+     "Recover",
+     "Stealth Rock",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 27,
+   "set": {
+    "species": "Arceus-Water",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "SPLASH_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 4,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Liquidation",
+     "Recover",
+     "Toxic",
+     "Will-O-Wisp"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Giratina": [
+  {
+   "support": 84,
+   "set": {
+    "species": "Giratina",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "LEFTOVERS",
+    "nature": "RELAXED",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 204,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 52,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Defog",
+     "Rest",
+     "Toxic",
+     "Will-O-Wisp"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Lugia": [
+  {
+   "support": 99,
+   "set": {
+    "species": "Lugia",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "LEFTOVERS",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 8,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Roost",
+     "Substitute",
+     "Toxic",
+     "Whirlwind"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Shuckle": [
+  {
+   "support": 67,
+   "set": {
+    "species": "Shuckle",
+    "nickname": null,
+    "level": 50,
+    "ability": "STURDY",
+    "item": "MENTAL_HERB",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Encore",
+     "Infestation",
+     "Stealth Rock",
+     "Sticky Web"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Deoxys-Attack": [
+  {
+   "support": 11,
+   "set": {
+    "species": "Deoxys-Attack",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "FOCUS_SASH",
+    "nature": "LONELY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 4,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Dark Pulse",
+     "Ice Beam",
+     "Nasty Plot",
+     "Psychic"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 11,
+   "set": {
+    "species": "Deoxys-Attack",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "FOCUS_SASH",
+    "nature": "LONELY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 4,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Extreme Speed",
+     "Psycho Boost",
+     "Stealth Rock",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Celesteela": [
+  {
+   "support": 89,
+   "set": {
+    "species": "Celesteela",
+    "nickname": null,
+    "level": 50,
+    "ability": "BEAST_BOOST",
+    "item": "LEFTOVERS",
+    "nature": "IMPISH",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 4,
+     "DEFENCE": 112,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 140,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Flame Charge",
+     "Leech Seed",
+     "Protect",
+     "Substitute"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 32,
+   "set": {
+    "species": "Celesteela",
+    "nickname": null,
+    "level": 50,
+    "ability": "BEAST_BOOST",
+    "item": "LEFTOVERS",
+    "nature": "IMPISH",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 4,
+     "DEFENCE": 112,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 140,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Heavy Slam",
+     "Leech Seed",
+     "Protect",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Lunala": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Lunala",
+    "nickname": null,
+    "level": 50,
+    "ability": "SHADOW_SHIELD",
+    "item": "LUNALIUM_Z",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Focus Blast",
+     "Moongeist Beam",
+     "Tailwind"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Rock": [
+  {
+   "support": 23,
+   "set": {
+    "species": "Arceus-Rock",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "STONE_PLATE",
+    "nature": "NAIVE",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 4,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Judgment",
+     "Recover",
+     "Stealth Rock",
+     "Will-O-Wisp"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 15,
+   "set": {
+    "species": "Arceus-Rock",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "STONE_PLATE",
+    "nature": "NAIVE",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 4,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Judgment",
+     "Recover",
+     "Refresh"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Tapu Lele": [
+  {
+   "support": 8,
+   "set": {
+    "species": "Tapu Lele",
+    "nickname": null,
+    "level": 50,
+    "ability": "PSYCHIC_SURGE",
+    "item": "TERRAIN_EXTENDER",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Moonblast",
+     "Nature's Madness",
+     "Psychic",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Sableye": [
+  {
+   "support": 80,
+   "set": {
+    "species": "Sableye",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRANKSTER",
+    "item": "SABLENITE",
+    "nature": "CAREFUL",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 8,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 252,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Fake Out",
+     "Foul Play",
+     "Recover",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Tyranitar": [
+  {
+   "support": 8,
+   "set": {
+    "species": "Tyranitar",
+    "nickname": null,
+    "level": 50,
+    "ability": "SAND_STREAM",
+    "item": "LEFTOVERS",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 4
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Pursuit",
+     "Rest",
+     "Rock Tomb",
+     "Stealth Rock"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Deoxys-Speed": [
+  {
+   "support": 14,
+   "set": {
+    "species": "Deoxys-Speed",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "FOCUS_SASH",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 8,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Fling",
+     "Stealth Rock",
+     "Taunt",
+     "Thunder Wave"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 9,
+   "set": {
+    "species": "Deoxys-Speed",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "FOCUS_SASH",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 8,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Light Screen",
+     "Reflect",
+     "Stealth Rock",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Chansey": [
+  {
+   "support": 33,
+   "set": {
+    "species": "Chansey",
+    "nickname": null,
+    "level": 50,
+    "ability": "NATURAL_CURE",
+    "item": "EVIOLITE",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 8,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Confide",
+     "Heal Bell",
+     "Soft-Boiled",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 8,
+   "set": {
+    "species": "Chansey",
+    "nickname": null,
+    "level": 50,
+    "ability": "NATURAL_CURE",
+    "item": "EVIOLITE",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 8,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Heal Bell",
+     "Protect",
+     "Toxic",
+     "Wish"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Magearna": [
+  {
+   "support": 16,
+   "set": {
+    "species": "Magearna",
+    "nickname": null,
+    "level": 50,
+    "ability": "SOUL_HEART",
+    "item": "LEFTOVERS",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Fleur Cannon",
+     "Heart Swap",
+     "Pain Split",
+     "Volt Switch"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Skarmory": [
+  {
+   "support": 38,
+   "set": {
+    "species": "Skarmory",
+    "nickname": null,
+    "level": 50,
+    "ability": "STURDY",
+    "item": "LEFTOVERS",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Roost",
+     "Spikes",
+     "Toxic",
+     "Whirlwind"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 11,
+   "set": {
+    "species": "Skarmory",
+    "nickname": null,
+    "level": 50,
+    "ability": "STURDY",
+    "item": "LEFTOVERS",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Defog",
+     "Iron Defense",
+     "Roost",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Blissey": [
+  {
+   "support": 14,
+   "set": {
+    "species": "Blissey",
+    "nickname": null,
+    "level": 50,
+    "ability": "NATURAL_CURE",
+    "item": "LEFTOVERS",
+    "nature": "SASSY",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 252,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Confide",
+     "Heal Bell",
+     "Soft-Boiled",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Tapu Koko": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Tapu Koko",
+    "nickname": null,
+    "level": 50,
+    "ability": "ELECTRIC_SURGE",
+    "item": "LIGHT_CLAY",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 4,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Dazzling Gleam",
+     "Thunderbolt",
+     "U-turn",
+     "Volt Switch"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Excadrill": [
+  {
+   "support": 10,
+   "set": {
+    "species": "Excadrill",
+    "nickname": null,
+    "level": 50,
+    "ability": "MOLD_BREAKER",
+    "item": "FOCUS_SASH",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Rapid Spin",
+     "Rock Tomb",
+     "Stealth Rock",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Ditto": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Ditto",
+    "nickname": null,
+    "level": 50,
+    "ability": "IMPOSTER",
+    "item": "CHOICE_SCARF",
+    "nature": "RELAXED",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 8,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Transform"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Scolipede": [
+  {
+   "support": 48,
+   "set": {
+    "species": "Scolipede",
+    "nickname": null,
+    "level": 50,
+    "ability": "SPEED_BOOST",
+    "item": "BLACK_SLUDGE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 80,
+     "ATTACK": 0,
+     "DEFENCE": 240,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 188
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Baton Pass",
+     "Iron Defense",
+     "Protect",
+     "Substitute"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Gothitelle": [
+  {
+   "support": 36,
+   "set": {
+    "species": "Gothitelle",
+    "nickname": null,
+    "level": 50,
+    "ability": "SHADOW_TAG",
+    "item": "LEFTOVERS",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Charm",
+     "Confide",
+     "Rest",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Flying": [
+  {
+   "support": 20,
+   "set": {
+    "species": "Arceus-Flying",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "SKY_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 8,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Judgment",
+     "Recover",
+     "Refresh"
+    ],
+    "pp_ups": 0
+   }
+  },
+  {
+   "support": 14,
+   "set": {
+    "species": "Arceus-Flying",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "SKY_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 8,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Judgment",
+     "Recover",
+     "Stealth Rock",
+     "Thunder Wave"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Tentacruel": [
+  {
+   "support": 6,
+   "set": {
+    "species": "Tentacruel",
+    "nickname": null,
+    "level": 50,
+    "ability": "CLEAR_BODY",
+    "item": "BLACK_SLUDGE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Protect",
+     "Rapid Spin",
+     "Scald",
+     "Toxic Spikes"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Necrozma-Dawn-Wings": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Necrozma-Dawn-Wings",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRISM_ARMOR",
+    "item": "ULTRANECROZIUM_Z",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Dragon Pulse",
+     "Heat Wave",
+     "Photon Geyser"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Grass": [
+  {
+   "support": 6,
+   "set": {
+    "species": "Arceus-Grass",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "MEADOW_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 80,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 176,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Grass Knot",
+     "Ice Beam",
+     "Recover"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Espeon": [
+  {
+   "support": 12,
+   "set": {
+    "species": "Espeon",
+    "nickname": null,
+    "level": 50,
+    "ability": "MAGIC_BOUNCE",
+    "item": "LEFTOVERS",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 8,
+     "ATTACK": 0,
+     "DEFENCE": 208,
+     "SP_ATTACK": 68,
+     "SP_DEFENCE": 0,
+     "SPEED": 224
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Baton Pass",
+     "Dazzling Gleam",
+     "Stored Power",
+     "Substitute"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Drifblim": [
+  {
+   "support": 10,
+   "set": {
+    "species": "Drifblim",
+    "nickname": null,
+    "level": 50,
+    "ability": "AFTERMATH",
+    "item": "SITRUS_BERRY",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 188,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 60,
+     "SPEED": 8
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Baton Pass",
+     "Defog",
+     "Minimize",
+     "Substitute"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Clefable": [
+  {
+   "support": 18,
+   "set": {
+    "species": "Clefable",
+    "nickname": null,
+    "level": 50,
+    "ability": "UNAWARE",
+    "item": "LEFTOVERS",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Heal Bell",
+     "Moonblast",
+     "Protect",
+     "Wish"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Landorus-Therian": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Landorus-Therian",
+    "nickname": null,
+    "level": 50,
+    "ability": "INTIMIDATE",
+    "item": "RED_CARD",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Earthquake",
+     "Explosion",
+     "Rock Tomb",
+     "Stealth Rock"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Kartana": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Kartana",
+    "nickname": null,
+    "level": 50,
+    "ability": "BEAST_BOOST",
+    "item": "LIFE_ORB",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 48,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 208
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Knock Off",
+     "Leaf Blade",
+     "Sacred Sword",
+     "Smart Strike"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Aerodactyl": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Aerodactyl",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "FOCUS_SASH",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 8,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Rock Tomb",
+     "Stealth Rock",
+     "Tailwind",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Stakataka": [
+  {
+   "support": 7,
+   "set": {
+    "species": "Stakataka",
+    "nickname": null,
+    "level": 50,
+    "ability": "BEAST_BOOST",
+    "item": "AIR_BALLOON",
+    "nature": "LONELY",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Earthquake",
+     "Gyro Ball",
+     "Stone Edge",
+     "Trick Room"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Toxapex": [
+  {
+   "support": 9,
+   "set": {
+    "species": "Toxapex",
+    "nickname": null,
+    "level": 50,
+    "ability": "REGENERATOR",
+    "item": "BLACK_SLUDGE",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Haze",
+     "Recover",
+     "Scald",
+     "Toxic Spikes"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Kyurem-White": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Kyurem-White",
+    "nickname": null,
+    "level": 50,
+    "ability": "TURBOBLAZE",
+    "item": "LIFE_ORB",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Ancient Power",
+     "Draco Meteor",
+     "Fusion Flare",
+     "Ice Beam"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Lucario": [
+  {
+   "support": 6,
+   "set": {
+    "species": "Lucario",
+    "nickname": null,
+    "level": 50,
+    "ability": "JUSTIFIED",
+    "item": "LUCARIONITE",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Bullet Punch",
+     "Close Combat",
+     "Meteor Mash",
+     "Swords Dance"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Mr. Mime": [
+  {
+   "support": 17,
+   "set": {
+    "species": "Mr. Mime",
+    "nickname": null,
+    "level": 50,
+    "ability": "SOUNDPROOF",
+    "item": "WIKI_BERRY",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 204,
+     "ATTACK": 0,
+     "DEFENCE": 244,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 32,
+     "SPEED": 28
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Baton Pass",
+     "Calm Mind",
+     "Substitute",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Zekrom": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Zekrom",
+    "nickname": null,
+    "level": 50,
+    "ability": "TERAVOLT",
+    "item": "LIFE_ORB",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Bolt Strike",
+     "Draco Meteor",
+     "Fusion Bolt",
+     "Outrage"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Diancie": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Diancie",
+    "nickname": null,
+    "level": 50,
+    "ability": "CLEAR_BODY",
+    "item": "DIANCITE",
+    "nature": "QUIET",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 8,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Earth Power",
+     "Moonblast",
+     "Power Gem",
+     "Stealth Rock"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Dragon": [
+  {
+   "support": 9,
+   "set": {
+    "species": "Arceus-Dragon",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "DRACO_PLATE",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Defog",
+     "Judgment",
+     "Recover",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Naganadel": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Naganadel",
+    "nickname": null,
+    "level": 50,
+    "ability": "BEAST_BOOST",
+    "item": "DRAGONIUM_Z",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Draco Meteor",
+     "Fire Blast",
+     "Nasty Plot",
+     "Sludge Wave"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Giratina-Origin": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Giratina-Origin",
+    "nickname": null,
+    "level": 50,
+    "ability": "LEVITATE",
+    "item": "GRISEOUS_ORB",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Defog",
+     "Draco Meteor",
+     "Hex",
+     "Thunder Wave"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Electric": [
+  {
+   "support": 12,
+   "set": {
+    "species": "Arceus-Electric",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "ZAP_PLATE",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Ice Beam",
+     "Judgment",
+     "Recover"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Heatran": [
+  {
+   "support": 9,
+   "set": {
+    "species": "Heatran",
+    "nickname": null,
+    "level": 50,
+    "ability": "FLASH_FIRE",
+    "item": "LEFTOVERS",
+    "nature": "MODEST",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Magma Storm",
+     "Stealth Rock",
+     "Taunt",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Jirachi": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Jirachi",
+    "nickname": null,
+    "level": 50,
+    "ability": "SERENE_GRACE",
+    "item": "LEFTOVERS",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Body Slam",
+     "Iron Head",
+     "Trick",
+     "U-turn"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Reshiram": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Reshiram",
+    "nickname": null,
+    "level": 50,
+    "ability": "TURBOBLAZE",
+    "item": "WHITE_HERB",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 4,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Dragon Pulse",
+     "Fusion Flare",
+     "Roost",
+     "Will-O-Wisp"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Dialga": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Dialga",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRESSURE",
+    "item": "WHITE_HERB",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 4,
+     "SP_DEFENCE": 0,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Aura Sphere",
+     "Dragon Pulse",
+     "Flash Cannon",
+     "Thunder"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Dugtrio": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Dugtrio",
+    "nickname": null,
+    "level": 50,
+    "ability": "ARENA_TRAP",
+    "item": "FOCUS_SASH",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Confide",
+     "Earthquake",
+     "Memento",
+     "Stealth Rock"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Darkrai": [
+  {
+   "support": 5,
+   "set": {
+    "species": "Darkrai",
+    "nickname": null,
+    "level": 50,
+    "ability": "BAD_DREAMS",
+    "item": "WHITE_HERB",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Dark Pulse",
+     "Hypnosis",
+     "Nasty Plot",
+     "Substitute"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Vaporeon": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Vaporeon",
+    "nickname": null,
+    "level": 50,
+    "ability": "WATER_ABSORB",
+    "item": "NORMALIUM_Z",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 216,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 40
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Acid Armor",
+     "Aqua Ring",
+     "Baton Pass",
+     "Roar"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Carbink": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Carbink",
+    "nickname": null,
+    "level": 50,
+    "ability": "STURDY",
+    "item": "LEFTOVERS",
+    "nature": "BRAVE",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 8,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Magic Coat",
+     "Stealth Rock",
+     "Toxic",
+     "Trick Room"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Tapu Fini": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Tapu Fini",
+    "nickname": null,
+    "level": 50,
+    "ability": "MISTY_SURGE",
+    "item": "LEFTOVERS",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Defog",
+     "Moonblast",
+     "Nature's Madness",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Ice": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Arceus-Ice",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "ICICLE_PLATE",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 8,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Fire Blast",
+     "Judgment",
+     "Stealth Rock"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Salamence": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Salamence",
+    "nickname": null,
+    "level": 50,
+    "ability": "INTIMIDATE",
+    "item": "SALAMENCITE",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Dragon Dance",
+     "Frustration",
+     "Refresh",
+     "Roost"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Quagsire": [
+  {
+   "support": 7,
+   "set": {
+    "species": "Quagsire",
+    "nickname": null,
+    "level": 50,
+    "ability": "UNAWARE",
+    "item": "LEFTOVERS",
+    "nature": "RELAXED",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Haze",
+     "Protect",
+     "Recover",
+     "Scald"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Arceus-Fire": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Arceus-Fire",
+    "nickname": null,
+    "level": 50,
+    "ability": "MULTITYPE",
+    "item": "FLAME_PLATE",
+    "nature": "MILD",
+    "effort_values": {
+     "HP": 248,
+     "ATTACK": 8,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Calm Mind",
+     "Fire Blast",
+     "Ice Beam",
+     "Thunder"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Vivillon": [
+  {
+   "support": 16,
+   "set": {
+    "species": "Vivillon",
+    "nickname": null,
+    "level": 50,
+    "ability": "COMPOUND_EYES",
+    "item": "LEFTOVERS",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 144,
+     "SP_ATTACK": 112,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Hurricane",
+     "Quiver Dance",
+     "Sleep Powder",
+     "Substitute"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Solgaleo": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Solgaleo",
+    "nickname": null,
+    "level": 50,
+    "ability": "FULL_METAL_BODY",
+    "item": "CHOICE_SCARF",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 216,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 176,
+     "SPEED": 116
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Earthquake",
+     "Flare Blitz",
+     "Sunsteel Strike",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Mew": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Mew",
+    "nickname": null,
+    "level": 50,
+    "ability": "SYNCHRONIZE",
+    "item": "FOCUS_SASH",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 4,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Explosion",
+     "Magic Coat",
+     "Stealth Rock",
+     "Trick Room"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Slurpuff": [
+  {
+   "support": 5,
+   "set": {
+    "species": "Slurpuff",
+    "nickname": null,
+    "level": 50,
+    "ability": "UNBURDEN",
+    "item": "FOCUS_SASH",
+    "nature": "NAIVE",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Dazzling Gleam",
+     "Magic Coat",
+     "Sticky Web",
+     "Yawn"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Pheromosa": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Pheromosa",
+    "nickname": null,
+    "level": 50,
+    "ability": "BEAST_BOOST",
+    "item": "FOCUS_SASH",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 4,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "High Jump Kick",
+     "Ice Beam",
+     "Poison Jab",
+     "U-turn"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Scizor": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Scizor",
+    "nickname": null,
+    "level": 50,
+    "ability": "TECHNICIAN",
+    "item": "SCIZORITE",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 4,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 0,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Agility",
+     "Baton Pass",
+     "Bullet Punch",
+     "Swords Dance"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Mimikyu": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Mimikyu",
+    "nickname": null,
+    "level": 50,
+    "ability": "DISGUISE",
+    "item": "RED_CARD",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Curse",
+     "Grudge",
+     "Taunt",
+     "Thunder Wave"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Wobbuffet": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Wobbuffet",
+    "nickname": null,
+    "level": 50,
+    "ability": "SHADOW_TAG",
+    "item": "FOCUS_SASH",
+    "nature": "CALM",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 4,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 252,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Counter",
+     "Destiny Bond",
+     "Encore",
+     "Mirror Coat"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Klefki": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Klefki",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRANKSTER",
+    "item": "LEFTOVERS",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Play Rough",
+     "Spikes",
+     "Thunder Wave",
+     "Toxic"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Whimsicott": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Whimsicott",
+    "nickname": null,
+    "level": 50,
+    "ability": "PRANKSTER",
+    "item": "LEFTOVERS",
+    "nature": "BOLD",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 0,
+     "DEFENCE": 252,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Encore",
+     "Endeavor",
+     "Moonblast",
+     "Taunt"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Serperior": [
+  {
+   "support": 8,
+   "set": {
+    "species": "Serperior",
+    "nickname": null,
+    "level": 50,
+    "ability": "CONTRARY",
+    "item": "LEFTOVERS",
+    "nature": "TIMID",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 0,
+     "DEFENCE": 0,
+     "SP_ATTACK": 252,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Glare",
+     "Leaf Storm",
+     "Leech Seed",
+     "Substitute"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Genesect": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Genesect",
+    "nickname": null,
+    "level": 50,
+    "ability": "DOWNLOAD",
+    "item": "CHOICE_SCARF",
+    "nature": "HASTY",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Extreme Speed",
+     "Ice Beam",
+     "Iron Head",
+     "U-turn"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Umbreon": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Umbreon",
+    "nickname": null,
+    "level": 50,
+    "ability": "SYNCHRONIZE",
+    "item": "LEFTOVERS",
+    "nature": "CAREFUL",
+    "effort_values": {
+     "HP": 252,
+     "ATTACK": 4,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 252,
+     "SPEED": 0
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Foul Play",
+     "Heal Bell",
+     "Protect",
+     "Wish"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Cloyster": [
+  {
+   "support": 0,
+   "set": {
+    "species": "Cloyster",
+    "nickname": null,
+    "level": 50,
+    "ability": "SKILL_LINK",
+    "item": "FOCUS_SASH",
+    "nature": "ADAMANT",
+    "effort_values": {
+     "HP": 0,
+     "ATTACK": 252,
+     "DEFENCE": 0,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 4,
+     "SPEED": 252
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Icicle Spear",
+     "Rapid Spin",
+     "Shell Smash",
+     "Spikes"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ],
+ "Gliscor": [
+  {
+   "support": 6,
+   "set": {
+    "species": "Gliscor",
+    "nickname": null,
+    "level": 50,
+    "ability": "POISON_HEAL",
+    "item": "TOXIC_ORB",
+    "nature": "JOLLY",
+    "effort_values": {
+     "HP": 36,
+     "ATTACK": 76,
+     "DEFENCE": 176,
+     "SP_ATTACK": 0,
+     "SP_DEFENCE": 140,
+     "SPEED": 80
+    },
+    "individual_values": {
+     "HP": 31,
+     "ATTACK": 31,
+     "DEFENCE": 31,
+     "SP_ATTACK": 31,
+     "SP_DEFENCE": 31,
+     "SPEED": 31
+    },
+    "moves": [
+     "Baton Pass",
+     "Double Team",
+     "Protect",
+     "Substitute"
+    ],
+    "pp_ups": 0
+   }
+  }
+ ]
+}
