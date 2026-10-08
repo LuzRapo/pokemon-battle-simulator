@@ -1,18 +1,25 @@
+from collections.abc import Sequence
+
 import pytest
 
 from battle_sim.database.loader import get_move
-from battle_sim.engine import apply_forced_switch, step
+from battle_sim.engine import apply_forced_switch, legal_actions, step
+from battle_sim.maths.damage import move_effectiveness
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.mechanics.events import Event, EventContext, HandlerResult, Payload
-from battle_sim.mechanics.log import BattleLog
+from battle_sim.mechanics.log import BattleLog, render_text
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.log_events import (
     BattleEnded,
+    CantAct,
+    CriticalHit,
     DamageDealt,
     DisableApplied,
     DisabledBlocked,
     DoesNotAffect,
+    DrainBackfired,
+    Drained,
     Effectiveness,
     Fainted,
     LeechSeedSap,
@@ -22,20 +29,27 @@ from battle_sim.models.log_events import (
     MultiHitSummary,
     NoEffect,
     Protected,
+    RecoilDamage,
     ResidualDamage,
+    ScreenSet,
     StatStageChanged,
+    StatusCleared,
     StatusInflicted,
     SubstituteAlready,
     SubstituteTooWeak,
     Switched,
     TailwindSet,
     TauntBlocked,
+    TrapSqueezed,
 )
 from battle_sim.models.moves import MoveSet, MoveSlot
 from battle_sim.models.pokemon import Pokemon
+from battle_sim.models.spec import PokemonSpec
 from battle_sim.models.stats import BaseStats, EVs, IVs
 from battle_sim.models.type_matchups import TypePair
+from battle_sim.teams import build_pokemon
 from battle_sim.utils import (
+    Ability,
     ExtraStatus,
     Hazards,
     Item,
@@ -58,6 +72,7 @@ WILL_O_WISP = get_move("Will-O-Wisp")
 ROCK_SLIDE = get_move("Rock Slide")
 
 USE_TACKLE = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+USE_FIRST_MOVE = USE_TACKLE  # the same slot, named for tests whose first move is not Tackle
 USE_QUICK_ATTACK = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.SECOND)
 USE_EMBER = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.THIRD)
 USE_SWORDS_DANCE = Action(action=ActionType.USE_MOVE, target=Target.SELF, move=MoveSlot.FOURTH)
@@ -281,7 +296,8 @@ def test_toxic_counter_resets_on_switch_out():
     assert a.status_turns == 0
 
 
-def test_sleep_initial_counter_is_one_to_three():
+def test_sleep_initial_counter_is_two_to_four():
+    """Sleep lasts two to four move attempts."""
     from battle_sim.engine.status_apply import _apply_status
     from battle_sim.models.moves import InflictStatusEffect
 
@@ -295,9 +311,49 @@ def test_sleep_initial_counter_is_one_to_three():
             1,
             rng,
             BattleLog(),
+            ((), (defender,)),
         )
         durations.add(defender.status_turns)
-    assert durations == {1, 2, 3}
+    assert durations == {2, 3, 4}
+
+
+def test_there_is_no_sleep_clause_in_this_format():
+    """No sleep clause applies, as in Gen 7 Anything Goes."""
+    from battle_sim.engine.status_apply import _apply_status
+    from battle_sim.models.log_events import StatusClauseBlocked
+    from battle_sim.models.moves import InflictStatusEffect
+
+    already_asleep = [_mk("A", status=Status.SLEEP), _mk("B", status=Status.SLEEP)]
+    third = _mk("C")
+    teams: tuple[list[Pokemon], list[Pokemon]] = ([], [*already_asleep, third])
+    log = BattleLog()
+    _apply_status(InflictStatusEffect(status=Status.SLEEP, probability=1.0), third, 1, RNG(seed=0), log, teams)
+    assert third.status is Status.SLEEP  # a whole team may be put under
+    assert not any(isinstance(entry, StatusClauseBlocked) for entry in log.entries)
+
+
+def test_sleep_clause_permits_the_second_asleep_pokemon():
+    from battle_sim.engine.status_apply import _apply_status
+    from battle_sim.models.moves import InflictStatusEffect
+
+    one_asleep = _mk("A", status=Status.SLEEP)
+    second = _mk("B")
+    teams: tuple[list[Pokemon], list[Pokemon]] = ([], [one_asleep, second])
+    _apply_status(InflictStatusEffect(status=Status.SLEEP, probability=1.0), second, 1, RNG(seed=0), BattleLog(), teams)
+    assert second.status is Status.SLEEP
+
+
+def test_sleep_clause_does_not_count_a_fainted_teammate():
+    from battle_sim.engine.status_apply import _apply_status
+    from battle_sim.models.moves import InflictStatusEffect
+
+    fainted_asleep = _mk("A", status=Status.SLEEP)
+    fainted_asleep.live_stats.HP = 0
+    still_asleep = _mk("B", status=Status.SLEEP)
+    target = _mk("C")
+    teams: tuple[list[Pokemon], list[Pokemon]] = ([], [fainted_asleep, still_asleep, target])
+    _apply_status(InflictStatusEffect(status=Status.SLEEP, probability=1.0), target, 1, RNG(seed=0), BattleLog(), teams)
+    assert target.status is Status.SLEEP  # only one *live* sleeper on the side, so this is the clause's second
 
 
 def test_sleep_pokemon_wakes_when_counter_hits_zero():
@@ -316,6 +372,43 @@ def test_sleep_pokemon_stays_asleep_when_counter_positive():
     step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE})
     assert sleeper.status is Status.SLEEP
     assert sleeper.status_turns == 2
+
+
+def test_sleep_cannot_be_slept_off_on_the_turn_it_lands():
+    """A Pokemon put to sleep by a faster foe cannot act that same turn."""
+    spore = get_move("Spore")
+    fast = BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=200)
+    slow = BaseStats(HP=100, ATTACK=100, DEFENCE=100, SP_ATTACK=100, SP_DEFENCE=100, SPEED=10)
+
+    for seed in range(100):
+        sporer = _mk("Sporer", base_stats=fast, moves=MoveSet(spore, TACKLE, EMBER, SWORDS_DANCE))
+        sleeper = _mk("Sleeper", base_stats=slow)
+        state = _battle([sporer], [sleeper], seed=seed)
+        entries = step(state, {0: USE_TACKLE, 1: USE_TACKLE}).entries
+        fell_asleep = any(isinstance(e, StatusInflicted) and e.status is Status.SLEEP for e in entries)
+        assert fell_asleep, f"seed {seed}: Spore did not land, so the test proves nothing"
+        assert sleeper.status is Status.SLEEP, f"seed {seed}: woke on the turn it fell asleep"
+        # DamageDealt carries the side that *took* the damage, so side 0 is the sleeper hitting back.
+        assert not any(isinstance(e, DamageDealt) and e.side == 0 for e in entries), (
+            f"seed {seed}: the sleeper attacked on the turn it was put to sleep"
+        )
+
+
+def test_yawn_puts_its_target_under_for_as_long_as_spore_does():
+    """Yawn writes the counter itself, in another module, and so could drift away from the move that sets it."""
+    from battle_sim.engine.status_apply import sleep_duration
+
+    from_yawn: set[int] = set()
+    from_spore: set[int] = set()
+    for seed in range(100):
+        from_spore.add(sleep_duration(RNG(seed=seed)))
+        sleeper = _mk("S")
+        sleeper.volatiles[ExtraStatus.YAWN] = 1
+        state = _battle([sleeper], [_mk("B")], seed=seed)
+        step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+        assert sleeper.status is Status.SLEEP
+        from_yawn.add(sleeper.status_turns)
+    assert from_yawn == from_spore == {2, 3, 4}
 
 
 def test_fire_type_cannot_be_burned():
@@ -370,6 +463,121 @@ def test_ice_type_cannot_be_frozen():
         assert fresh_def.status is not Status.FREEZE, f"Ice-type got frozen at seed {seed}"
 
 
+def _crit_pairing_holds(entries: Sequence[object]) -> bool:
+    """Every announced crit is immediately followed by the damage it explains."""
+    kinds = [type(entry).__name__ for entry in entries]
+    return all(
+        index + 1 < len(kinds) and kinds[index + 1] == "DamageDealt"
+        for index, kind in enumerate(kinds)
+        if kind == "CriticalHit"
+    )
+
+
+def test_a_critical_hit_says_so_right_before_the_damage_it_explains():
+    """A critical hit says so right before the damage it explains."""
+    storm_throw = get_move("Storm Throw")  # `willCrit`: no roll to hunt a seed for
+    attacker = _mk("A", moves=MoveSet(storm_throw, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)
+    defender = _mk("B")
+    state = _battle([attacker], [defender])
+    use_first = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+
+    entries = list(step(state, {0: use_first, 1: USE_SWORDS_DANCE}).entries)
+
+    assert any(isinstance(entry, CriticalHit) for entry in entries), "a guaranteed crit went unannounced"
+    assert _crit_pairing_holds(entries)
+    assert "A critical hit!" in BattleLog(entries=entries).rendered()
+
+
+def test_a_multi_hit_move_announces_each_crit_against_its_own_hit():
+    """A crit on one hit of a multi-hit move is announced against that hit."""
+    rock_blast = get_move("Rock Blast")
+    seen_a_crit = False
+    for seed in range(40):
+        attacker = _mk("A", moves=MoveSet(rock_blast, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6, item=Item.SCOPE_LENS)
+        state = _battle([attacker], [_mk("B")], seed=seed)
+        use_first = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+        entries = list(step(state, {0: use_first, 1: USE_SWORDS_DANCE}).entries)
+        assert _crit_pairing_holds(entries), f"seed {seed}: a crit line was not attached to a hit"
+        crits = sum(isinstance(entry, CriticalHit) for entry in entries)
+        hits = sum(isinstance(entry, DamageDealt) for entry in entries)
+        assert crits <= hits, f"seed {seed}: {crits} crits announced across {hits} hits"
+        seen_a_crit = seen_a_crit or crits > 0
+    assert seen_a_crit, "forty Scope Lens Rock Blasts and not one crit — the flag is not reaching multi-hit"
+
+
+def test_an_ordinary_move_announces_crits_at_about_the_real_rate():
+    """Crits are announced at about one in twenty-four."""
+    crits = hits = 0
+    for seed in range(2000):
+        defender = _mk("B")
+        state = _battle([_mk("A", spe_stage=6)], [defender], seed=seed)
+        entries = list(step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE}).entries)
+        assert _crit_pairing_holds(entries), f"seed {seed}: a crit line was not attached to a hit"
+        if any(isinstance(entry, DamageDealt) for entry in entries):
+            hits += 1
+            crits += any(isinstance(entry, CriticalHit) for entry in entries)
+    assert 0.02 < crits / hits < 0.07, f"{crits}/{hits} = {crits / hits:.2%}, nothing like the 4.17% expected"
+
+
+def test_shell_armor_is_never_announced_as_a_critical_hit():
+    """Battle Armor stops the crit, so nothing is announced."""
+    storm_throw = get_move("Storm Throw")
+    armored = _mk("B")
+    armored.ability = Ability.SHELL_ARMOR
+    state = _battle([_mk("A", moves=MoveSet(storm_throw, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)], [armored])
+    use_first = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+
+    entries = list(step(state, {0: use_first, 1: USE_SWORDS_DANCE}).entries)
+
+    assert not any(isinstance(entry, CriticalHit) for entry in entries)
+
+
+def _frozen_hit_by(move_name: str, seed: int = 0) -> tuple[Pokemon, list[object]]:
+    """A frozen Pokemon takes `move_name` from something faster, and never gets to act itself."""
+    attacker = _mk("A", moves=MoveSet(get_move(move_name), TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)
+    frozen = _mk("F", status=Status.FREEZE)
+    state = _battle([attacker], [frozen], seed=seed)
+    use_first = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+    return frozen, list(step(state, {0: use_first, 1: USE_SWORDS_DANCE}).entries)
+
+
+def test_a_fire_attack_thaws_whatever_it_hits():
+    """Damaging Fire moves thaw their target."""
+    frozen, entries = _frozen_hit_by("Flamethrower")
+    assert frozen.status is Status.NONE
+    assert any(isinstance(e, StatusCleared) and e.clearance == "thawed" for e in entries)
+
+
+def test_scald_thaws_its_target_despite_being_a_water_move():
+    """`thawsTarget` is a per-move fact rather than a type one, so it needs reading off the move."""
+    frozen, _ = _frozen_hit_by("Scald")
+    assert frozen.status is Status.NONE
+
+
+def test_an_ordinary_attack_leaves_a_frozen_target_frozen():
+    """Only Fire and the named defrosting moves thaw a target."""
+    checked = 0
+    for seed in range(50):
+        frozen, entries = _frozen_hit_by("Tackle", seed=seed)
+        if not any(isinstance(e, CantAct) and e.reason == "frozen" for e in entries):
+            continue  # it thawed on its own 20% roll, which is legal and not what is under test
+        checked += 1
+        assert frozen.status is Status.FREEZE, f"thawed off an ordinary hit at seed {seed}"
+    assert checked > 25, f"only {checked} seeds left it frozen to check — the sample proves little"
+
+
+def test_a_defrosting_move_frees_its_own_frozen_user_and_goes_off_anyway():
+    """Flame Wheel and friends are the frozen Pokemon's way out that does not need the 20% roll."""
+    for seed in range(50):
+        frozen = _mk("F", status=Status.FREEZE, moves=MoveSet(get_move("Flame Wheel"), TACKLE, EMBER, SWORDS_DANCE))
+        state = _battle([frozen], [_mk("B")], seed=seed)
+        entries = step(state, {0: USE_TACKLE, 1: USE_SWORDS_DANCE}).entries
+        assert frozen.status is Status.NONE, f"seed {seed}: Flame Wheel left its user frozen"
+        assert any(isinstance(e, MoveUsed) and e.move == "Flame Wheel" for e in entries), (
+            f"seed {seed}: thawed but the move never went off"
+        )
+
+
 def test_sandstorm_chips_non_immune_types():
     a = _mk("A", types=(Type.NORMAL, None))
     b = _mk("B", types=(Type.NORMAL, None))
@@ -398,6 +606,56 @@ def test_pivot_move_does_not_set_flag_if_no_bench():
     use_u_turn = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
     step(state, {0: use_u_turn, 1: USE_SWORDS_DANCE})
     assert state.sides[0].needs_switch is False
+
+
+def test_a_switch_chooser_resolves_a_pivot_before_the_opponent_hits():
+    """A pivot's user is replaced immediately, so a pending move hits the replacement."""
+    u_turn = get_move("U-turn")
+    attacker = _mk("A", moves=MoveSet(u_turn, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)
+    bench = _mk("A2")
+    defender = _mk("B")
+    state = _battle([attacker, bench], [defender])
+    use_u_turn = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+    switch_to_bench = Action(action=ActionType.SWITCH_OUT, switch_in=bench)
+
+    step(state, {0: use_u_turn, 1: USE_TACKLE}, switch_chooser=lambda s, i: switch_to_bench if i == 0 else None)
+
+    assert attacker.live_stats.HP == attacker.stat_totals.HP  # never took the Tackle
+    assert bench.live_stats.HP < bench.stat_totals.HP  # the replacement did instead
+    assert state.sides[0].active_pokemon is bench
+    assert state.sides[0].needs_switch is False
+
+
+def test_without_a_switch_chooser_the_pivot_switch_stays_deferred():
+    """Without a chooser, a pivot's switch is left for the post-turn replacement loop."""
+    u_turn = get_move("U-turn")
+    attacker = _mk("A", moves=MoveSet(u_turn, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)
+    bench = _mk("A2")
+    defender = _mk("B")
+    state = _battle([attacker, bench], [defender])
+    use_u_turn = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+
+    step(state, {0: use_u_turn, 1: USE_TACKLE})
+
+    assert attacker.live_stats.HP < attacker.stat_totals.HP  # still took the Tackle
+    assert bench.live_stats.HP == bench.stat_totals.HP
+    assert state.sides[0].active_pokemon is attacker
+    assert state.sides[0].needs_switch is True
+
+
+def test_a_switch_chooser_that_declines_defers_that_side_same_as_no_chooser():
+    """A chooser returning None defers that one switch to the post-turn loop."""
+    u_turn = get_move("U-turn")
+    attacker = _mk("A", moves=MoveSet(u_turn, TACKLE, EMBER, SWORDS_DANCE), spe_stage=6)
+    bench = _mk("A2")
+    defender = _mk("B")
+    state = _battle([attacker, bench], [defender])
+    use_u_turn = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+
+    step(state, {0: use_u_turn, 1: USE_TACKLE}, switch_chooser=lambda s, i: None)
+
+    assert attacker.live_stats.HP < attacker.stat_totals.HP
+    assert state.sides[0].needs_switch is True
 
 
 def test_apply_forced_switch_clears_needs_switch_flag():
@@ -1094,6 +1352,40 @@ def test_tailwind_fails_while_already_active():
     assert state.sides[0].tailwind_turns == 2
 
 
+def test_a_screen_cannot_be_raised_while_it_is_already_standing():
+    """Light Screen, Reflect and Aurora Veil fail if that screen is already up."""
+    light_screen = get_move("Light Screen")
+    a = _mk("A", moves=MoveSet(light_screen, TACKLE, EMBER, SWORDS_DANCE))
+    state = _battle([a], [_mk("B")])
+    use_screen = Action(action=ActionType.USE_MOVE, target=Target.USER_SIDE, move=MoveSlot.FIRST)
+
+    first = step(state, {0: use_screen, 1: USE_SWORDS_DANCE})
+    assert ScreenSet(side=0, screen=Hazards.LIGHT_SCREEN) in first.entries
+    assert state.sides[0].screens[Hazards.LIGHT_SCREEN] == 4  # set to 5, end-of-turn tick took one
+
+    second = step(state, {0: use_screen, 1: USE_SWORDS_DANCE})
+    assert any(isinstance(entry, MoveFailed) for entry in second)
+    # The timer keeps running down rather than going back to five: the turn bought nothing at all.
+    assert state.sides[0].screens[Hazards.LIGHT_SCREEN] == 3
+
+
+def test_a_screen_can_be_raised_again_once_it_has_faded():
+    """The guard is on the screen standing, not on having ever cast it."""
+    light_screen = get_move("Light Screen")
+    a = _mk("A", moves=MoveSet(light_screen, TACKLE, EMBER, SWORDS_DANCE))
+    state = _battle([a], [_mk("B")])
+    use_screen = Action(action=ActionType.USE_MOVE, target=Target.USER_SIDE, move=MoveSlot.FIRST)
+
+    step(state, {0: use_screen, 1: USE_SWORDS_DANCE})
+    for _ in range(4):  # run the five turns down
+        step(state, {0: USE_SWORDS_DANCE, 1: USE_SWORDS_DANCE})
+    assert Hazards.LIGHT_SCREEN not in state.sides[0].screens
+
+    log = step(state, {0: use_screen, 1: USE_SWORDS_DANCE})
+    assert ScreenSet(side=0, screen=Hazards.LIGHT_SCREEN) in log.entries
+    assert not any(isinstance(entry, MoveFailed) for entry in log)
+
+
 def test_sand_attack_lowers_accuracy_stage():
     sand_attack = get_move("Sand Attack")
     a = _mk("A", moves=MoveSet(sand_attack, TACKLE, EMBER, SWORDS_DANCE))
@@ -1188,8 +1480,10 @@ def test_residual_order_items_recover_before_status_chip():
 
 PROTECT = get_move("Protect")
 SUBSTITUTE = get_move("Substitute")
+HIGH_JUMP_KICK = get_move("High Jump Kick")
 USE_PROTECT = Action(action=ActionType.USE_MOVE, target=Target.SELF, move=MoveSlot.FIRST)
 USE_SUBSTITUTE = Action(action=ActionType.USE_MOVE, target=Target.SELF, move=MoveSlot.FIRST)
+USE_HIGH_JUMP_KICK = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
 
 
 def _mk_with(move, nickname: str = "X", **kwargs) -> Pokemon:
@@ -1203,6 +1497,49 @@ def test_protect_blocks_damaging_move():
     log = step(state, {0: USE_PROTECT, 1: USE_TACKLE})
     assert a.live_stats.HP == a.stat_totals.HP
     assert any(isinstance(entry, Protected) for entry in log)
+
+
+def test_high_jump_kick_crashes_for_half_max_hp_against_protect():
+    a = _mk_with(HIGH_JUMP_KICK, "A")
+    b = _mk_with(PROTECT, "B")
+    state = _battle([a], [b])
+    log = step(state, {0: USE_HIGH_JUMP_KICK, 1: USE_PROTECT})
+    assert any(isinstance(entry, Protected) for entry in log)
+    assert a.live_stats.HP == a.stat_totals.HP - a.stat_totals.HP // 2
+    assert any(isinstance(entry, RecoilDamage) and entry.pokemon == "A" for entry in log)
+
+
+def test_high_jump_kick_crash_damage_is_blocked_by_magic_guard():
+    a = _mk_with(HIGH_JUMP_KICK, "A")
+    a.ability = Ability.MAGIC_GUARD
+    b = _mk_with(PROTECT, "B")
+    state = _battle([a], [b])
+    step(state, {0: USE_HIGH_JUMP_KICK, 1: USE_PROTECT})
+    assert a.live_stats.HP == a.stat_totals.HP
+
+
+def test_high_jump_kick_crashes_on_a_miss_too():
+    crash_count = 0
+    trials = 60
+    for seed in range(trials):
+        a = _mk_with(HIGH_JUMP_KICK, "A")
+        b = _mk("B")
+        state = _battle([a], [b], seed=seed)
+        log = step(state, {0: USE_HIGH_JUMP_KICK, 1: USE_SWORDS_DANCE})
+        if any(isinstance(entry, MoveMissed) for entry in log):
+            assert a.live_stats.HP == a.stat_totals.HP - a.stat_totals.HP // 2
+            crash_count += 1
+    assert crash_count >= 3, f"Expected some misses across {trials} seeds, got {crash_count}"
+
+
+def test_high_jump_kick_crash_damage_can_faint_its_own_user():
+    a = _mk_with(HIGH_JUMP_KICK, "A")
+    a.live_stats.HP = 1
+    b = _mk_with(PROTECT, "B")
+    state = _battle([a], [b])
+    log = step(state, {0: USE_HIGH_JUMP_KICK, 1: USE_PROTECT})
+    assert a.is_fainted()
+    assert any(isinstance(entry, Fainted) and entry.pokemon == "A" for entry in log)
 
 
 def test_protect_blocks_status_move():
@@ -1536,3 +1873,118 @@ def test_forced_switch_into_lethal_hazards_ends_the_battle():
     assert b2.is_fainted()
     assert state.outcome is Outcome.P1_WIN
     assert BattleEnded(outcome=Outcome.P1_WIN) in log.entries
+
+
+# -- Roost, and the moves that hold you in place -------------------------------------------------
+
+
+def _built(species: str, moves: list[str], item: Item = Item.NONE) -> Pokemon:
+    return build_pokemon(PokemonSpec(species=species, level=50, moves=moves, item=item))
+
+
+def _first(mine: Pokemon, theirs: Pokemon, seed: int = 1) -> BattleState:
+    return BattleState(sides=(SideState(team=[mine]), SideState(team=[theirs])), rng=RNG(seed=seed))
+
+
+def test_roosting_puts_the_bird_on_the_ground() -> None:
+    """Roosting removes the Flying type for the turn."""
+    zapdos = _built("Zapdos", ["Roost", "Thunderbolt"])
+    golem = _built("Golem", ["Earthquake", "Rock Slide"])
+    earthquake, ice_beam = get_move("Earthquake"), get_move("Ice Beam")
+    assert move_effectiveness(earthquake, golem, zapdos) == 0.0
+    assert move_effectiveness(ice_beam, golem, zapdos) == 2.0
+
+    zapdos.volatiles[ExtraStatus.ROOSTED] = 1
+
+    assert move_effectiveness(earthquake, golem, zapdos) == 2.0, "Ground still could not touch a roosting bird"
+    assert move_effectiveness(ice_beam, golem, zapdos) == 1.0, "the Flying weakness survived the roost"
+    assert zapdos.is_grounded(), "a roosting bird is on the ground, hazards and all"
+
+
+def test_the_bird_is_back_in_the_air_next_turn() -> None:
+    """It lasts the turn it is used and not a moment longer."""
+    zapdos = _built("Zapdos", ["Roost", "Thunderbolt"])
+    zapdos.live_stats.HP = zapdos.stat_totals.HP // 2
+    state = _first(zapdos, _built("Snorlax", ["Splash"]))
+
+    step(state, {0: SELF_MOVE, 1: SELF_MOVE})
+
+    assert zapdos.live_stats.HP > zapdos.stat_totals.HP // 2, "Roost did not even heal"
+    assert ExtraStatus.ROOSTED not in zapdos.volatiles
+    assert not zapdos.is_grounded()
+
+
+def test_a_wrap_squeezes_every_turn_and_holds_its_victim_there() -> None:
+    """Partial-trapping moves trap and chip."""
+    heatran = _built("Heatran", ["Magma Storm", "Earth Power"])
+    blissey = _built("Blissey", ["Soft-Boiled", "Seismic Toss"])
+    spare = _built("Snorlax", ["Splash", "Body Slam"])
+    state = BattleState(
+        sides=(SideState(team=[heatran]), SideState(team=[blissey, spare])), rng=RNG(seed=0)
+    )  # seed 0: Magma Storm is 75% accurate, and this is a turn it lands on
+
+    step(state, {0: ATTACK_FIRST, 1: SELF_MOVE})
+
+    assert ExtraStatus.PARTIALLY_TRAPPED in blissey.volatiles, "Magma Storm let go immediately"
+    assert not any(action.action is ActionType.SWITCH_OUT for action in legal_actions(state, 1)), "it walked away"
+    # Read off the log, since Soft-Boiled hides the chip in the total.
+    played = step(state, {0: SECOND_MOVE, 1: SELF_MOVE})
+    squeezes = [entry for entry in played.entries if isinstance(entry, TrapSqueezed)]
+    assert squeezes, "the grip did no damage at all"
+    assert squeezes[0].amount == blissey.stat_totals.HP // 8
+
+
+def test_the_grip_lets_go_when_whoever_tied_it_leaves() -> None:
+    """Otherwise wrapping and then switching out leaves somebody held by nobody."""
+    heatran = _built("Heatran", ["Magma Storm", "Earth Power"])
+    blissey = _built("Blissey", ["Soft-Boiled", "Seismic Toss"])
+    spare = _built("Snorlax", ["Splash", "Body Slam"])
+    opposite = _built("Snorlax", ["Splash", "Body Slam"])
+    state = BattleState(
+        sides=(SideState(team=[heatran, spare]), SideState(team=[blissey, opposite])),
+        rng=RNG(seed=0),
+    )
+    step(state, {0: ATTACK_FIRST, 1: SELF_MOVE})
+    assert ExtraStatus.PARTIALLY_TRAPPED in blissey.volatiles
+
+    step(state, {0: Action(action=ActionType.SWITCH_OUT, switch_in=spare), 1: SELF_MOVE})
+
+    assert ExtraStatus.PARTIALLY_TRAPPED not in blissey.volatiles
+    assert any(action.action is ActionType.SWITCH_OUT for action in legal_actions(state, 1))
+
+
+# The three actions the Roost and wrap tests above use, named for what they do rather than by slot.
+ATTACK_FIRST = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+SECOND_MOVE = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.SECOND)
+SELF_MOVE = Action(action=ActionType.USE_MOVE, target=Target.SELF, move=MoveSlot.FIRST)
+
+
+def test_liquid_ooze_turns_a_drain_into_damage_and_says_whose_fault_it_was() -> None:
+    """Draining Kiss into Liquid Ooze takes the drain off the attacker instead of giving it."""
+    thief = _built("Sylveon", ["Draining Kiss"])
+    thief.live_stats.HP = thief.stat_totals.HP // 2
+    oozing = _built("Tentacruel", ["Scald"])
+    oozing.ability = Ability.LIQUID_OOZE
+    state = _first(thief, oozing)
+    before = thief.live_stats.HP
+
+    played = step(state, {0: USE_FIRST_MOVE, 1: USE_FIRST_MOVE})
+
+    assert before > thief.live_stats.HP, "the drain healed him instead of hurting him"
+    backfires = [entry for entry in played.entries if isinstance(entry, DrainBackfired)]
+    assert len(backfires) == 1 and backfires[0].ability is Ability.LIQUID_OOZE
+    assert not any(isinstance(entry, RecoilDamage) for entry in played.entries), "still logged as recoil"
+    assert "Liquid Ooze" in render_text(backfires[0])
+
+
+def test_a_drain_against_anything_else_still_heals() -> None:
+    hurt = _built("Sylveon", ["Draining Kiss"])
+    hurt.live_stats.HP = hurt.stat_totals.HP // 2
+    state = _first(hurt, _built("Tentacruel", ["Scald"]))
+    before = hurt.live_stats.HP
+
+    played = step(state, {0: USE_FIRST_MOVE, 1: USE_FIRST_MOVE})
+
+    assert any(isinstance(entry, Drained) for entry in played.entries)
+    assert not any(isinstance(entry, DrainBackfired) for entry in played.entries)
+    assert before - hurt.stat_totals.HP // 4 < hurt.live_stats.HP, "it should have drained some back"

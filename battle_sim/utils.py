@@ -1,5 +1,14 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from enum import Enum, IntEnum, StrEnum, auto
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from _typeshed import DataclassInstance
+
+
+def field_values(instance: "DataclassInstance") -> dict[str, object]:
+    """A dataclass instance's fields by name, in declaration order."""
+    return {spec.name: getattr(instance, spec.name) for spec in fields(instance)}  # slotted dataclasses have no vars()
 
 
 class Stats(StrEnum):
@@ -91,6 +100,8 @@ class Status(Enum):
 
 class ExtraStatus(Enum):
     NONE = auto()
+    NINE_LIVES = auto()  # lives still in hand; see abilities._bind_nine_lives
+    NINE_LIVES_SPENT = auto()  # set the instant one is used, cleared once the heal lands
     CONFUSION = auto()
     DISABLE = auto()
     ENCORE = auto()
@@ -112,6 +123,10 @@ class ExtraStatus(Enum):
     ENDURE = auto()
     CHARGING = auto()  # two-turn moves: committed to release next turn
     MUST_RECHARGE = auto()  # Hyper Beam-likes: the next turn is lost
+    SLOW_START = auto()  # Regigigas: value counts down from 5, halves Attack/Speed while present
+    LOAFING = auto()  # Truant: present means the next move attempt is skipped, then it is removed
+    ROOSTED = auto()  # Roost: the user's Flying type is ignored for the rest of the turn
+    PARTIALLY_TRAPPED = auto()  # Wrap/Magma Storm/Whirlpool: value counts down; chips and blocks switching
 
 
 class Weather(Enum):
@@ -187,6 +202,9 @@ class Item(Enum):
     PIXIE_PLATE = auto()
     SOUL_DEW = auto()
     GRISEOUS_CORE = auto()
+    GRISEOUS_ORB = auto()  # the Gen 4-7 name for the same item; Gen 9 renamed it Griseous Core
+    SHED_SHELL = auto()
+    WIKI_BERRY = auto()
     WELLSPRING_MASK = auto()
     CORNERSTONE_MASK = auto()
     WEAKNESS_POLICY = auto()
@@ -222,6 +240,182 @@ class Item(Enum):
     ADAMANT_CRYSTAL = auto()
     LUSTROUS_GLOBE = auto()
     PUNCHING_GLOVE = auto()
+    # Arceus plates (Multitype) — IRON/EARTH/SPOOKY/PIXIE/SPLASH/STONE_PLATE already exist above
+    FIST_PLATE = auto()
+    SKY_PLATE = auto()
+    TOXIC_PLATE = auto()
+    INSECT_PLATE = auto()
+    FLAME_PLATE = auto()
+    MEADOW_PLATE = auto()
+    ZAP_PLATE = auto()
+    MIND_PLATE = auto()
+    ICICLE_PLATE = auto()
+    DRACO_PLATE = auto()
+    DREAD_PLATE = auto()
+    # Silvally memory discs (RKS System) — one per type except Normal
+    BUG_MEMORY = auto()
+    DARK_MEMORY = auto()
+    DRAGON_MEMORY = auto()
+    ELECTRIC_MEMORY = auto()
+    FAIRY_MEMORY = auto()
+    FIGHTING_MEMORY = auto()
+    FIRE_MEMORY = auto()
+    FLYING_MEMORY = auto()
+    GHOST_MEMORY = auto()
+    GRASS_MEMORY = auto()
+    GROUND_MEMORY = auto()
+    ICE_MEMORY = auto()
+    POISON_MEMORY = auto()
+    PSYCHIC_MEMORY = auto()
+    ROCK_MEMORY = auto()
+    STEEL_MEMORY = auto()
+    WATER_MEMORY = auto()
+
+    # Genesect's Drives: retype its signature move Techno Blast (see engine.moves._move_type_override)
+    DOUSE_DRIVE = auto()
+    SHOCK_DRIVE = auto()
+    BURN_DRIVE = auto()
+    CHILL_DRIVE = auto()
+
+    # Mega Stones: held by the matching species to Mega Evolve; inert on anything else
+    ABOMASITE = auto()
+    ABSOLITE = auto()
+    AERODACTYLITE = auto()
+    AGGRONITE = auto()
+    ALAKAZITE = auto()
+    ALTARIANITE = auto()
+    AMPHAROSITE = auto()
+    AUDINITE = auto()
+    BANETTITE = auto()
+    BEEDRILLITE = auto()
+    BLASTOISINITE = auto()
+    BLAZIKENITE = auto()
+    CAMERUPTITE = auto()
+    CHARIZARDITE_X = auto()
+    CHARIZARDITE_Y = auto()
+    DIANCITE = auto()
+    GALLADITE = auto()
+    GARCHOMPITE = auto()
+    GARDEVOIRITE = auto()
+    GENGARITE = auto()
+    GLALITITE = auto()
+    GYARADOSITE = auto()
+    HERACRONITE = auto()
+    HOUNDOOMINITE = auto()
+    KANGASKHANITE = auto()
+    LATIASITE = auto()
+    LATIOSITE = auto()
+    LOPUNNITE = auto()
+    LUCARIONITE = auto()
+    MANECTITE = auto()
+    MAWILITE = auto()
+    MEDICHAMITE = auto()
+    METAGROSSITE = auto()
+    MEWTWONITE_X = auto()
+    MEWTWONITE_Y = auto()
+    PIDGEOTITE = auto()
+    PINSIRITE = auto()
+    SABLENITE = auto()
+    SALAMENCITE = auto()
+    SCEPTILITE = auto()
+    SCIZORITE = auto()
+    SHARPEDONITE = auto()
+    SLOWBRONITE = auto()
+    STEELIXITE = auto()
+    SWAMPERTITE = auto()
+    TYRANITARITE = auto()
+    VENUSAURITE = auto()
+
+    # The Legends: Z-A Mega Stones, without which their formes were unreachable.
+    ABSOLITE_Z = auto()
+    BARBARACITE = auto()
+    BAXCALIBRITE = auto()
+    CHANDELURITE = auto()
+    CHESNAUGHTITE = auto()
+    CHIMECHITE = auto()
+    CLEFABLITE = auto()
+    CRABOMINITE = auto()
+    DARKRANITE = auto()
+    DELPHOXITE = auto()
+    DRAGALGITE = auto()
+    DRAGONINITE = auto()
+    DRAMPANITE = auto()
+    EELEKTROSSITE = auto()
+    EMBOARITE = auto()
+    EXCADRITE = auto()
+    FALINKSITE = auto()
+    FERALIGITE = auto()
+    FLOETTITE = auto()
+    FROSLASSITE = auto()
+    GARCHOMPITE_Z = auto()
+    GLIMMORANITE = auto()
+    GOLISOPITE = auto()
+    GOLURKITE = auto()
+    GRENINJITE = auto()
+    HAWLUCHANITE = auto()
+    HEATRANITE = auto()
+    LUCARIONITE_Z = auto()
+    MAGEARNITE = auto()
+    MALAMARITE = auto()
+    MEGANIUMITE = auto()
+    MEOWSTICITE = auto()
+    PYROARITE = auto()
+    RAICHUNITE_X = auto()
+    RAICHUNITE_Y = auto()
+    SCOLIPITE = auto()
+    SCOVILLAINITE = auto()
+    SCRAFTINITE = auto()
+    SKARMORITE = auto()
+    STARAPTITE = auto()
+    STARMINITE = auto()
+    TATSUGIRINITE = auto()
+    VICTREEBELITE = auto()
+    ZERAORITE = auto()
+    ZYGARDITE = auto()
+
+    # The butler's own, and the only item here that is not from the games.
+    MEOWFREDS_MONOCLE = auto()
+
+    # Primal Reversion orbs
+    BLUE_ORB = auto()
+    RED_ORB = auto()
+
+    # Z-Crystals: one Z-move per battle
+    ALORAICHIUM_Z = auto()
+    BUGINIUM_Z = auto()
+    DARKINIUM_Z = auto()
+    DECIDIUM_Z = auto()
+    DRAGONIUM_Z = auto()
+    ELECTRIUM_Z = auto()
+    FAIRIUM_Z = auto()
+    FIGHTINIUM_Z = auto()
+    FIRIUM_Z = auto()
+    FLYINIUM_Z = auto()
+    GHOSTIUM_Z = auto()
+    GRASSIUM_Z = auto()
+    GROUNDIUM_Z = auto()
+    ICIUM_Z = auto()
+    INCINIUM_Z = auto()
+    KOMMONIUM_Z = auto()
+    LUNALIUM_Z = auto()
+    LYCANIUM_Z = auto()
+    MARSHADIUM_Z = auto()
+    MEWNIUM_Z = auto()
+    MIMIKIUM_Z = auto()
+    NORMALIUM_Z = auto()
+    POISONIUM_Z = auto()
+    PSYCHIUM_Z = auto()
+    ROCKIUM_Z = auto()
+    SOLGANIUM_Z = auto()
+    STEELIUM_Z = auto()
+    ULTRANECROZIUM_Z = auto()
+    EEVIUM_Z = auto()
+    PIKANIUM_Z = auto()
+    PIKASHUNIUM_Z = auto()
+    PRIMARIUM_Z = auto()
+    SNORLIUM_Z = auto()
+    TAPUNIUM_Z = auto()
+    WATERIUM_Z = auto()
 
 
 CHOICE_ITEMS = frozenset({Item.CHOICE_BAND, Item.CHOICE_SPECS, Item.CHOICE_SCARF})
@@ -236,6 +430,8 @@ class Ability(Enum):
     SAND_STREAM = auto()
     SNOW_WARNING = auto()
     LEVITATE = auto()
+    WONDER_GUARD = auto()
+    NINE_LIVES = auto()
     STURDY = auto()
     FLASH_FIRE = auto()
     VOLT_ABSORB = auto()
@@ -333,6 +529,8 @@ class Ability(Enum):
     PROTEAN = auto()
     POISON_PUPPETEER = auto()
     MAGIC_BOUNCE = auto()
+    POWER_CONSTRUCT = auto()
+    DELTA_STREAM = auto()
     LIQUID_VOICE = auto()
     NEUTRALIZING_GAS = auto()
     MIRROR_ARMOR = auto()
@@ -350,6 +548,7 @@ class Ability(Enum):
     MINDS_EYE = auto()
     TRIAGE = auto()
     MAGNET_PULL = auto()
+    ARENA_TRAP = auto()
     SHADOW_TAG = auto()
     HARVEST = auto()
     DAZZLING = auto()
@@ -362,6 +561,38 @@ class Ability(Enum):
     LEAF_GUARD = auto()
     PUNK_ROCK = auto()
     WIND_RIDER = auto()
+    # Wired after a coverage audit found each of these doing nothing.
+    IRON_BARBS = auto()
+    GALVANIZE = auto()
+    DEFEATIST = auto()
+    MARVEL_SCALE = auto()
+    FUR_COAT = auto()
+    STEELWORKER = auto()
+    LONG_REACH = auto()
+    QUEENLY_MAJESTY = auto()
+    STAKEOUT = auto()
+    SURGE_SURFER = auto()
+    MERCILESS = auto()
+    EMERGENCY_EXIT = auto()
+    WIMP_OUT = auto()
+    FLUFFY = auto()
+    STORM_DRAIN = auto()
+    COMATOSE = auto()
+    MUMMY = auto()
+    FLOWER_GIFT = auto()
+    SHED_SKIN = auto()
+    ANALYTIC = auto()
+    SUPER_LUCK = auto()
+    AFTERMATH = auto()
+    POISON_POINT = auto()
+    EFFECT_SPORE = auto()
+    SIMPLE = auto()
+    # The forme-changing family, which lives in `formes.py` rather than as event handlers.
+    STANCE_CHANGE = auto()
+    DISGUISE = auto()
+    ZEN_MODE = auto()
+    SCHOOLING = auto()
+    SHIELDS_DOWN = auto()
     ILLUSION = auto()  # disguise only: our battle state is fully observable, so there is nothing to hide
     TRACE = auto()
     TERA_SHIFT = auto()
@@ -370,6 +601,53 @@ class Ability(Enum):
     ROCKY_PAYLOAD = auto()
     TRANSISTOR = auto()
     BATTLE_BOND = auto()
+    LIMBER = auto()
+    INSOMNIA = auto()
+    VITAL_SPIRIT = auto()
+    WATER_VEIL = auto()
+    MAGMA_ARMOR = auto()
+    IMMUNITY = auto()
+    OWN_TEMPO = auto()
+    WHITE_SMOKE = auto()
+    SNOW_CLOAK = auto()
+    COMPOUND_EYES = auto()
+    TANGLED_FEET = auto()
+    BATTLE_ARMOR = auto()
+    SHELL_ARMOR = auto()
+    SNIPER = auto()
+    SOUNDPROOF = auto()
+    RECKLESS = auto()
+    RAIN_DISH = auto()
+    STEADFAST = auto()
+    HUSTLE = auto()
+    KEEN_EYE = auto()
+    HYPER_CUTTER = auto()
+    BIG_PECKS = auto()
+    RKS_SYSTEM = auto()
+    BEAST_BOOST = auto()
+    TURBOBLAZE = auto()
+    SHADOW_SHIELD = auto()
+    NEUROFORCE = auto()
+    VICTORY_STAR = auto()
+    FAIRY_AURA = auto()
+    DARK_AURA = auto()
+    AURA_BREAK = auto()
+    SYNCHRONIZE = auto()
+    SLOW_START = auto()
+    # Abilities introduced by Mega Evolution / Primal Reversion formes
+    TOUGH_CLAWS = auto()
+    STRONG_JAW = auto()
+    MEGA_LAUNCHER = auto()
+    PARENTAL_BOND = auto()
+    SAND_FORCE = auto()
+    AERILATE = auto()
+    PIXILATE = auto()
+    REFRIGERATE = auto()
+    PRIMORDIAL_SEA = auto()
+    DESOLATE_LAND = auto()
+    LIGHTNING_ROD = auto()
+    HEALER = auto()
+    TRUANT = auto()
 
 
 class PseudoWeather(Enum):
@@ -426,3 +704,28 @@ class Nature(Enum):
     GENTLE = NatureEffect(Stats.SP_DEFENCE, Stats.DEFENCE)
     SASSY = NatureEffect(Stats.SP_DEFENCE, Stats.SPEED)
     CAREFUL = NatureEffect(Stats.SP_DEFENCE, Stats.SP_ATTACK)
+
+
+# Abilities that cannot be swapped away, copied, replaced or taken by anything.
+UNTOUCHABLE_ABILITIES: frozenset["Ability"] = frozenset(
+    {
+        Ability.NINE_LIVES,
+        Ability.MULTITYPE,
+        Ability.RKS_SYSTEM,
+        Ability.STANCE_CHANGE,
+        Ability.SCHOOLING,
+        Ability.SHIELDS_DOWN,
+        Ability.DISGUISE,
+        Ability.COMATOSE,
+        Ability.BATTLE_BOND,
+        Ability.POWER_CONSTRUCT,
+        Ability.ZEN_MODE,
+        Ability.ILLUSION,
+        Ability.IMPOSTER,
+    }
+)
+
+
+def is_untouchable(ability: "Ability") -> bool:
+    """Whether this ability refuses to be moved, copied, replaced or taken away."""
+    return ability in UNTOUCHABLE_ABILITIES

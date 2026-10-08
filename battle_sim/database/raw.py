@@ -55,6 +55,9 @@ class RawMoveData(BaseModel):
     force_switch: bool = Field(default=False, alias="forceSwitch")
     stalling_move: bool = Field(default=False, alias="stallingMove")
     struggle_recoil: bool = Field(default=False, alias="struggleRecoil")
+    has_crash_damage: bool = Field(default=False, alias="hasCrashDamage")
+    thaws_target: bool = Field(default=False, alias="thawsTarget")
+    will_crit: bool = Field(default=False, alias="willCrit")
     is_nonstandard: str | None = Field(default=None, alias="isNonstandard")
     is_z: bool | str | None = Field(default=None, alias="isZ")
     is_max: bool | str | None = Field(default=None, alias="isMax")
@@ -76,5 +79,38 @@ class RawSpeciesData(BaseModel):
     height_m: float | None = Field(default=None, alias="heightm")
     weight_kg: float | None = Field(default=None, alias="weightkg")
     evos: list[str] = Field(default_factory=list)
+    prevo: str | None = None
+    forme: str | None = None
+    base_species: str | None = Field(default=None, alias="baseSpecies")
+    required_item: str | None = Field(default=None, alias="requiredItem")
+    required_move: str | None = Field(default=None, alias="requiredMove")
+    battle_only: str | list[str] | None = Field(default=None, alias="battleOnly")
     is_nonstandard: str | None = Field(default=None, alias="isNonstandard")
     is_cosmetic_forme: bool = Field(default=False, alias="isCosmeticForme")
+    tags: list[str] = Field(default_factory=list)
+
+    def battle_only_parents(self) -> tuple[str, ...]:
+        if self.battle_only is None:
+            return ()
+        return (self.battle_only,) if isinstance(self.battle_only, str) else tuple(self.battle_only)
+
+
+class RawLearnsetData(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    learnset: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class RawRandbatsRole(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    abilities: list[str] = Field(default_factory=list)
+    items: list[str] = Field(default_factory=list)
+    moves: list[str] = Field(default_factory=list)
+
+
+class RawRandbatsSpecies(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    items: list[str] = Field(default_factory=list)  # species-level fallback for the rare itemless role
+    roles: dict[str, RawRandbatsRole] = Field(default_factory=dict)

@@ -1,6 +1,6 @@
 """One binder per ability, registered via @ability; wired/unwired on switch-in/out by mechanics.effects."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from battle_sim.mechanics.battle import effective_weather
@@ -17,12 +17,15 @@ from battle_sim.mechanics.events import (
 from battle_sim.mechanics.items import WEATHER_ROCKS, consume_terrain_seed
 from battle_sim.mechanics.stages import apply_stage_changes
 from battle_sim.models.log_events import (
+    AbilityChanged,
     AbilityChipDamage,
     AbilityCopied,
     AbilityHealed,
+    AbilityUnchanged,
     AbsorbBlocked,
     AbsorbHealed,
     AvoidedWithLevitate,
+    DoesNotAffect,
     Fainted,
     FlashFireAbsorbed,
     FlashFireActivated,
@@ -39,13 +42,26 @@ from battle_sim.models.log_events import (
     TypeChanged,
     WeatherSetByAbility,
 )
-from battle_sim.models.moves import DamageEffect
+from battle_sim.models.moves import DamageEffect, Move
 from battle_sim.models.pokemon import Pokemon
 from battle_sim.models.type_matchups import type_effectiveness
-from battle_sim.utils import Ability, Category, ExtraStatus, Hazards, Item, Stats, Status, Terrain, Type, Weather
+from battle_sim.utils import (
+    Ability,
+    Category,
+    ExtraStatus,
+    Hazards,
+    Item,
+    Stats,
+    Status,
+    Terrain,
+    Type,
+    Weather,
+    is_untouchable,
+)
 
 if TYPE_CHECKING:
     from battle_sim.mechanics.battle import BattleState
+    from battle_sim.mechanics.log import BattleLog
 
 type AbilityBinder = Callable[[EventBus, Pokemon, EffectOwner], None]
 
@@ -97,6 +113,18 @@ def _bind_guts(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
     bus.on(Event.ON_DAMAGE_CALC, guts, priority=EventPriority.ABILITY, owner=owner)
 
 
+@ability(Ability.HUSTLE)
+def _bind_hustle(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """The accuracy penalty on physical moves lives in engine.moves._accuracy_check."""
+
+    def boost_physical(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is pokemon and payload["category"] is Category.PHYSICAL:
+            payload.setdefault("attack_mods_4096", []).append(6144)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost_physical, priority=EventPriority.ABILITY, owner=owner)
+
+
 @ability(Ability.FLASH_FIRE)
 def _bind_flash_fire(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
     def boost_fire(context: EventContext, payload: Payload) -> HandlerResult | None:
@@ -127,6 +155,28 @@ def _bind_levitate(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
         return HandlerResult(cancel=True, updated_payload={"absorbed": True, "immune_reason": "levitate"})
 
     bus.on(Event.ON_BEFORE_MOVE, avoid_ground, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.WONDER_GUARD)
+def _bind_wonder_guard(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    def block_non_super_effective(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or type_effectiveness(payload["move_type"], pokemon.types) >= 2:
+            return None
+        context.log.add(DoesNotAffect(side=payload["defender_index"], pokemon=pokemon.nickname))
+        return HandlerResult(cancel=True, updated_payload={"absorbed": True, "immune_reason": "wonder_guard"})
+
+    bus.on(Event.ON_BEFORE_MOVE, block_non_super_effective, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.SOUNDPROOF)
+def _bind_soundproof(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    def block_sound(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or context.move is None or not context.move.sound:
+            return None
+        context.log.add(DoesNotAffect(side=payload["defender_index"], pokemon=pokemon.nickname))
+        return HandlerResult(cancel=True, updated_payload={"absorbed": True, "immune_reason": "soundproof"})
+
+    bus.on(Event.ON_BEFORE_MOVE, block_sound, priority=EventPriority.ABILITY, owner=owner)
 
 
 def _bind_type_absorb(kind: Ability, absorbed_type: Type) -> AbilityBinder:
@@ -230,6 +280,33 @@ ABILITY_BINDERS[Ability.CHILLING_NEIGH] = _bind_ko_boost(Stats.ATTACK, "chilling
 ABILITY_BINDERS[Ability.AS_ONE_GLASTRIER] = _bind_ko_boost(Stats.ATTACK, "as_one_glastrier")
 ABILITY_BINDERS[Ability.SOUL_HEART] = _bind_ko_boost(Stats.SP_ATTACK, "soul_heart")
 
+_BEAST_BOOST_STATS = (Stats.ATTACK, Stats.DEFENCE, Stats.SP_ATTACK, Stats.SP_DEFENCE, Stats.SPEED)
+
+
+@ability(Ability.BEAST_BOOST)
+def _bind_beast_boost(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """+1 to whichever of its stats is highest after KOing with an attack (not always Attack)."""
+
+    def on_ko(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is not pokemon or pokemon.is_fainted():
+            return None
+        best = max(_BEAST_BOOST_STATS, key=lambda stat: pokemon.stat_totals[stat])
+        delta = pokemon.change_stat_stage(best, 1)
+        if delta > 0:
+            context.log.add(
+                StatStageChanged(
+                    side=payload["attacker_index"],
+                    pokemon=pokemon.nickname,
+                    stat=best,
+                    delta=delta,
+                    requested=1,
+                    source="beast_boost",
+                )
+            )
+        return None
+
+    bus.on(Event.ON_FAINT, on_ko, priority=EventPriority.ABILITY, owner=owner)
+
 
 @ability(Ability.ROUGH_SKIN)
 def _bind_rough_skin(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
@@ -321,10 +398,19 @@ def _bind_weather_setter(kind: Ability, weather: Weather) -> AbilityBinder:
     return binder
 
 
-ABILITY_BINDERS[Ability.DROUGHT] = _bind_weather_setter(Ability.DROUGHT, Weather.SUN)
-ABILITY_BINDERS[Ability.DRIZZLE] = _bind_weather_setter(Ability.DRIZZLE, Weather.RAIN)
-ABILITY_BINDERS[Ability.SAND_STREAM] = _bind_weather_setter(Ability.SAND_STREAM, Weather.SANDSTORM)
-ABILITY_BINDERS[Ability.SNOW_WARNING] = _bind_weather_setter(Ability.SNOW_WARNING, Weather.SNOW)
+# The weather each ability brings with it.
+ABILITY_WEATHER: dict[Ability, Weather] = {
+    Ability.DROUGHT: Weather.SUN,
+    Ability.DRIZZLE: Weather.RAIN,
+    Ability.SAND_STREAM: Weather.SANDSTORM,
+    Ability.SNOW_WARNING: Weather.SNOW,
+    Ability.PRIMORDIAL_SEA: Weather.HEAVY_RAIN,
+    Ability.DESOLATE_LAND: Weather.HARSH_SUN,
+    Ability.DELTA_STREAM: Weather.STRONG_WINDS,
+}
+for _ability, _weather in ABILITY_WEATHER.items():
+    ABILITY_BINDERS[_ability] = _bind_weather_setter(_ability, _weather)
+# Primal Reversion weather.
 
 
 def _bind_terrain_setter(kind: Ability, terrain: Terrain) -> AbilityBinder:
@@ -339,10 +425,15 @@ def _bind_terrain_setter(kind: Ability, terrain: Terrain) -> AbilityBinder:
     return binder
 
 
-ABILITY_BINDERS[Ability.GRASSY_SURGE] = _bind_terrain_setter(Ability.GRASSY_SURGE, Terrain.GRASSY)
-ABILITY_BINDERS[Ability.ELECTRIC_SURGE] = _bind_terrain_setter(Ability.ELECTRIC_SURGE, Terrain.ELECTRIC)
-ABILITY_BINDERS[Ability.PSYCHIC_SURGE] = _bind_terrain_setter(Ability.PSYCHIC_SURGE, Terrain.PSYCHIC)
-ABILITY_BINDERS[Ability.MISTY_SURGE] = _bind_terrain_setter(Ability.MISTY_SURGE, Terrain.MISTY)
+# Paired with ABILITY_WEATHER so a scorer can ask what a Pokemon puts on the field.
+ABILITY_TERRAIN: dict[Ability, Terrain] = {
+    Ability.GRASSY_SURGE: Terrain.GRASSY,
+    Ability.ELECTRIC_SURGE: Terrain.ELECTRIC,
+    Ability.PSYCHIC_SURGE: Terrain.PSYCHIC,
+    Ability.MISTY_SURGE: Terrain.MISTY,
+}
+for _ability, _terrain in ABILITY_TERRAIN.items():
+    ABILITY_BINDERS[_ability] = _bind_terrain_setter(_ability, _terrain)
 
 
 @ability(Ability.INTIMIDATE)
@@ -373,6 +464,8 @@ def _bind_speed_boost(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> No
     def raise_speed(context: EventContext, payload: Payload) -> HandlerResult | None:
         if context.actor is not pokemon or pokemon.is_fainted():
             return None
+        if pokemon.just_switched_in:  # not this turn — takes a full turn out to kick in
+            return None
         delta = pokemon.change_stat_stage(Stats.SPEED, 1)
         if delta > 0:
             context.log.add(
@@ -390,6 +483,28 @@ def _bind_speed_boost(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> No
     bus.on(Event.ON_RESIDUAL, raise_speed, priority=ResidualOrder.SPEED_BOOST, owner=owner)
 
 
+@ability(Ability.SLOW_START)
+def _bind_slow_start(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Five turns of halved Attack here and halved Speed in `effective_speed`, while SLOW_START lasts."""
+
+    def start(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is pokemon:
+            pokemon.volatiles[ExtraStatus.SLOW_START] = 5
+        return None
+
+    def halve_attack(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if (
+            context.actor is pokemon
+            and payload["category"] is Category.PHYSICAL
+            and ExtraStatus.SLOW_START in pokemon.volatiles
+        ):
+            payload.setdefault("attack_mods_4096", []).append(2048)
+        return None
+
+    bus.on(Event.ON_SWITCH_IN, start, priority=EventPriority.ABILITY, owner=owner)
+    bus.on(Event.ON_DAMAGE_CALC, halve_attack, priority=EventPriority.ABILITY, owner=owner)
+
+
 # -- Damage-calc modifiers -----------------------------------------------------
 
 
@@ -401,6 +516,9 @@ def _bind_multiscale(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> Non
         return None
 
     bus.on(Event.ON_DAMAGE_CALC, halve_at_full_hp, priority=EventPriority.ABILITY, owner=owner)
+
+
+ABILITY_BINDERS[Ability.SHADOW_SHIELD] = _bind_multiscale  # Lunala's name for the identical mechanic
 
 
 def _bind_ruin_offense(category: Category) -> AbilityBinder:
@@ -437,6 +555,26 @@ ABILITY_BINDERS[Ability.SWORD_OF_RUIN] = _bind_ruin_defense(Category.PHYSICAL)
 ABILITY_BINDERS[Ability.BEADS_OF_RUIN] = _bind_ruin_defense(Category.SPECIAL)
 
 
+def _bind_aura(aura_type: Type) -> AbilityBinder:
+    """Fairy/Dark Aura: the matching type hits 1.33x harder, or 0.75x if anyone active has Aura Break."""
+
+    def binder(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+        def modify(context: EventContext, payload: Payload) -> HandlerResult | None:
+            if payload["move_type"] is not aura_type:
+                return None
+            broken = any(side.active_pokemon.ability is Ability.AURA_BREAK for side in context.battle.sides)
+            payload.setdefault("power_mods_4096", []).append(3072 if broken else 5461)
+            return None
+
+        bus.on(Event.ON_DAMAGE_CALC, modify, priority=EventPriority.ABILITY, owner=owner)
+
+    return binder
+
+
+ABILITY_BINDERS[Ability.FAIRY_AURA] = _bind_aura(Type.FAIRY)
+ABILITY_BINDERS[Ability.DARK_AURA] = _bind_aura(Type.DARK)
+
+
 @ability(Ability.SHARPNESS)
 def _bind_sharpness(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
     def boost_slicing(context: EventContext, payload: Payload) -> HandlerResult | None:
@@ -458,6 +596,19 @@ def _bind_technician(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> Non
         return None
 
     bus.on(Event.ON_DAMAGE_CALC, boost_weak_moves, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.RECKLESS)
+def _bind_reckless(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    def boost_recoil_moves(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is not pokemon or context.move is None:
+            return None
+        damage_effect = next((e for e in context.move.effects if isinstance(e, DamageEffect)), None)
+        if damage_effect is not None and damage_effect.recoil_percent is not None:
+            payload.setdefault("power_mods_4096", []).append(4915)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost_recoil_moves, priority=EventPriority.ABILITY, owner=owner)
 
 
 def _bind_pinch_boost(move_type: Type) -> AbilityBinder:
@@ -528,6 +679,19 @@ def _bind_tinted_lens(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> No
     bus.on(Event.ON_DAMAGE_CALC, double_resisted, priority=EventPriority.ABILITY, owner=owner)
 
 
+@ability(Ability.NEUROFORCE)
+def _bind_neuroforce(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    def boost_super_effective(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is not pokemon or context.defender is None:
+            return None
+        effectiveness = type_effectiveness(payload["move_type"], context.defender.types)
+        if effectiveness > 1:
+            payload.setdefault("final_mods_4096", []).append(5120)  # 1.25x
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost_super_effective, priority=EventPriority.ABILITY, owner=owner)
+
+
 def _bind_incoming_type_weakening(types: frozenset[Type]) -> AbilityBinder:
     """Heatproof / Thick Fat: the listed attacking types hit with halved offense."""
 
@@ -544,6 +708,72 @@ def _bind_incoming_type_weakening(types: frozenset[Type]) -> AbilityBinder:
 
 ABILITY_BINDERS[Ability.HEATPROOF] = _bind_incoming_type_weakening(frozenset({Type.FIRE}))
 ABILITY_BINDERS[Ability.THICK_FAT] = _bind_incoming_type_weakening(frozenset({Type.FIRE, Type.ICE}))
+# Iron Barbs is Rough Skin under another name — same trigger, same fraction, different flavour text.
+ABILITY_BINDERS[Ability.IRON_BARBS] = _bind_rough_skin
+
+
+@ability(Ability.DEFEATIST)
+def _bind_defeatist(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Halved offense at or below half HP."""
+
+    def weaken(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is pokemon and pokemon.live_stats.HP * 2 <= pokemon.stat_totals.HP:
+            payload.setdefault("attack_mods_4096", []).append(2048)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, weaken, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.MARVEL_SCALE)
+def _bind_marvel_scale(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """1.5x Defence while statused — Milotic's reason to accept a burn."""
+
+    def toughen(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if (
+            context.defender is pokemon
+            and pokemon.status is not Status.NONE
+            and payload["category"] is Category.PHYSICAL
+        ):
+            payload.setdefault("defense_mods_4096", []).append(6144)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, toughen, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.FUR_COAT)
+def _bind_fur_coat(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Physical hits land against doubled Defence."""
+
+    def toughen(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is pokemon and payload["category"] is Category.PHYSICAL:
+            payload.setdefault("defense_mods_4096", []).append(8192)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, toughen, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.STEELWORKER)
+def _bind_steelworker(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """1.5x on Steel moves, the way STAB would if Dhelmise's Steel were one of its own types."""
+
+    def boost(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is pokemon and payload["move_type"] is Type.STEEL:
+            payload.setdefault("attack_mods_4096", []).append(6144)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.STAKEOUT)
+def _bind_stakeout(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Double damage against something that came in this turn."""
+
+    def punish_the_switch(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is pokemon and context.defender is not None and context.defender.just_switched_in:
+            payload.setdefault("attack_mods_4096", []).append(8192)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, punish_the_switch, priority=EventPriority.ABILITY, owner=owner)
 
 
 @ability(Ability.WATER_BUBBLE)
@@ -664,6 +894,11 @@ def _bind_download(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
 # -- Paradox abilities ----------------------------------------------------------
 
 _PARADOX_STATS = (Stats.ATTACK, Stats.DEFENCE, Stats.SP_ATTACK, Stats.SP_DEFENCE, Stats.SPEED)
+_SAND_FORCE_TYPES = (Type.ROCK, Type.GROUND, Type.STEEL)
+
+
+def _has_multiple_hits(move: Move) -> bool:
+    return any(isinstance(effect, DamageEffect) and effect.multi_hit is not None for effect in move.effects)
 
 
 def _best_stat(pokemon: Pokemon) -> Stats:
@@ -785,7 +1020,8 @@ def _bind_contact_status(status: Status, chance: float = 0.3) -> AbilityBinder:
                 return None
             from battle_sim.engine.status_apply import _apply_main_status  # lazy: avoids a mechanics->engine cycle
 
-            _apply_main_status(status, attacker, payload["attacker_index"], context.rng, context.log)
+            teams = (context.battle.sides[0].team, context.battle.sides[1].team)
+            _apply_main_status(status, attacker, payload["attacker_index"], context.rng, context.log, teams)
             return None
 
         bus.on(Event.ON_AFTER_HIT, afflict, priority=EventPriority.ABILITY, owner=owner)
@@ -810,7 +1046,8 @@ def _bind_on_hit_status(status: Status, requires_contact: bool, chance: float = 
                 return None
             from battle_sim.engine.status_apply import _apply_main_status  # lazy: avoids a mechanics->engine cycle
 
-            _apply_main_status(status, defender, payload["defender_index"], context.rng, context.log)
+            teams = (context.battle.sides[0].team, context.battle.sides[1].team)
+            _apply_main_status(status, defender, payload["defender_index"], context.rng, context.log, teams)
             return None
 
         bus.on(Event.ON_AFTER_HIT, afflict, priority=EventPriority.ABILITY, owner=owner)
@@ -1030,6 +1267,24 @@ def _bind_ice_body(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
     bus.on(Event.ON_RESIDUAL, snow_recovery, priority=ResidualOrder.WEATHER_ABILITY, owner=owner)
 
 
+@ability(Ability.RAIN_DISH)
+def _bind_rain_dish(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    def rain_recovery(context: EventContext, payload: Payload) -> HandlerResult | None:
+        active_weather = effective_weather(context.battle)
+        if context.actor is not pokemon or active_weather not in (Weather.RAIN, Weather.HEAVY_RAIN):
+            return None
+        healed = pokemon.apply_healing(max(1, pokemon.stat_totals.HP // 16))
+        if healed > 0:
+            context.log.add(
+                AbilityHealed(
+                    side=payload["side_index"], pokemon=pokemon.nickname, ability=Ability.RAIN_DISH, amount=healed
+                )
+            )
+        return None
+
+    bus.on(Event.ON_RESIDUAL, rain_recovery, priority=ResidualOrder.WEATHER_ABILITY, owner=owner)
+
+
 @ability(Ability.POISON_HEAL)
 def _bind_poison_heal(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
     def heal_from_poison(context: EventContext, payload: Payload) -> HandlerResult | None:
@@ -1150,6 +1405,69 @@ ABILITY_BINDERS[Ability.PROTEAN] = _bind_type_shifter
 
 # -- Transfer / forme abilities ---------------------------------------------------
 
+_MULTITYPE_PLATES: dict[Item, Type] = {
+    Item.FIST_PLATE: Type.FIGHTING,
+    Item.SKY_PLATE: Type.FLYING,
+    Item.TOXIC_PLATE: Type.POISON,
+    Item.EARTH_PLATE: Type.GROUND,
+    Item.STONE_PLATE: Type.ROCK,
+    Item.INSECT_PLATE: Type.BUG,
+    Item.SPOOKY_PLATE: Type.GHOST,
+    Item.IRON_PLATE: Type.STEEL,
+    Item.FLAME_PLATE: Type.FIRE,
+    Item.SPLASH_PLATE: Type.WATER,
+    Item.MEADOW_PLATE: Type.GRASS,
+    Item.ZAP_PLATE: Type.ELECTRIC,
+    Item.MIND_PLATE: Type.PSYCHIC,
+    Item.ICICLE_PLATE: Type.ICE,
+    Item.DRACO_PLATE: Type.DRAGON,
+    Item.DREAD_PLATE: Type.DARK,
+    Item.PIXIE_PLATE: Type.FAIRY,
+}
+_RKS_SYSTEM_MEMORIES: dict[Item, Type] = {
+    Item.FIGHTING_MEMORY: Type.FIGHTING,
+    Item.FLYING_MEMORY: Type.FLYING,
+    Item.POISON_MEMORY: Type.POISON,
+    Item.GROUND_MEMORY: Type.GROUND,
+    Item.ROCK_MEMORY: Type.ROCK,
+    Item.BUG_MEMORY: Type.BUG,
+    Item.GHOST_MEMORY: Type.GHOST,
+    Item.STEEL_MEMORY: Type.STEEL,
+    Item.FIRE_MEMORY: Type.FIRE,
+    Item.WATER_MEMORY: Type.WATER,
+    Item.GRASS_MEMORY: Type.GRASS,
+    Item.ELECTRIC_MEMORY: Type.ELECTRIC,
+    Item.PSYCHIC_MEMORY: Type.PSYCHIC,
+    Item.ICE_MEMORY: Type.ICE,
+    Item.DRAGON_MEMORY: Type.DRAGON,
+    Item.DARK_MEMORY: Type.DARK,
+    Item.FAIRY_MEMORY: Type.FAIRY,
+}
+
+
+def _bind_item_type_shifter(type_by_item: dict[Item, Type]) -> AbilityBinder:
+    """Multitype / RKS System: the holder's type tracks its held Plate or Memory, Normal with none."""
+
+    def binder(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+        def sync_type(context: EventContext, payload: Payload) -> HandlerResult | None:
+            if context.actor is not pokemon:
+                return None
+            wanted = (type_by_item.get(pokemon.item, Type.NORMAL), None)
+            if pokemon.types != wanted:
+                pokemon.types = wanted
+                side_index = next(i for i, s in enumerate(context.battle.sides) if s.active_pokemon is pokemon)
+                context.log.add(TypeChanged(side=side_index, pokemon=pokemon.nickname, new_type=wanted[0]))
+            return None
+
+        bus.on(Event.ON_SWITCH_IN, sync_type, priority=EventPriority.ABILITY, owner=owner)
+        bus.on(Event.ON_RESIDUAL, sync_type, priority=ResidualOrder.PARADOX, owner=owner)
+
+    return binder
+
+
+ABILITY_BINDERS[Ability.MULTITYPE] = _bind_item_type_shifter(_MULTITYPE_PLATES)
+ABILITY_BINDERS[Ability.RKS_SYSTEM] = _bind_item_type_shifter(_RKS_SYSTEM_MEMORIES)
+
 
 @ability(Ability.IMPOSTER)
 def _bind_imposter(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
@@ -1174,6 +1492,7 @@ def _steal_item(thief: Pokemon, thief_index: int, victim: Pokemon, context: Even
     stolen = victim.item
     victim.item = Item.NONE
     victim.item_consumed = True  # losing an item activates Unburden
+    victim.stripped_item = stolen  # taken rather than spent, so Nine Lives brings it back
     thief.item = stolen
     rewire_active(context.battle.bus, context.battle.effects, thief)
     rewire_active(context.battle.bus, context.battle.effects, victim)
@@ -1219,6 +1538,8 @@ def _bind_trace(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
         opponent = context.battle.sides[1 - side_index].active_pokemon
         if opponent.is_fainted() or opponent.ability is Ability.NONE:
             return None
+        if is_untouchable(opponent.ability):
+            return None  # Nine Lives is not copyable: a traced one would give the challenger nine too
         from battle_sim.mechanics.effects import rewire_active
 
         pokemon.ability = opponent.ability
@@ -1297,6 +1618,67 @@ def _bind_flagged_power_boost(predicate_flag: str, mod_4096: int) -> AbilityBind
 
 
 ABILITY_BINDERS[Ability.IRON_FIST] = _bind_flagged_power_boost("punching", 4915)
+ABILITY_BINDERS[Ability.STRONG_JAW] = _bind_flagged_power_boost("biting", 6144)
+ABILITY_BINDERS[Ability.MEGA_LAUNCHER] = _bind_flagged_power_boost("pulse", 6144)
+
+
+@ability(Ability.TOUGH_CLAWS)
+def _bind_tough_claws(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Contact is a property of the hit, not the move: Protective Pads and a Punching Glove clear it."""
+
+    def boost(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is pokemon and payload["contact"]:
+            payload.setdefault("power_mods_4096", []).append(5325)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.SAND_FORCE)
+def _bind_sand_force(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    def boost(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is not pokemon or payload["move_type"] not in _SAND_FORCE_TYPES:
+            return None
+        if effective_weather(context.battle) is Weather.SANDSTORM:
+            payload.setdefault("power_mods_4096", []).append(5325)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.LIGHTNING_ROD)
+def _bind_lightning_rod(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    def absorb_electric(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or payload["move_type"] is not Type.ELECTRIC:
+            return None
+        delta = pokemon.change_stat_stage(Stats.SP_ATTACK, 1)
+        if delta > 0:
+            context.log.add(
+                StatStageChanged(
+                    side=payload["defender_index"],
+                    pokemon=pokemon.nickname,
+                    stat=Stats.SP_ATTACK,
+                    delta=delta,
+                    requested=1,
+                    source="lightning_rod",
+                )
+            )
+        return HandlerResult(cancel=True, updated_payload={"absorbed": True, "immune_reason": "lightning_rod"})
+
+    bus.on(Event.ON_BEFORE_MOVE, absorb_electric, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.PARENTAL_BOND)
+def _bind_parental_bond(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Approximated as a flat 1.25x rather than a real second strike."""
+
+    def boost(context: EventContext, payload: Payload) -> HandlerResult | None:
+        move = context.move
+        if context.actor is pokemon and move is not None and not _has_multiple_hits(move):
+            payload.setdefault("power_mods_4096", []).append(5120)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, boost, priority=EventPriority.ABILITY, owner=owner)
 
 
 @ability(Ability.PUNK_ROCK)
@@ -1411,3 +1793,315 @@ def _bind_battle_bond(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> No
         return None
 
     bus.on(Event.ON_FAINT, bond, priority=EventPriority.ABILITY, owner=owner)
+
+
+# Coverage-audit repairs: each of these left its holder battling with no ability at all.
+
+ABILITY_BINDERS[Ability.POISON_POINT] = _bind_contact_status(Status.POISON)
+_SPORE_STATUSES = (Status.POISON, Status.PARALYSIS, Status.SLEEP)
+
+
+@ability(Ability.EFFECT_SPORE)
+def _bind_effect_spore(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """A contact hit risks poison, paralysis or sleep — 30% split three ways, as Gen 5+ has it."""
+
+    def afflict(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or not payload["contact"]:
+            return None
+        attacker = context.actor
+        assert attacker is not None  # hit events always carry the attacker
+        if attacker.is_fainted() or not context.rng.roll_chance(0.3):
+            return None
+        from battle_sim.engine.status_apply import _apply_main_status  # lazy: avoids a mechanics->engine cycle
+
+        status = _SPORE_STATUSES[context.rng.random_integer(0, len(_SPORE_STATUSES) - 1)]
+        teams = (context.battle.sides[0].team, context.battle.sides[1].team)
+        _apply_main_status(status, attacker, payload["attacker_index"], context.rng, context.log, teams)
+        return None
+
+    bus.on(Event.ON_AFTER_HIT, afflict, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.FLUFFY)
+def _bind_fluffy(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Halves contact damage and doubles Fire damage, so a contact Fire move lands for its usual amount."""
+
+    def cushion(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon:
+            return None
+        if payload["contact"]:
+            payload.setdefault("final_mods_4096", []).append(2048)
+        if payload["move_type"] is Type.FIRE:
+            payload.setdefault("final_mods_4096", []).append(8192)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, cushion, priority=EventPriority.ABILITY, owner=owner)
+
+
+def _bind_draw_in(drawn: Type, source: StatChangeSource) -> AbilityBinder:
+    """Lightning Rod / Storm Drain: the move is absorbed whole and pays a Sp. Atk stage for trying."""
+
+    def binder(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+        def absorb(context: EventContext, payload: Payload) -> HandlerResult | None:
+            if context.defender is not pokemon or payload["move_type"] is not drawn:
+                return None
+            delta = pokemon.change_stat_stage(Stats.SP_ATTACK, 1)
+            if delta > 0:
+                context.log.add(
+                    StatStageChanged(
+                        side=payload["defender_index"],
+                        pokemon=pokemon.nickname,
+                        stat=Stats.SP_ATTACK,
+                        delta=delta,
+                        requested=1,
+                        source=source,
+                    )
+                )
+            return HandlerResult(cancel=True, updated_payload={"absorbed": True, "immune_reason": source})
+
+        bus.on(Event.ON_BEFORE_MOVE, absorb, priority=EventPriority.ABILITY, owner=owner)
+
+    return binder
+
+
+ABILITY_BINDERS[Ability.STORM_DRAIN] = _bind_draw_in(Type.WATER, "storm_drain")
+
+
+@ability(Ability.FLOWER_GIFT)
+def _bind_flower_gift(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Sun raises Cherrim's Attack and Sp. Def by half; the forme change is not modelled."""
+
+    def bloom(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if effective_weather(context.battle) not in (Weather.SUN, Weather.HARSH_SUN):
+            return None
+        if context.actor is pokemon and payload["category"] is Category.PHYSICAL:
+            payload.setdefault("attack_mods_4096", []).append(6144)
+        if context.defender is pokemon and payload["category"] is Category.SPECIAL:
+            payload.setdefault("defense_mods_4096", []).append(6144)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, bloom, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.ANALYTIC)
+def _bind_analytic(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """1.3x for moving last, which the opponent having already acted this turn is the record of."""
+
+    def punish_the_slow_turn(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is not pokemon:
+            return None
+        if context.battle.sides[payload["defender_index"]].acted_this_turn:
+            payload.setdefault("power_mods_4096", []).append(5325)
+        return None
+
+    bus.on(Event.ON_DAMAGE_CALC, punish_the_slow_turn, priority=EventPriority.ABILITY, owner=owner)
+
+
+@ability(Ability.SHED_SKIN)
+def _bind_shed_skin(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """A third of the time, whatever it is sloughs off at the end of the turn."""
+
+    def slough(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.actor is not pokemon or pokemon.status is Status.NONE:
+            return None
+        if not context.rng.roll_chance(1 / 3):
+            return None
+        pokemon.status = Status.NONE
+        pokemon.status_turns = 0
+        context.log.add(StatusCleared(side=payload["side_index"], pokemon=pokemon.nickname, clearance="shed_skin"))
+        return None
+
+    bus.on(Event.ON_RESIDUAL, slough, priority=ResidualOrder.CURE, owner=owner)
+
+
+@ability(Ability.AFTERMATH)
+def _bind_aftermath(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Going down to a contact hit takes a quarter of the attacker with it."""
+
+    def parting_shot(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or not payload["contact"] or not pokemon.is_fainted():
+            return None
+        attacker = context.actor
+        assert attacker is not None  # hit events always carry the attacker
+        if attacker.is_fainted() or attacker.ability is Ability.MAGIC_GUARD:
+            return None
+        chip = attacker.apply_damage(max(1, attacker.stat_totals.HP // 4))
+        context.log.add(
+            AbilityChipDamage(
+                side=payload["attacker_index"], pokemon=attacker.nickname, ability=Ability.AFTERMATH, amount=chip
+            )
+        )
+        return None
+
+    bus.on(Event.ON_AFTER_HIT, parting_shot, priority=EventPriority.ABILITY, owner=owner)
+
+
+def _bind_flee_at_half(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Emergency Exit / Wimp Out: dropping to half health flags its holder to switch out."""
+
+    def flee(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or pokemon.is_fainted():
+            return None
+        maximum = pokemon.stat_totals.HP
+        if pokemon.live_stats.HP * 2 <= maximum < (pokemon.live_stats.HP + payload["dealt"]) * 2:
+            pokemon.flee_pending = True  # crossed the halfway line on this hit, rather than sitting under it
+        return None
+
+    bus.on(Event.ON_AFTER_HIT, flee, priority=EventPriority.ABILITY, owner=owner)
+
+
+ABILITY_BINDERS[Ability.EMERGENCY_EXIT] = _bind_flee_at_half
+ABILITY_BINDERS[Ability.WIMP_OUT] = _bind_flee_at_half
+
+
+# What a damage estimate needs to know about abilities without running the event bus.
+_TYPE_ABSORBING_ABILITIES: dict[Ability, Type] = {
+    Ability.VOLT_ABSORB: Type.ELECTRIC,
+    Ability.LIGHTNING_ROD: Type.ELECTRIC,
+    Ability.MOTOR_DRIVE: Type.ELECTRIC,
+    Ability.WATER_ABSORB: Type.WATER,
+    Ability.STORM_DRAIN: Type.WATER,
+    Ability.DRY_SKIN: Type.WATER,
+    Ability.SAP_SIPPER: Type.GRASS,
+    Ability.FLASH_FIRE: Type.FIRE,
+    Ability.WELL_BAKED_BODY: Type.FIRE,
+    Ability.EARTH_EATER: Type.GROUND,
+}
+_MOLD_BREAKERS = frozenset({Ability.MOLD_BREAKER, Ability.TERAVOLT, Ability.TURBOBLAZE})
+# Only what the engine actually binds, so the estimator never runs ahead of the engine.
+_SUPER_EFFECTIVE_REDUCERS = frozenset({Ability.FILTER, Ability.PRISM_ARMOR})
+
+
+def ability_absorbs(move_type: Type, move: Move, attacker: Pokemon, defender: Pokemon) -> bool:
+    """Whether the defender simply cannot be hurt by this move, ability and item included."""
+    if attacker.ability in _MOLD_BREAKERS:
+        return False  # ignores every ability below, which is the whole of what Mold Breaker does
+    if move_type is Type.GROUND and not defender.is_grounded():
+        return True
+    absorbed = _TYPE_ABSORBING_ABILITIES.get(defender.ability)
+    if absorbed is not None and move_type is absorbed:
+        return True
+    if defender.ability is Ability.WONDER_GUARD and type_effectiveness(move_type, defender.types) < 2:
+        return True
+    if defender.ability is Ability.SOUNDPROOF and move.sound:
+        return True
+    return defender.ability is Ability.BULLETPROOF and move.bullet
+
+
+def static_ability_modifiers(
+    move_type: Type, move: Move, base_power: int | None, attacker: Pokemon, defender: Pokemon
+) -> dict[str, object]:
+    """The ability multipliers a damage estimate can work out on its own, keyed as the payload wants."""
+    effectiveness = type_effectiveness(move_type, defender.types)
+    channels: dict[str, list[int]] = {}
+    modifiers: dict[str, object] = {}
+    _attacking_side(move_type, move, base_power, attacker, effectiveness, channels, modifiers)
+    if attacker.ability not in _MOLD_BREAKERS:
+        _defending_side(move_type, move, defender, effectiveness, channels)
+    return {**modifiers, **{channel: values for channel, values in channels.items() if values}}
+
+
+def _attacking_side(
+    move_type: Type,
+    move: Move,
+    base_power: int | None,
+    attacker: Pokemon,
+    effectiveness: float,
+    channels: dict[str, list[int]],
+    modifiers: dict[str, object],
+) -> None:
+    physical = move.category is Category.PHYSICAL
+    if physical and attacker.ability in (Ability.HUGE_POWER, Ability.PURE_POWER):
+        channels.setdefault("attack_mods_4096", []).append(8192)
+    if attacker.ability is Ability.GUTS:
+        if physical and attacker.status is not Status.NONE:
+            channels.setdefault("attack_mods_4096", []).append(6144)
+        # Set whatever the status, as the handler does, since Guts ignores the burn's own halving.
+        modifiers["ignore_burn"] = True
+    if attacker.ability is Ability.DEFEATIST and attacker.live_stats.HP * 2 <= attacker.stat_totals.HP:
+        channels.setdefault("attack_mods_4096", []).append(2048)
+    if attacker.ability is Ability.ADAPTABILITY and move_type in attacker.types:
+        modifiers["stab_4096"] = 8192
+    if attacker.ability is Ability.TECHNICIAN and base_power is not None and base_power <= 60:
+        channels.setdefault("power_mods_4096", []).append(6144)
+    if attacker.ability is Ability.SHEER_FORCE and any(_is_secondary(effect) for effect in move.effects):
+        channels.setdefault("power_mods_4096", []).append(5325)
+    if attacker.ability is Ability.TINTED_LENS and 0 < effectiveness < 1:
+        channels.setdefault("final_mods_4096", []).append(8192)
+
+
+def _defending_side(
+    move_type: Type, move: Move, defender: Pokemon, effectiveness: float, channels: dict[str, list[int]]
+) -> None:
+    if defender.ability is Ability.THICK_FAT and move_type in (Type.FIRE, Type.ICE):
+        channels.setdefault("attack_mods_4096", []).append(2048)
+    if defender.ability is Ability.MULTISCALE and defender.live_stats.HP == defender.stat_totals.HP:
+        channels.setdefault("final_mods_4096", []).append(2048)
+    if defender.ability in _SUPER_EFFECTIVE_REDUCERS and effectiveness >= 2:
+        channels.setdefault("final_mods_4096", []).append(3072)
+    if defender.ability is Ability.FUR_COAT and move.category is Category.PHYSICAL:
+        channels.setdefault("defense_mods_4096", []).append(8192)
+
+
+_AURA_ABILITIES = {Ability.DARK_AURA: Type.DARK, Ability.FAIRY_AURA: Type.FAIRY}
+
+
+def static_field_modifiers(move_type: Type, actives: Sequence[Pokemon]) -> dict[str, object]:
+    """Ability multipliers that depend on who else is on the field, not on the attacker alone."""
+    if not any(p.ability in _AURA_ABILITIES and _AURA_ABILITIES[p.ability] is move_type for p in actives):
+        return {}
+    broken = any(p.ability is Ability.AURA_BREAK for p in actives)
+    return {"power_mods_4096": [3072 if broken else 5461]}
+
+
+def field_from_actives(actives: Sequence[Pokemon]) -> tuple[Weather | None, Terrain | None]:
+    """The weather and terrain these Pokemon would have set on the way in."""
+    weather: Weather | None = None
+    terrain: Terrain | None = None
+    for pokemon in actives:
+        if pokemon.is_fainted():
+            continue
+        weather = ABILITY_WEATHER.get(pokemon.ability, weather)
+        terrain = ABILITY_TERRAIN.get(pokemon.ability, terrain)
+    return weather, terrain
+
+
+# -- Abilities that rewrite somebody else's ability ---------------------------
+
+
+def set_ability(
+    target: Pokemon,
+    target_index: int,
+    ability: Ability,
+    battle: "BattleState",
+    log: "BattleLog",
+) -> bool:
+    """Give `target` a different ability, wiring it up."""
+    from battle_sim.mechanics.effects import rewire_active
+
+    if is_untouchable(target.ability):
+        log.add(AbilityUnchanged(side=target_index, pokemon=target.nickname, ability=target.ability))
+        return False
+    if is_untouchable(ability) or target.ability is ability:
+        return False
+    target.ability = ability
+    rewire_active(battle.bus, battle.effects, target)
+    log.add(AbilityChanged(side=target_index, pokemon=target.nickname, ability=ability))
+    return True
+
+
+@ability(Ability.MUMMY)
+def _bind_mummy(bus: EventBus, pokemon: Pokemon, owner: EffectOwner) -> None:
+    """Touching a Mummy makes you one. Spreads on contact, and never to something that cannot take it."""
+
+    def infect(context: EventContext, payload: Payload) -> HandlerResult | None:
+        if context.defender is not pokemon or not payload["contact"]:
+            return None
+        attacker = context.actor
+        assert attacker is not None  # hit events always carry the attacker
+        if attacker.is_fainted() or attacker.ability is Ability.MUMMY:
+            return None
+        set_ability(attacker, payload["attacker_index"], Ability.MUMMY, context.battle, context.log)
+        return None
+
+    bus.on(Event.ON_AFTER_HIT, infect, priority=EventPriority.ABILITY, owner=owner)

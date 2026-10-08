@@ -1,20 +1,34 @@
 import math
+from collections import defaultdict
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
+from typing import Final
 
 from battle_sim.engine.damage_apply import _fixed_amount
-from battle_sim.engine.power import effective_power, payload_overrides
+from battle_sim.engine.power import effective_power, move_type_override, payload_overrides
 from battle_sim.maths.damage import calculate_damage
 from battle_sim.maths.rng import RNG
-from battle_sim.mechanics.battle import BattleState, SideState
+from battle_sim.mechanics.abilities import ability_absorbs, static_ability_modifiers, static_field_modifiers
+from battle_sim.mechanics.battle import BattleState, SideState, effective_weather
+from battle_sim.mechanics.items import static_damage_modifiers
 from battle_sim.mechanics.priority import effective_speed
-from battle_sim.models.moves import DamageEffect, FixedDamageEffect, Move, MoveSlot
-from battle_sim.models.pokemon import Pokemon
+from battle_sim.models.moves import DamageEffect, FixedDamageEffect, Move, MoveSlot, StatStageChangeEffect
+from battle_sim.models.pokemon import BelievedSet, Pokemon
 from battle_sim.models.type_matchups import type_effectiveness
-from battle_sim.utils import Ability, Hazards, Item, Type
+from battle_sim.utils import Ability, ExtraStatus, Hazards, Item, Stats, Status, Type, Weather
 
 _MIN_ROLL = 85
 _MAX_ROLL = 100
 _SPIKES_CHIP = {1: 1 / 8, 2: 1 / 6, 3: 1 / 4}
+# One neutral Stealth Rock entry costs an eighth of a bar.
+_NEUTRAL_ROCK_DIVISOR = 8.0
+# Both measured in whole bench members, on the same scale as the headcount.
+_FREE_SURVIVAL_DENIAL = 1.0
+_BREAKPOINT_CONVERSION = 1.0
 EDGE_CAP = 4.0  # exchange edges live in [-EDGE_CAP, EDGE_CAP]
+# Shared and never read: `damage_range` fixes the crit and roll, so `calculate_damage` never draws.
+_UNUSED_RNG: Final = RNG(seed=0)
+_SANDSTORM_IMMUNE_TYPES = frozenset({Type.ROCK, Type.GROUND, Type.STEEL})
 HAZARD_LAYER_CAPS = {Hazards.STEALTH_ROCK: 1, Hazards.SPIKES: 3, Hazards.TOXIC_SPIKES: 2, Hazards.STICKY_WEB: 1}
 
 
@@ -28,10 +42,32 @@ def damage_range(move: Move, attacker: Pokemon, defender: Pokemon, state: Battle
         amount = _fixed_amount(fixed_effect, attacker, defender)
         return (amount, amount) if amount is not None else (0, 0)
 
-    payload = {
+    # Resolve the type the live engine would (Aerilate, Judgment, Weather Ball) before reading effectiveness.
+    override_type = move_type_override(move, attacker, state)
+    if override_type is not None and move.type is not override_type:
+        move = replace(move, type=override_type)
+
+    # Asked after the type override, so an absorb answers the type the move actually arrives as.
+    if ability_absorbs(move.type, move, attacker, defender):
+        return 0, 0
+
+    payload: dict[str, object] = {
         **payload_overrides(move, attacker, defender),
         "power_override": effective_power(move, damage_effect, attacker, defender, state),
     }
+    # The item and ability multipliers the engine applies from the damage bus, which this never runs.
+    static = {
+        **static_damage_modifiers(move.type, move.category, attacker, defender, damage_effect.power),
+        **static_ability_modifiers(move.type, move, damage_effect.power, attacker, defender),
+        # Auras belong to whoever is on the field, not to the attacker/defender pair above.
+        **static_field_modifiers(move.type, [side.active_pokemon for side in state.sides]),
+    }
+    for channel, value in static.items():
+        if not isinstance(value, list):
+            payload[channel] = value
+            continue
+        existing = payload.get(channel)
+        payload[channel] = [*existing, *value] if isinstance(existing, list) else list(value)
     if defender.ability is Ability.UNAWARE and attacker.ability is not Ability.MOLD_BREAKER:
         payload["ignore_attack_stages"] = True
     if attacker.ability is Ability.UNAWARE:
@@ -43,7 +79,7 @@ def damage_range(move: Move, attacker: Pokemon, defender: Pokemon, state: Battle
         move,
         state.field,
         defender_side,
-        rng=RNG(seed=0),
+        rng=_UNUSED_RNG,
         is_crit=False,
         random_roll=_MIN_ROLL,
         modifiers=dict(payload),
@@ -54,7 +90,7 @@ def damage_range(move: Move, attacker: Pokemon, defender: Pokemon, state: Battle
         move,
         state.field,
         defender_side,
-        rng=RNG(seed=0),
+        rng=_UNUSED_RNG,
         is_crit=False,
         random_roll=_MAX_ROLL,
         modifiers=dict(payload),
@@ -85,9 +121,36 @@ def best_expected_damage(attacker: Pokemon, defender: Pokemon, state: BattleStat
     return max((expected_damage(move, attacker, defender, state) for move in usable_moves(attacker)), default=0.0)
 
 
+def posterior_threat(attacker: Pokemon, defender: Pokemon, state: BattleState) -> float:
+    """Expected incoming damage from an attacker whose set we only *believe*, not know."""
+    if attacker.believed_sets is None:
+        return best_expected_damage(attacker, defender, state)
+    total = 0.0
+    for (item, ability), candidates in _by_equipment(attacker.believed_sets).items():
+        # One variant per item/ability prices the group; each distinct move is calculated once.
+        worn = (item, ability) == (attacker.item, attacker.ability)
+        variant = attacker if worn else _equipped(attacker, item, ability)
+        distinct = {move.name: move for candidate in candidates for move in candidate.moves}
+        priced = {name: expected_damage(move, variant, defender, state) for name, move in distinct.items()}
+        total += sum(candidate.weight * max(priced[move.name] for move in candidate.moves) for candidate in candidates)
+    return total
+
+
+def _by_equipment(sets: Sequence[BelievedSet]) -> dict[tuple[Item, Ability], list[BelievedSet]]:
+    grouped: dict[tuple[Item, Ability], list[BelievedSet]] = defaultdict(list)
+    for believed in sets:
+        grouped[believed.item, believed.ability].append(believed)
+    return grouped
+
+
+def _equipped(attacker: Pokemon, item: Item, ability: Ability) -> Pokemon:
+    """The attacker as it would be holding one candidate's item and ability."""
+    return attacker.model_copy(update={"item": item, "ability": ability})
+
+
 def survival_turns(defender: Pokemon, attacker: Pokemon, state: BattleState) -> float:
-    """Turns the defender survives the attacker's best expected hits; inf when it cannot be hurt."""
-    best = best_expected_damage(attacker, defender, state)
+    """Turns the defender survives the attacker's expected hits; inf when it cannot be hurt."""
+    best = posterior_threat(attacker, defender, state)
     if best <= 0:
         return math.inf
     return math.ceil(defender.live_stats.HP / best)
@@ -104,8 +167,8 @@ def exchange_edge(mine: Pokemon, theirs: Pokemon, state: BattleState) -> float:
     return exchange_edge_from(
         my_hp=mine.live_stats.HP,
         their_hp=theirs.live_stats.HP,
-        my_best=best_expected_damage(mine, theirs, state),
-        their_best=best_expected_damage(theirs, mine, state),
+        my_best=posterior_threat(mine, theirs, state),
+        their_best=posterior_threat(theirs, mine, state),
         faster=my_speed >= their_speed,
     )
 
@@ -122,28 +185,205 @@ def exchange_edge_from(my_hp: int, their_hp: int, my_best: float, their_best: fl
 def entry_hazard_chip(incoming: Pokemon, side: SideState) -> int:
     """Estimated HP an entrant loses to the hazards on its side; the player-facing approximation
     of the engine's entry sequence (Toxic Spikes status and ability absorbers are not counted)."""
+    return int(incoming.stat_totals.HP * entry_hazard_share(incoming, side.hazards))
+
+
+def entry_hazard_share(incoming: Pokemon, hazards: Mapping[Hazards, int]) -> float:
+    """The same toll as a share of the entrant's maximum HP, against an arbitrary hazard layout."""
     if incoming.item is Item.HEAVY_DUTY_BOOTS or incoming.ability is Ability.MAGIC_GUARD:
-        return 0
-    max_hp = incoming.stat_totals.HP
-    chip = 0.0
-    if side.hazards.get(Hazards.STEALTH_ROCK, 0) > 0:
-        chip += max_hp / 8 * type_effectiveness(Type.ROCK, incoming.types)
-    layers = side.hazards.get(Hazards.SPIKES, 0)
+        return 0.0
+    share = 0.0
+    if hazards.get(Hazards.STEALTH_ROCK, 0) > 0:
+        share += type_effectiveness(Type.ROCK, incoming.types) / 8
+    layers = hazards.get(Hazards.SPIKES, 0)
     if layers > 0 and incoming.is_grounded():
-        chip += max_hp * _SPIKES_CHIP[min(layers, 3)]
-    return int(chip)
+        share += _SPIKES_CHIP[min(layers, 3)]
+    return share
 
 
-def bootless_healthy(side: SideState) -> int:
-    return sum(1 for p in side.team if not p.is_fainted() and p.item is not Item.HEAVY_DUTY_BOOTS)
+def has_free_survival(pokemon: Pokemon) -> bool:
+    """Whether this Pokemon is currently guaranteed to live through one hit it otherwise would not."""
+    if pokemon.live_stats.HP < pokemon.stat_totals.HP:
+        return False
+    return pokemon.item is Item.FOCUS_SASH or pokemon.ability is Ability.STURDY
+
+
+def _reaches_a_breakpoint(attacker: Pokemon, victim: Pokemon, share: float, state: BattleState) -> bool:
+    """Whether entry chip is what turns this attacker's non-kill into a kill."""
+    best = best_expected_damage(attacker, victim, state)
+    return best < victim.live_stats.HP <= best + share * victim.stat_totals.HP
+
+
+def hazard_toll(
+    side: SideState,
+    extra: Hazards | None = None,
+    attacker: Pokemon | None = None,
+    state: BattleState | None = None,
+) -> float:
+    """What the hazards on this side will actually cost the members still to come in."""
+    hazards: dict[Hazards, int] = dict(side.hazards)
+    if extra is not None:
+        hazards[extra] = hazards.get(extra, 0) + 1
+    health, bodies = 0.0, 0.0
+    for member in side.bench:
+        if member.is_fainted() or member.item is Item.HEAVY_DUTY_BOOTS:
+            continue
+        share = entry_hazard_share(member, hazards)
+        if share <= 0:
+            continue
+        health += share
+        if has_free_survival(member):
+            bodies += _FREE_SURVIVAL_DENIAL
+        elif attacker is not None and state is not None and _reaches_a_breakpoint(attacker, member, share, state):
+            bodies += _BREAKPOINT_CONVERSION
+    return (health * _NEUTRAL_ROCK_DIVISOR + bodies) / 6
+
+
+_SWEEP_STATS = (Stats.ATTACK, Stats.SP_ATTACK, Stats.SPEED)
+_TWO_SHOT_WEIGHT = 0.5  # outsped and 2HKO'd is halfway to being swept, and the half worth acting on
+# Toxic kills from full HP on the sixth tick, so two turns past that covers burn and Leech Seed too.
+_RESIDUAL_HORIZON = 8
+_BENCH_HORIZON = 3  # a benched member's clock is stopped; this is what it pays on its way back in
+_RESIDUAL_DISCOUNT = 0.7  # per turn: what damage this far out is worth against a board that will have moved
+_SETUP_DISCOUNT = 0.6  # a boost one turn away is worth less than one already on the board
+_BOOST_CEILING = 6
+
+
+def is_setting_up(pokemon: Pokemon) -> bool:
+    """Whether this Pokemon has boosted anything that would let it run through a team."""
+    return any(pokemon.stat_stages[stat] > 0 for stat in _SWEEP_STATS)
+
+
+def sweep_threat(attacker: Pokemon, defenders: SideState, state: BattleState) -> float:
+    """Share of `defenders` this attacker, as it stands, outspeeds and kills in one hit, from zero to one."""
+    if not is_setting_up(attacker):
+        return 0.0
+    return _beaten_share(attacker, _side_of(attacker, state), defenders, state)
+
+
+def best_setup_boost(pokemon: Pokemon) -> dict[Stats, int]:
+    """The stat stages the best setup move this Pokemon carries would put on itself in one use."""
+    best: dict[Stats, int] = {}
+    for move in usable_moves(pokemon):
+        for effect in move.effects:
+            if not isinstance(effect, StatStageChangeEffect) or effect.target != "SELF":
+                continue
+            if effect.is_secondary or effect.probability < 1.0:
+                continue
+            gained = {stat: n for stat, n in effect.stages.items() if n > 0 and stat in _SWEEP_STATS}
+            if sum(gained.values()) > sum(best.values()):
+                best = gained
+    return best
+
+
+def setup_potential(attacker: Pokemon, defenders: SideState, state: BattleState) -> float:
+    """What this Pokemon would beat *after* the setup move it is carrying, zero to one."""
+    boost = best_setup_boost(attacker)
+    if not boost:
+        return 0.0
+    # On a copy, since this is hypothetical and must never touch the real Pokemon.
+    hypothetical = attacker.model_copy(deep=True)
+    for stat, stages in boost.items():
+        hypothetical.stat_stages[stat] = min(_BOOST_CEILING, hypothetical.stat_stages[stat] + stages)
+    return _SETUP_DISCOUNT * _beaten_share(hypothetical, _side_of(attacker, state), defenders, state)
+
+
+def _beaten_share(attacker: Pokemon, attacker_side: SideState, defenders: SideState, state: BattleState) -> float:
+    """Share of `defenders` this attacker outspeeds and kills, graded by how few hits it needs."""
+    standing = [p for p in defenders.team if not p.is_fainted()]
+    if not standing:
+        return 0.0
+    speed = effective_speed(attacker, attacker_side, state.field)
+    beaten = 0.0
+    for defender in standing:
+        if speed <= effective_speed(defender, defenders, state.field):
+            continue  # it gets a turn back, so this is a fight rather than a sweep
+        hit = best_expected_damage(attacker, defender, state)
+        if hit <= 0:
+            continue
+        # Measured against full health, not what is left.
+        if hit >= defender.stat_totals.HP:
+            beaten += 1.0
+        elif hit * 2 >= defender.stat_totals.HP:
+            beaten += _TWO_SHOT_WEIGHT
+    return beaten / len(standing)
+
+
+def residual_drain(pokemon: Pokemon, state: BattleState) -> int:
+    """Net HP this Pokemon expects to lose to residuals next turn — negative if it gains."""
+    return _residual_drain(pokemon, state, pokemon.status_turns)
+
+
+def _residual_drain(pokemon: Pokemon, state: BattleState, toxic_counter: int) -> int:
+    """`residual_drain` with the toxic counter supplied rather than read off the Pokemon."""
+    if pokemon.ability is Ability.MAGIC_GUARD:
+        return 0
+    max_hp = pokemon.stat_totals.HP
+    drain = 0
+    poisoned = pokemon.status in (Status.POISON, Status.TOXIC)
+    if not (poisoned and pokemon.ability is Ability.POISON_HEAL):
+        if pokemon.status is Status.BURN:
+            drain += max(1, max_hp // 16)
+        elif pokemon.status is Status.POISON:
+            drain += max(1, max_hp // 8)
+        elif pokemon.status is Status.TOXIC:
+            drain += max(1, max_hp * (toxic_counter + 1) // 16)
+    if ExtraStatus.LEECH_SEED in pokemon.volatiles:
+        drain += max(1, max_hp // 8)
+    if effective_weather(state) is Weather.SANDSTORM:
+        immune_type = _SANDSTORM_IMMUNE_TYPES.intersection(t for t in pokemon.types if t is not None)
+        if not immune_type and pokemon.ability not in (Ability.SAND_VEIL, Ability.OVERCOAT):
+            drain += max(1, max_hp // 16)
+    if pokemon.item in (Item.LEFTOVERS, Item.BLACK_SLUDGE):
+        drain -= max(1, max_hp // 16)  # ticking the other way, and it can turn a losing race
+    return drain
+
+
+def projected_residual_loss(
+    pokemon: Pokemon, state: BattleState, turns: int, toxic_counter: int | None = None
+) -> float:
+    """Share of this Pokemon's *current* HP the residuals take over `turns` turns, in [0, 1]."""
+    max_hp = pokemon.stat_totals.HP
+    start = pokemon.live_stats.HP
+    if start <= 0 or max_hp <= 0:
+        return 0.0
+    counter = pokemon.status_turns if toxic_counter is None else toxic_counter
+    hp = start
+    value = 0.0
+    for turn in range(turns):
+        drain = _residual_drain(pokemon, state, counter)
+        discount = _RESIDUAL_DISCOUNT**turn
+        if hp - drain <= 0:  # it dies here; the rest of the bar is what that is worth
+            return min(1.0, value + discount * hp / start)
+        hp = min(max_hp, hp - drain)
+        value += discount * drain / start
+        counter += 1
+    return min(1.0, max(0.0, value))
+
+
+def residual_pressure(side: SideState, state: BattleState, horizon: int = _RESIDUAL_HORIZON) -> float:
+    """How much of this side's material the clock takes if nobody intervenes, normalized to [0, 1]."""
+    active = side.active_pokemon
+    total = 0.0
+    if not active.is_fainted():
+        total += projected_residual_loss(active, state, horizon)
+    for member in side.bench:
+        if not member.is_fainted():
+            total += projected_residual_loss(member, state, _BENCH_HORIZON, toxic_counter=0)
+    return total / 6
+
+
+def bootless_bench(side: SideState) -> int:
+    """Members that could still be made to walk into hazards, and would pay for it."""
+    return sum(1 for p in side.bench if not p.is_fainted() and p.item is not Item.HEAVY_DUTY_BOOTS)
 
 
 def hazard_pressure(side: SideState) -> float:
-    """How much the hazards on this side hurt its own bootless members, normalized to [0, 1]."""
+    """How much the hazards on this side hurt whoever still has to come in, normalized to [0, 1]."""
     layers = sum(min(count, HAZARD_LAYER_CAPS.get(kind, 1)) for kind, count in side.hazards.items())
     if layers == 0:
         return 0.0
-    return min(layers, 4) / 4 * bootless_healthy(side) / 6
+    return min(layers, 4) / 4 * bootless_bench(side) / 6
 
 
 def _side_of(pokemon: Pokemon, state: BattleState) -> SideState:

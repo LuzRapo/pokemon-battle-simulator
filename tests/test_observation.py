@@ -219,3 +219,100 @@ def test_view_is_stable_until_a_reveal_changes_belief():
     assert observer.view(0) is not first
     observer.ingest(_log(MoveUsed(side=1, pokemon="Garchomp", move="Outrage")))  # nothing new
     assert observer.view(0) is observer.view(0)
+
+
+def test_posterior_weights_are_normalised_and_frequency_ordered():
+    weighted = PRIOR.posterior("Garchomp", Knowledge())
+    assert [spec.item for _, spec in weighted] == [Item.LEFTOVERS, Item.CHOICE_SCARF]
+    assert weighted[0][0] == pytest.approx(2 / 3)
+    assert sum(weight for weight, _ in weighted) == pytest.approx(1.0)
+
+
+def test_posterior_drops_every_set_a_reveal_rules_out():
+    weighted = PRIOR.posterior("Garchomp", Knowledge(moves={"Outrage"}))
+    assert [spec.item for _, spec in weighted] == [Item.CHOICE_SCARF]
+    assert weighted[0][0] == pytest.approx(1.0)
+
+
+def test_posterior_relaxes_rather_than_emptying_on_an_impossible_reveal():
+    """No corpus set holds Swords Dance; an empty belief would be worse than a loose one."""
+    weighted = PRIOR.posterior("Garchomp", Knowledge(moves={"Swords Dance"}))
+    assert len(weighted) == 2
+    assert all("Swords Dance" in spec.moves for _, spec in weighted)
+
+
+def test_believed_opponents_carry_the_posterior_and_own_pokemon_do_not():
+    _, observer = _battle()
+    view = observer.view(0)
+    believed = view.sides[1].active_pokemon
+    assert believed.believed_sets is not None
+    assert sum(candidate.weight for candidate in believed.believed_sets) == pytest.approx(1.0)
+    assert view.sides[0].active_pokemon.believed_sets is None
+
+
+def test_a_reveal_collapses_the_believed_posterior_to_one_set():
+    _, observer = _battle()
+    observer.ingest(_log(MoveUsed(side=1, pokemon="Garchomp", move="Outrage")))
+    candidates = observer.view(0).sides[1].active_pokemon.believed_sets
+    assert candidates is not None
+    assert len(candidates) == 1
+    assert candidates[0].item is Item.CHOICE_SCARF
+
+
+def test_sampled_worlds_are_taken_as_known_not_believed():
+    """A determinization asserts one world; averaging over the posterior inside it would double-count."""
+    _, observer = _battle()
+    sampled = observer.sample_view(0, random.Random(1))
+    assert sampled.sides[1].active_pokemon.believed_sets is None
+
+
+# -- What a visible forme, and a bounced move, tell the observer --
+
+_WEEZING = PokemonSpec(
+    species="Weezing",
+    ability=Ability.LEVITATE,
+    item=Item.BLACK_SLUDGE,
+    moves=["Toxic", "Sludge Bomb", "Pain Split", "Haze"],
+)
+_SABLEYE = PokemonSpec(
+    species="Sableye",
+    ability=Ability.PRANKSTER,
+    item=Item.SABLENITE,
+    moves=["Knock Off", "Recover", "Protect", "Detect"],
+)
+
+
+def _watching(mine: PokemonSpec, theirs: PokemonSpec) -> tuple[BattleState, BattleObserver]:
+    state = BattleState(
+        sides=(SideState(team=[build_pokemon(mine)]), SideState(team=[build_pokemon(theirs)])),
+        rng=RNG(seed=1),
+    )
+    return state, BattleObserver(state, SetPrior.from_teams([[mine], [theirs]]))
+
+
+def test_a_mega_evolution_reveals_the_ability_that_comes_with_the_forme() -> None:
+    """Every Sableye-Mega has Magic Bounce, and the whole table can see it happen."""
+    from battle_sim.engine import step
+    from battle_sim.models.actions import Action, ActionType
+    from battle_sim.utils import Target
+
+    state, observer = _watching(_WEEZING, _SABLEYE)
+    assert observer.view(0).sides[1].active_pokemon.ability is Ability.PRANKSTER
+
+    attack = Action(action=ActionType.USE_MOVE, target=Target.SINGLE_OPPONENT, move=MoveSlot.FIRST)
+    observer.ingest(step(state, {0: attack, 1: attack}))
+
+    believed = observer.view(0).sides[1].active_pokemon
+    assert believed.name == "Sableye-Mega"
+    assert believed.ability is Ability.MAGIC_BOUNCE
+
+
+def test_having_a_move_bounced_teaches_who_bounced_it() -> None:
+    from battle_sim.models.log_events import MoveBounced
+
+    _, observer = _watching(_WEEZING, _SABLEYE)
+    log = BattleLog()
+    log.add(MoveBounced(side=1, pokemon=build_pokemon(_SABLEYE).nickname))
+    observer.ingest(log)
+
+    assert observer.view(0).sides[1].active_pokemon.ability is Ability.MAGIC_BOUNCE

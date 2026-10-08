@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Final
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -13,6 +14,9 @@ class BaseStats:
     SP_ATTACK: int
     SP_DEFENCE: int
     SPEED: int
+
+    def __getitem__(self, stat: Stats) -> int:
+        return int(getattr(self, stat.name))
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,9 @@ class StatStages(BaseModel):
 
     def __setitem__(self, stat: Stats, stage: int) -> None:
         setattr(self, stat.name, stage)
+
+
+STAGED_STATS: Final = tuple(Stats(name) for name in StatStages.model_fields)
 
 
 class EVs(BaseModel):

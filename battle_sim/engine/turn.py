@@ -1,17 +1,28 @@
+from collections.abc import Callable
+
 from battle_sim.engine.actions import _execute_action
+from battle_sim.engine.damage_apply import concede_if_stood
 from battle_sim.engine.outcome import _update_outcome
 from battle_sim.engine.residuals import _apply_residuals
 from battle_sim.engine.switching import _execute_switch, _sync_neutralizing_gas
+from battle_sim.formes import apply_forme, hp_forme, mega_forme, swap_forme, ultra_bursts
+from battle_sim.mechanics.abilities import ABILITY_WEATHER
 from battle_sim.mechanics.battle import BattleState
+from battle_sim.mechanics.effects import rewire_active
 from battle_sim.mechanics.events import Event, EventContext
+from battle_sim.mechanics.items import WEATHER_ROCKS
 from battle_sim.mechanics.log import BattleLog
 from battle_sim.mechanics.priority import effective_speed, order_actions
 from battle_sim.models.actions import Action, ActionType
-from battle_sim.models.log_events import SelfSwitchPending
+from battle_sim.models.log_events import FormeChanged, SelfSwitchPending, WeatherSetByAbility
+from battle_sim.models.pokemon import Pokemon
 from battle_sim.utils import Ability
 
+type SwitchChooser = Callable[[BattleState, int], Action | None]
 
-def step(state: BattleState, actions: dict[int, Action]) -> BattleLog:
+
+def step(state: BattleState, actions: dict[int, Action], switch_chooser: SwitchChooser | None = None) -> BattleLog:
+    """Resolve one turn, asking `switch_chooser` for a pivot's replacement the instant one is forced."""
     log = BattleLog()
     bus = state.bus
     turn_ctx = EventContext(rng=state.rng, battle=state, log=log)
@@ -24,6 +35,9 @@ def step(state: BattleState, actions: dict[int, Action]) -> BattleLog:
     if state.turn == 0:
         _send_out_leads(state, log)
     bus.emit(Event.ON_TURN_START, turn_ctx)
+    _resolve_mega_evolution(state, log)
+    # Before the turn is ordered, a Wishiwashi that led or just switched in schools.
+    _resolve_hp_formes(state, log)
 
     for side_index, action in order_actions(actions, state):
         if state.outcome is not None:
@@ -38,16 +52,95 @@ def step(state: BattleState, actions: dict[int, Action]) -> BattleLog:
             continue  # ejected before acting: the pending action is forfeited
         _execute_action(state, side_index, action, log)
         side.acted_this_turn = True
+        _resolve_hp_formes(state, log)  # the hit that just landed may have crossed a threshold
+        _resolve_flee_abilities(state, log)
         _resolve_eject_packs(state, log)
+        if switch_chooser is not None:
+            _resolve_pending_switches(state, switch_chooser, log)
+        concede_if_stood(state, log)
         _update_outcome(state, log)
 
     if state.outcome is None:
         _apply_residuals(state, log)
+        _resolve_hp_formes(state, log)  # residual chip crosses thresholds too
+        concede_if_stood(state, log)  # the chip may have been the blow he took standing
         _update_outcome(state, log)
+
+    _tick_turns_active(state, choosers)
 
     bus.emit(Event.ON_TURN_END, turn_ctx)
     state.turn += 1
     return log
+
+
+def _tick_turns_active(state: BattleState, choosers: dict[int, Pokemon]) -> None:
+    """Two different "how long have I been out" bookkeeping updates, once per side, at turn-end."""
+    for side_index, side in enumerate(state.sides):
+        active = side.active_pokemon
+        if active.is_fainted():
+            continue
+        active.just_switched_in = False
+        if active is choosers[side_index]:
+            active.turns_active += 1
+
+
+def _resolve_mega_evolution(state: BattleState, log: BattleLog) -> None:
+    """Mega Evolve any active holding its matching stone, before a single move is ordered."""
+    for side_index, side in enumerate(state.sides):
+        chosen = side.chosen_action
+        if chosen is None or chosen.action is not ActionType.USE_MOVE:
+            continue
+        active = side.active_pokemon
+        if active.is_fainted():
+            continue
+        burst = ultra_bursts(active.name, active.item)
+        if side.has_ultra_bursted if burst else side.has_mega_evolved:
+            continue
+        known = [move.name for move in active.moves.to_list() if move is not None]
+        forme = mega_forme(active.name, active.item, known)
+        if forme is None:
+            continue
+        apply_forme(active, forme)
+        rewire_active(state.bus, state.effects, active)  # the new forme's ability replaces the old one's handlers
+        if burst:
+            side.has_ultra_bursted = True
+        else:
+            side.has_mega_evolved = True
+        log.add(FormeChanged(side=side_index, pokemon=active.nickname, forme=active.name))
+        _weather_from_new_ability(state, active, side_index, log)
+
+
+def _weather_from_new_ability(state: BattleState, active: Pokemon, side_index: int, log: BattleLog) -> None:
+    """A weather-setting ability arriving with a forme still has to set its weather."""
+    weather = ABILITY_WEATHER.get(active.ability)
+    if weather is None or state.field.weather is weather:
+        return
+    state.field.weather = weather
+    state.field.weather_turns_left = 8 if active.item is WEATHER_ROCKS.get(weather) else 5
+    log.add(WeatherSetByAbility(side=side_index, pokemon=active.nickname, ability=active.ability))
+
+
+def _resolve_hp_formes(state: BattleState, log: BattleLog) -> None:
+    """Put both actives into whatever forme their HP-triggered ability calls for."""
+    for side_index, side in enumerate(state.sides):
+        active = side.active_pokemon
+        forme = hp_forme(active)
+        if forme is not None:
+            swap_forme(state.bus, state.effects, active, forme, side_index, log)
+
+
+def _resolve_flee_abilities(state: BattleState, log: BattleLog) -> None:
+    """Emergency Exit / Wimp Out pull their holder out once the hit that scared it has resolved."""
+    for side_index, side in enumerate(state.sides):
+        active = side.active_pokemon
+        if not active.flee_pending:
+            continue
+        active.flee_pending = False
+        has_healthy_bench = any(i != side.active[0] and not p.is_fainted() for i, p in enumerate(side.team))
+        if active.is_fainted() or not has_healthy_bench:
+            continue
+        side.needs_switch = True
+        log.add(SelfSwitchPending(side=side_index, pokemon=active.nickname))
 
 
 def _resolve_eject_packs(state: BattleState, log: BattleLog) -> None:
@@ -63,6 +156,18 @@ def _resolve_eject_packs(state: BattleState, log: BattleLog) -> None:
         active.consume_item()
         side.needs_switch = True
         log.add(SelfSwitchPending(side=side_index, pokemon=active.nickname))
+
+
+def _resolve_pending_switches(state: BattleState, switch_chooser: SwitchChooser, log: BattleLog) -> None:
+    """Send in whoever `switch_chooser` names for any side a pivot or Eject item just forced out."""
+    for side_index, side in enumerate(state.sides):
+        if not side.needs_switch:
+            continue
+        replacement = switch_chooser(state, side_index)
+        if replacement is None:
+            continue
+        _execute_switch(state, side_index, replacement, log)
+        side.needs_switch = False
 
 
 def _send_out_leads(state: BattleState, log: BattleLog) -> None:

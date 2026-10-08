@@ -1,5 +1,9 @@
 """The analysis layer and the reference players."""
 
+import random
+from collections.abc import Sequence
+from dataclasses import dataclass
+
 from battle_sim.analysis import damage_range, strongest_hit
 from battle_sim.database.loader import get_move
 from battle_sim.maths.rng import RNG
@@ -7,8 +11,10 @@ from battle_sim.mechanics.battle import BattleState, FieldState, SideState
 from battle_sim.models.actions import Action, ActionType
 from battle_sim.models.moves import MoveSet, MoveSlot
 from battle_sim.models.pokemon import Pokemon
+from battle_sim.models.spec import PokemonSpec
 from battle_sim.models.stats import BaseStats, EVs, IVs
-from battle_sim.players import BasicPlayer, RandomPlayer
+from battle_sim.observation import BeliefSampler
+from battle_sim.players import BasicPlayer, FixedOrderPlayer, RandomPlayer
 from battle_sim.runner import run_battle
 from battle_sim.teams import parse_showdown_team
 from battle_sim.utils import Ability, Hazards, Nature, Outcome, Target, Type
@@ -151,6 +157,48 @@ def test_random_player_choose_order_is_a_permutation():
     specs = parse_showdown_team(USER_SAMPLE_TEAM).specs
     order = RandomPlayer(seed=3).choose_order(specs, specs)
     assert sorted(order) == list(range(6))
+
+
+def test_fixed_order_player_ignores_the_inners_own_choice():
+    specs = parse_showdown_team(USER_SAMPLE_TEAM).specs
+    wrapped = FixedOrderPlayer(RandomPlayer(seed=1))
+    assert wrapped.choose_order(specs, specs) == list(range(6))
+
+
+def test_fixed_order_player_still_delegates_actions_to_the_inner_player():
+    state = _battle([_mk("A")], [_mk("B")])
+    inner = BasicPlayer()
+    wrapped = FixedOrderPlayer(inner)
+    actions = [_use(MoveSlot.FIRST)]
+    assert wrapped.choose_action(state, 0, actions) == inner.choose_action(state, 0, actions)
+
+
+def test_fixed_order_player_forwards_the_belief_sampler_to_a_determinizing_inner():
+    calls: list[BeliefSampler] = []
+
+    @dataclass
+    class _Determinizing:
+        def choose_order(self, own: Sequence[PokemonSpec], opponent: Sequence[PokemonSpec]) -> Sequence[int]:
+            return list(range(len(own)))
+
+        def choose_action(self, state: BattleState, side_index: int, actions: Sequence[Action]) -> Action:
+            return actions[0]
+
+        def bind_belief_sampler(self, sampler: BeliefSampler) -> None:
+            calls.append(sampler)
+
+    def sentinel(rng: random.Random) -> BattleState:
+        raise NotImplementedError  # never actually called — only identity matters here
+
+    FixedOrderPlayer(_Determinizing()).bind_belief_sampler(sentinel)
+    assert calls == [sentinel]
+
+
+def test_fixed_order_player_bind_belief_sampler_is_a_no_op_for_a_plain_inner():
+    def sentinel(rng: random.Random) -> BattleState:
+        raise NotImplementedError
+
+    FixedOrderPlayer(RandomPlayer()).bind_belief_sampler(sentinel)  # must not raise
 
 
 def test_basic_player_crushes_random_play():

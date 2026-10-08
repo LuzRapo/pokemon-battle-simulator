@@ -89,6 +89,7 @@ class ResidualOrder(IntEnum):
     POISON_HEAL = 6_500  # must flag before the status chip
     STATUS = 6_000  # poison/toxic/burn (PS orders 9-10)
     NIGHTMARE = 5_000  # PS order 11
+    PARTIAL_TRAP = 4_900  # PS order 13: Wrap and friends chip before Salt Cure's band
     SALT_CURE = 4_800  # PS order 13
     CURSE = 4_700  # PS order 12 (close enough; distinct band keeps ordering deterministic)
     BAD_DREAMS = 4_500  # PS order 11 (after Nightmare)
@@ -162,6 +163,10 @@ class EventBus:
         self._dedupe_keys.add(key)
         bucket.sort(key=lambda s: -s.priority)  # stable: equal priorities keep registration order
         return sub
+
+    def subscribed_events(self) -> list["Event"]:
+        """Every event something is currently listening on, in the enum's own order."""
+        return [event for event in Event if self._subscriptions.get(event)]
 
     def off(self, subscription: Subscription) -> None:
         bucket = self._subscriptions.get(subscription.event, [])

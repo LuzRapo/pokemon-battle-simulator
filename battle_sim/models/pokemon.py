@@ -6,9 +6,13 @@ from pydantic import BaseModel, Field, model_validator
 
 from battle_sim.maths.stats import calculate_effective_stat, calculate_total_hp, calculate_total_stat
 from battle_sim.models.moves import Move, MoveSet, MoveSlot
-from battle_sim.models.stats import BaseStats, EVs, IVs, LiveStats, StatStages, StatTotals
+from battle_sim.models.stats import STAGED_STATS, BaseStats, EVs, IVs, LiveStats, StatStages, StatTotals
 from battle_sim.models.type_matchups import TypePair
 from battle_sim.utils import Ability, Category, ExtraStatus, Item, Nature, Stats, Status, Type
+
+NINE_LIVES = 9  # how many times the butler gets up again
+# Every move the butler has, at full PP whatever his list says, so he cannot be stalled into Struggle.
+BUTLERS_PP = 99
 
 
 @dataclass(frozen=True)
@@ -25,6 +29,16 @@ class FormSnapshot:
     pp: dict[MoveSlot, int]
 
 
+@dataclass(frozen=True)
+class BelievedSet:
+    """One candidate set an opponent's pokemon might be running, with its posterior weight."""
+
+    weight: float
+    moves: tuple[Move, ...]
+    item: Item
+    ability: Ability
+
+
 class Pokemon(BaseModel):
     name: str
     nickname: str
@@ -35,6 +49,20 @@ class Pokemon(BaseModel):
     base_stats: BaseStats
     types: TypePair
     moves: MoveSet
+    pp_ups: int = 0  # 0-3 PP Ups; each is +1/5 of the move's listed PP, as in the games
+    # Nine Lives, a plain field so neither switching nor search clones can reset or share it.
+    lives_used: int = 0
+    just_revived: bool = False  # set for the log to pick up, cleared once it has
+    # The ninth life spent and a tenth blow landed: he stands at 1 HP instead of falling, once.
+    made_last_stand: bool = False
+    # Set the instant the stand is made and cleared once the log has said so, like `just_revived`.
+    just_stood: bool = False
+    # What an opponent took off him, held until a life is spent and it comes back with him.
+    stripped_item: Item = Item.NONE
+    restored_item: Item = Item.NONE  # set alongside `just_revived`; the log and the rewire read it
+    # An item Tricked onto him.
+    tricked_item: Item = Item.NONE
+    owed_item: Item = Item.NONE  # what to hand back on revival; read and cleared by `_log_revival`
 
     item: Item = Item.NONE
     ability: Ability = Ability.NONE
@@ -50,6 +78,11 @@ class Pokemon(BaseModel):
     last_hit_taken: int = Field(default=0, ge=0)  # damage from the most recent hit this turn (Counter family)
     last_hit_category: Category | None = None
     eject_pending: bool = False  # an Eject Pack waits for the action to resolve before pulling the holder
+    flee_pending: bool = False  # Emergency Exit / Wimp Out, waiting on the action the same way
+    turns_active: int = Field(default=0, ge=0)  # whole turns since this stint's switch-in (Fake Out)
+    # True until the end of the turn this stint's switch-in happened, then cleared for good.
+    just_switched_in: bool = True
+    believed_sets: tuple[BelievedSet, ...] | None = None  # None: this side's set is known, not believed
 
     live_stats: LiveStats = Field(default_factory=lambda: LiveStats())
     stat_stages: StatStages = Field(default_factory=lambda: StatStages())
@@ -64,6 +97,7 @@ class Pokemon(BaseModel):
     disabled_slot: MoveSlot | None = None
     locked_slot: MoveSlot | None = None  # Outrage-style rampage
     charging_slot: MoveSlot | None = None  # two-turn move committed last turn
+    rolling_hits: int = Field(default=0, ge=0)  # consecutive Rollout/Ice Ball connections; each doubles the power
 
     @cached_property
     def stat_totals(self) -> StatTotals:
@@ -89,7 +123,10 @@ class Pokemon(BaseModel):
     @model_validator(mode="after")
     def _init_pp(self) -> "Pokemon":
         if not self.pp:
-            self.pp = {slot: move.pp for slot in MoveSlot if (move := self.moves[slot]) is not None}
+            bonus = 1 + self.pp_ups / 5
+            self.pp = {slot: int(move.pp * bonus) for slot in MoveSlot if (move := self.moves[slot]) is not None}
+            if self.ability is Ability.NINE_LIVES:
+                self.pp = dict.fromkeys(self.pp, BUTLERS_PP)
         return self
 
     @model_validator(mode="after")
@@ -126,7 +163,54 @@ class Pokemon(BaseModel):
         max_hp = self.stat_totals.HP
         new_hp = max(0, min(max_hp, old_hp + amount))
         self.live_stats.HP = new_hp
+        if new_hp == 0 and self._revive():
+            return self.live_stats.HP - old_hp
         return new_hp - old_hp
+
+    def _revive(self) -> bool:
+        """Nine Lives: rather than faint, get up whole; True if a life was spent."""
+        from battle_sim.utils import Ability, Status
+
+        if self.ability is not Ability.NINE_LIVES:
+            return False
+        if self.lives_used >= NINE_LIVES:
+            return self._last_stand()
+        self.lives_used += 1
+        self.live_stats.HP = self.stat_totals.HP
+        self.status = Status.NONE
+        self.status_turns = 0
+        self.just_revived = True
+        # He comes back holding what was taken from him.
+        if self.stripped_item is not Item.NONE:
+            self.owed_item = self.item
+            self.item = self.stripped_item
+            self.restored_item = self.stripped_item
+            self.stripped_item = Item.NONE
+            self.tricked_item = Item.NONE
+            self.item_consumed = False
+        self.clear_stat_drops()
+        return True
+
+    def _last_stand(self) -> bool:
+        """Out of lives and still standing, once."""
+        from battle_sim.utils import Status
+
+        if self.made_last_stand:
+            return False
+        self.made_last_stand = True
+        self.just_stood = True
+        self.live_stats.HP = 1
+        self.status = Status.NONE
+        self.status_turns = 0
+        self.volatiles.clear()
+        self.clear_stat_drops()
+        return True
+
+    def clear_stat_drops(self) -> None:
+        """Every stage an opponent pushed below zero, back to zero."""
+        for stat in STAGED_STATS:
+            if self.stat_stages[stat] < 0:
+                self.stat_stages[stat] = 0
 
     def apply_damage(self, amount: int) -> int:
         return -self._adjust_hp(-abs(amount))
@@ -155,10 +239,20 @@ class Pokemon(BaseModel):
     def is_fainted(self) -> bool:
         return self.live_stats.HP <= 0
 
+    @property
+    def battle_types(self) -> "TypePair":
+        """What this Pokemon counts as right now, which is not always what it is."""
+        if ExtraStatus.ROOSTED not in self.volatiles or Type.FLYING not in self.types:
+            return self.types
+        remaining = [kind for kind in self.types if kind is not None and kind is not Type.FLYING]
+        return (remaining[0], None) if remaining else self.types
+
     def is_grounded(self) -> bool:
         """Intrinsic grounding only (types, item, ability); field effects like Gravity would need field state."""
         return (
-            Type.FLYING not in self.types and self.item is not Item.AIR_BALLOON and self.ability is not Ability.LEVITATE
+            Type.FLYING not in self.battle_types
+            and self.item is not Item.AIR_BALLOON
+            and self.ability is not Ability.LEVITATE
         )
 
     def known_moves(self) -> list[Move]:

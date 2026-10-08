@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from battle_sim.maths.rng import RNG
 from battle_sim.mechanics.battle import FieldState
 from battle_sim.mechanics.log import BattleLog
@@ -6,6 +8,7 @@ from battle_sim.models.log_events import (
     DisableApplied,
     DoesNotAffect,
     StatusAlready,
+    StatusClauseBlocked,
     StatusCleared,
     StatusInflicted,
     SubstituteAlready,
@@ -14,7 +17,7 @@ from battle_sim.models.log_events import (
 )
 from battle_sim.models.moves import InflictStatusEffect, StatStageChangeEffect
 from battle_sim.models.pokemon import Pokemon
-from battle_sim.utils import Ability, ExtraStatus, Item, Status, Type, Weather
+from battle_sim.utils import Ability, ExtraStatus, Item, Stats, Status, Type, Weather
 
 _STATUS_TYPE_IMMUNITY: dict[Status, frozenset[Type]] = {
     Status.BURN: frozenset({Type.FIRE}),
@@ -24,10 +27,22 @@ _STATUS_TYPE_IMMUNITY: dict[Status, frozenset[Type]] = {
     Status.TOXIC: frozenset({Type.POISON, Type.STEEL}),
 }
 _ALL_STATUSES = frozenset(Status) - {Status.NONE}
+_SYNCHRONIZE_STATUSES = frozenset({Status.BURN, Status.PARALYSIS, Status.POISON, Status.TOXIC})
+# No clause at all, because Gen 7 Anything Goes has none.
+_CLAUSED_STATUSES: frozenset[Status] = frozenset()
+_STATUS_CLAUSE_LIMIT = 2
 _STATUS_ABILITY_IMMUNITY: dict[Ability, frozenset[Status]] = {
     Ability.PURIFYING_SALT: _ALL_STATUSES,
+    # Komala is permanently asleep and acts anyway, so nothing further can be inflicted on it.
+    Ability.COMATOSE: _ALL_STATUSES,
     Ability.WATER_BUBBLE: frozenset({Status.BURN}),
     Ability.THERMAL_EXCHANGE: frozenset({Status.BURN}),
+    Ability.LIMBER: frozenset({Status.PARALYSIS}),
+    Ability.INSOMNIA: frozenset({Status.SLEEP}),
+    Ability.VITAL_SPIRIT: frozenset({Status.SLEEP}),
+    Ability.WATER_VEIL: frozenset({Status.BURN}),
+    Ability.MAGMA_ARMOR: frozenset({Status.FREEZE}),
+    Ability.IMMUNITY: frozenset({Status.POISON, Status.TOXIC}),
 }
 _STATUS_CURE_ITEMS: dict[Item, frozenset[Status]] = {
     Item.LUM_BERRY: _ALL_STATUSES,
@@ -38,13 +53,24 @@ _VOLATILE_TYPE_IMMUNITY: dict[ExtraStatus, frozenset[Type]] = {
 }
 _VOLATILE_ABILITY_IMMUNITY: dict[ExtraStatus, frozenset[Ability]] = {
     ExtraStatus.FLINCH: frozenset({Ability.INNER_FOCUS}),
+    ExtraStatus.CONFUSION: frozenset({Ability.OWN_TEMPO}),
 }
 _VOLATILE_INITIAL_DURATIONS: dict[ExtraStatus, tuple[int, int]] = {
     ExtraStatus.CONFUSION: (2, 6),  # random.randrange(2, 6) -> 2..5 turns
     ExtraStatus.TAUNT: (3, 4),  # fixed at 3
     ExtraStatus.FLINCH: (1, 2),  # cleared at end of turn anyway
     ExtraStatus.YAWN: (2, 3),  # fixed at 2: drowsy through this turn, asleep at the end of the next
+    # Four or five turns of squeezing, counted down at each turn's end as chips actually taken.
+    ExtraStatus.PARTIALLY_TRAPPED: (4, 6),
 }
+
+# The sleep counter, 2 to 4, spent once per move attempt, so a Pokemon sleeps one turn fewer than it reads.
+_SLEEP_COUNTER = (2, 5)
+
+
+def sleep_duration(rng: RNG) -> int:
+    """How many move attempts a fresh sleep lasts. Shared so Yawn cannot drift away from Spore."""
+    return rng.random_integer(*_SLEEP_COUNTER)
 
 
 def _apply_status(
@@ -53,13 +79,14 @@ def _apply_status(
     target_index: int,
     rng: RNG,
     log: BattleLog,
+    teams: tuple[Sequence[Pokemon], Sequence[Pokemon]],
     inflictor: Pokemon | None = None,
     field: FieldState | None = None,
 ) -> None:
     if not rng.roll_chance(effect.probability):
         return
     if isinstance(effect.status, Status):
-        _apply_main_status(effect.status, target, target_index, rng, log, inflictor, field)
+        _apply_main_status(effect.status, target, target_index, rng, log, teams, inflictor, field)
     elif effect.status is ExtraStatus.SUBSTITUTE:
         _make_substitute(target, target_index, log)
     elif effect.status is ExtraStatus.LOCKED_MOVE:
@@ -74,37 +101,97 @@ def _apply_status(
         _apply_volatile(effect.status, target, target_index, rng, log)
 
 
+def _reflect_synchronize(
+    status: Status,
+    target: Pokemon,
+    target_index: int,
+    inflictor: Pokemon | None,
+    rng: RNG,
+    log: BattleLog,
+    teams: tuple[Sequence[Pokemon], Sequence[Pokemon]],
+    field: FieldState | None,
+) -> None:
+    if inflictor is None or target.ability is not Ability.SYNCHRONIZE:
+        return
+    if status not in _SYNCHRONIZE_STATUSES or inflictor.status is not Status.NONE:
+        return
+    # inflictor=None so the mirrored status does not itself re-trigger Synchronize or Poison Puppeteer.
+    _apply_main_status(status, inflictor, 1 - target_index, rng, log, teams, inflictor=None, field=field)
+
+
+def _status_clause_blocks(
+    status: Status, target_index: int, teams: tuple[Sequence[Pokemon], Sequence[Pokemon]]
+) -> bool:
+    """Compromise Sleep Clause: this many of the side's team already under this status is the cap."""
+    if status not in _CLAUSED_STATUSES:
+        return False
+    already = sum(1 for p in teams[target_index] if not p.is_fainted() and p.status is status)
+    return already >= _STATUS_CLAUSE_LIMIT
+
+
+def _type_immune_to_status(status: Status, target: Pokemon, inflictor: Pokemon | None) -> bool:
+    corrosive = inflictor is not None and inflictor.ability is Ability.CORROSION
+    immune_types = _STATUS_TYPE_IMMUNITY.get(status, frozenset())
+    if status in (Status.POISON, Status.TOXIC) and corrosive:
+        immune_types = frozenset()  # Corrosion poisons Steel and Poison types
+    return bool(immune_types and immune_types.intersection(t for t in target.types if t is not None))
+
+
+def _ability_immune_to_status(status: Status, target: Pokemon, field: FieldState | None) -> bool:
+    """The half of status immunity that announces itself, so the caller knows to say so."""
+    if status in _STATUS_ABILITY_IMMUNITY.get(target.ability, frozenset()):
+        return True
+    in_sun = field is not None and field.weather in (Weather.SUN, Weather.HARSH_SUN)
+    return target.ability is Ability.LEAF_GUARD and in_sun
+
+
+def status_cannot_land(status: Status, target: Pokemon, inflictor: Pokemon | None, field: FieldState | None) -> bool:
+    """Whether `status` can never stick to `target`, asked without applying anything."""
+    return _type_immune_to_status(status, target, inflictor) or _ability_immune_to_status(status, target, field)
+
+
+def _status_immune(
+    status: Status,
+    target: Pokemon,
+    target_index: int,
+    inflictor: Pokemon | None,
+    field: FieldState | None,
+    log: BattleLog,
+) -> bool:
+    """True if `status` cannot land on `target`: type immunity is silent, an ability or Leaf Guard announces."""
+    if _type_immune_to_status(status, target, inflictor):
+        return True
+    if _ability_immune_to_status(status, target, field):
+        log.add(DoesNotAffect(side=target_index, pokemon=target.nickname))
+        return True
+    return False
+
+
 def _apply_main_status(
     status: Status,
     target: Pokemon,
     target_index: int,
     rng: RNG,
     log: BattleLog,
+    teams: tuple[Sequence[Pokemon], Sequence[Pokemon]],
     inflictor: Pokemon | None = None,
     field: FieldState | None = None,
 ) -> None:
-    corrosive = inflictor is not None and inflictor.ability is Ability.CORROSION
-    immune_types = _STATUS_TYPE_IMMUNITY.get(status, frozenset())
-    if status in (Status.POISON, Status.TOXIC) and corrosive:
-        immune_types = frozenset()  # Corrosion poisons Steel and Poison types
-    if immune_types and immune_types.intersection(t for t in target.types if t is not None):
-        return
-    if status in _STATUS_ABILITY_IMMUNITY.get(target.ability, frozenset()):
-        log.add(DoesNotAffect(side=target_index, pokemon=target.nickname))
-        return
-    in_sun = field is not None and field.weather in (Weather.SUN, Weather.HARSH_SUN)
-    if target.ability is Ability.LEAF_GUARD and in_sun:
-        log.add(DoesNotAffect(side=target_index, pokemon=target.nickname))
+    if _status_immune(status, target, target_index, inflictor, field, log):
         return
     if target.status is not Status.NONE:
         log.add(StatusAlready(side=target_index, pokemon=target.nickname, status=target.status))
         return
+    if _status_clause_blocks(status, target_index, teams):
+        log.add(StatusClauseBlocked(side=target_index, pokemon=target.nickname, status=status))
+        return
     target.status = status
     if status is Status.SLEEP:
-        target.status_turns = rng.random_integer(1, 4)
+        target.status_turns = sleep_duration(rng)
     elif status is Status.TOXIC:
         target.status_turns = 0
     log.add(StatusInflicted(side=target_index, pokemon=target.nickname, status=status))
+    _reflect_synchronize(status, target, target_index, inflictor, rng, log, teams, field)
     puppeteered = (
         status in (Status.POISON, Status.TOXIC)
         and inflictor is not None
@@ -133,6 +220,10 @@ def _apply_volatile(volatile: ExtraStatus, target: Pokemon, target_index: int, r
         return  # Yawn fails against an already-statused target
     target.volatiles[volatile] = _initial_volatile_duration(volatile, rng)
     log.add(VolatileInflicted(side=target_index, pokemon=target.nickname, volatile=volatile))
+    if volatile is ExtraStatus.FLINCH and target.ability is Ability.STEADFAST:
+        apply_stage_changes(
+            target, target_index, {Stats.SPEED: 1}, log, inflicted_by_opponent=False, source="steadfast"
+        )
     _mental_herb_cure(target, target_index, volatile, log)
 
 

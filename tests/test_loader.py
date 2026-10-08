@@ -10,6 +10,7 @@ from battle_sim.database.loader import (
     _TYPE_MAP,
     _VENDOR_DIR,
     _VOLATILE_MAP,
+    gen7_singles_tier,
     get_all_moves,
     get_all_species,
     get_move,
@@ -193,7 +194,25 @@ def test_bulbasaur_species():
         height_m=0.7,
         weight_kg=6.9,
         fully_evolved=False,
+        evolutions=("Ivysaur",),
     )
+
+
+def test_gen7_singles_tier_reflects_gen7_not_the_current_metagame():
+    """Moltres reads its Gen 7 tier, UU."""
+    assert gen7_singles_tier("Moltres") == "UU"
+    assert gen7_singles_tier("Mewtwo") == "Uber"
+    assert gen7_singles_tier("Bulbasaur") == "LC"
+    assert gen7_singles_tier("not-a-real-species") is None
+
+
+def test_legendary_and_mythical_status_comes_from_showdowns_own_tags():
+    """Rarity/spawn logic elsewhere trusts this instead of any rating — it must be exact."""
+    assert get_species("Moltres").is_legendary_or_mythical  # Sub-Legendary
+    assert get_species("Mewtwo").is_legendary_or_mythical  # Restricted Legendary
+    assert get_species("Celebi").is_legendary_or_mythical  # Mythical
+    assert not get_species("Bulbasaur").is_legendary_or_mythical
+    assert not get_species("Dragonite").is_legendary_or_mythical  # a strong pseudo-legendary, not one
 
 
 def test_garchomp_species_matches_test_fixture():
@@ -393,3 +412,42 @@ def test_all_fang_moves_carry_both_secondaries():
         move = get_move(name)
         inflicted = [e for e in move.effects if isinstance(e, InflictStatusEffect)]
         assert len(inflicted) == 2, f"{name} should carry status + flinch, got {inflicted}"
+
+
+def test_moves_unobtainable_in_the_current_generation_still_load() -> None:
+    """Moves Showdown marks unobtainable still load if Gen 7 allowed them."""
+    v_create = get_move("V-create")
+    assert v_create.type is Type.FIRE
+    assert get_move("Burn Up").type is Type.FIRE
+
+
+def test_the_movepool_is_what_actually_gates_an_unobtainable_move() -> None:
+    """Which is why loading them is safe: a species that never learned one still cannot have it."""
+    from battle_sim.database.scope import gen7_movepool
+
+    def learns(species: str, move: str) -> bool:
+        return normalize_id(move) in {normalize_id(m) for m in gen7_movepool(species)}
+
+    assert learns("Rayquaza", "V-create")
+    assert not learns("Snorlax", "V-create")
+
+
+def test_dark_void_is_the_pre_nerf_version():
+    """House rule: Dark Void has its Gen 6 accuracy."""
+    assert get_move("Dark Void").accuracy_probability == pytest.approx(0.8)
+
+
+def test_house_rules_only_touch_moves_that_exist():
+    """A typo in the table would be a rule that silently never applies."""
+    from battle_sim.database.loader import _MOVE_HOUSE_RULES, get_all_moves
+
+    assert set(_MOVE_HOUSE_RULES) <= set(get_all_moves())
+
+
+def test_house_rules_leave_everything_else_alone():
+    """The table is a short list of deliberate divergences, not a second source of truth."""
+    from battle_sim.database.loader import _MOVE_HOUSE_RULES
+
+    assert get_move("Hypnosis").accuracy_probability == pytest.approx(0.6)
+    assert get_move("Spore").accuracy_probability == pytest.approx(1.0)
+    assert len(_MOVE_HOUSE_RULES) <= 5

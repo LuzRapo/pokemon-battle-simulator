@@ -6,12 +6,15 @@ from enum import Enum
 
 from battle_sim.models.log_events import (
     AbilitiesSwapped,
+    AbilityChanged,
     AbilityChipDamage,
     AbilityCopied,
     AbilityHealed,
+    AbilityUnchanged,
     AbsorbBlocked,
     AbsorbHealed,
     AirBalloonPopped,
+    AirBalloonRevealed,
     AllStatsReset,
     AvoidedWithLevitate,
     BattleEnded,
@@ -20,16 +23,21 @@ from battle_sim.models.log_events import (
     ChargingUp,
     ConfusionSelfHit,
     CourtChanged,
+    CriticalHit,
     DamageDealt,
     DisableApplied,
     DisabledBlocked,
     DoesNotAffect,
+    DrainBackfired,
     Drained,
     Effectiveness,
     Fainted,
     FlashFireAbsorbed,
     FlashFireActivated,
+    FloatedOnAirBalloon,
     FormeChanged,
+    FutureAttackLands,
+    FutureAttackQueued,
     HazardAbsorbed,
     HazardDamage,
     HazardsCleared,
@@ -37,10 +45,13 @@ from battle_sim.models.log_events import (
     HazardStatus,
     Healed,
     ItemChipDamage,
+    ItemDevoured,
     ItemHealed,
     ItemRemoved,
+    ItemRestored,
     ItemsSwapped,
     ItemStolen,
+    LastStand,
     LeechSeedSap,
     LogEntry,
     MoveBounced,
@@ -48,6 +59,7 @@ from battle_sim.models.log_events import (
     MoveMissed,
     MoveUsed,
     MultiHitSummary,
+    NineLivesRestored,
     NoEffect,
     ParadoxActivated,
     PpRestored,
@@ -60,10 +72,12 @@ from battle_sim.models.log_events import (
     ScreenFaded,
     ScreenSet,
     SelfSwitchPending,
+    StatChangesSwept,
     StatDropBlocked,
     StatDropBlockedByItem,
     StatStageChanged,
     StatusAlready,
+    StatusClauseBlocked,
     StatusCleared,
     StatusInflicted,
     StatusMoveBlocked,
@@ -80,6 +94,8 @@ from battle_sim.models.log_events import (
     TerrainFaded,
     TerrainSetByAbility,
     Transformed,
+    TrapReleased,
+    TrapSqueezed,
     TypeChanged,
     VolatileInflicted,
     WeatherChanged,
@@ -133,6 +149,7 @@ _VOLATILE_INFLICTED_VERB: dict[ExtraStatus, str] = {
     ExtraStatus.IDENTIFIED: "was identified",
     ExtraStatus.MIRACLE_EYE: "is in Miracle Eye's sight",
     ExtraStatus.LEECH_SEED: "was seeded",
+    ExtraStatus.PARTIALLY_TRAPPED: "can no longer escape",
     ExtraStatus.NIGHTMARE: "fell into a nightmare",
     ExtraStatus.PROTECT: "protected itself",
     ExtraStatus.SUBSTITUTE: "put in a substitute",
@@ -150,6 +167,11 @@ _CANT_ACT_TEXT: dict[str, str] = {
     "paralysis": "is paralyzed and couldn't move!",
     "confused": "is confused…",
     "recharge": "must recharge!",
+    "loafing": "is loafing around!",
+}
+_FUTURE_ATTACK_QUEUED_TEXT: dict[str, str] = {
+    "Future Sight": "foresaw an attack!",
+    "Doom Desire": "chose Doom Desire as its destiny!",
 }
 _STATUS_CLEARED_TEXT: dict[str, str] = {
     "thawed": "thawed out!",
@@ -159,6 +181,7 @@ _STATUS_CLEARED_TEXT: dict[str, str] = {
     "freed_from_leech_seed": "was freed from Leech Seed!",
     "encore_ended": "'s encore ended!",
     "disable_ended": "'s move is no longer disabled!",
+    "slow_start_ended": "'s Slow Start has worn off!",
     "berry": "'s berry cured its status!",
     "refreshed": "shook off its status!",
     "natural_cure": "was cured on the way out!",
@@ -194,6 +217,8 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"P{side + 1} withdrew {withdrew} and sent out {sent_out}!"
         case SelfSwitchPending(side, pokemon):
             return f"{_label(side, pokemon)} is switching out!"
+        case MoveUsed(side=side, pokemon=pokemon, move=move, unleashed_as=unleashed_as) if unleashed_as is not None:
+            return f"{_label(side, pokemon)}'s {move} became {unleashed_as}!"
         case MoveUsed(side, pokemon, move):
             return f"{_label(side, pokemon)} used {move}!"
         case MoveMissed():
@@ -212,6 +237,8 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"It had no effect on {_label(side, pokemon)}."
         case Effectiveness(level):
             return "It's super effective!" if level == "super" else "It's not very effective…"
+        case CriticalHit():
+            return "A critical hit!"
         case DamageDealt(side, pokemon, amount):
             return f"{_label(side, pokemon)} took {amount} damage!"
         case MultiHitSummary(hits):
@@ -229,7 +256,12 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
                 return f"{_label(side, pokemon)} hung on with its Focus Sash!"
             if cause == "endure":
                 return f"{_label(side, pokemon)} endured the hit!"
+            if cause == "nine_lives":
+                return f"{_label(side, pokemon)} refuses to fall!"
             return f"{_label(side, pokemon)} held on with Sturdy!"
+        case NineLivesRestored(side, pokemon, healed, remaining):
+            lives = "one life" if remaining == 1 else f"{remaining} lives"
+            return f"{_label(side, pokemon)} rises again, whole! ({healed} HP restored, {lives} left)"
         case ConfusionSelfHit(side, pokemon, amount):
             return f"{_label(side, pokemon)} is confused! It hurt itself in confusion! ({amount} HP)"
         case CantAct(side, pokemon, reason):
@@ -242,6 +274,9 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)} {_STATUS_INFLICTED_VERB[status]}!"
         case StatusAlready(side, pokemon, status):
             return f"{_label(side, pokemon)} is already {_STATUS_ADJECTIVE[status]}."
+        case StatusClauseBlocked(side, pokemon, status):
+            adjective = _STATUS_ADJECTIVE[status]
+            return f"{_label(side, pokemon)} is unaffected — too many of that side are already {adjective}!"
         case VolatileInflicted(side, pokemon, volatile):
             return f"{_label(side, pokemon)} {_VOLATILE_INFLICTED_VERB[volatile]}!"
         case StatStageChanged(side, pokemon, stat, delta, requested, source):
@@ -278,10 +313,16 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)}'s {_pretty(ability)} blocked the attack!"
         case AirBalloonPopped(side, pokemon):
             return f"{_label(side, pokemon)}'s Air Balloon popped!"
+        case FloatedOnAirBalloon(side, pokemon):
+            return f"{_label(side, pokemon)} floated above it with its Air Balloon!"
+        case AirBalloonRevealed(side, pokemon):
+            return f"{_label(side, pokemon)} floated with its Air Balloon!"
         case ItemChipDamage(side, pokemon, item, amount):
             return f"{_label(side, pokemon)} was hurt by {_pretty(item)}! ({amount} HP)"
         case AbilityChipDamage(side, pokemon, ability, amount):
             return f"{_label(side, pokemon)} was hurt by {_pretty(ability)}! ({amount} HP)"
+        case DrainBackfired(side, pokemon, ability, amount):
+            return f"{_label(side, pokemon)} was hurt by the {_pretty(ability)}! ({amount} HP)"
         case StatDropBlocked(side, pokemon, ability):
             return f"{_label(side, pokemon)}'s {_pretty(ability)} prevents stat loss!"
         case StatDropBlockedByItem(side, pokemon, item):
@@ -300,22 +341,36 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)} became the {_pretty(new_type)} type!"
         case AllStatsReset():
             return "All stat changes were eliminated!"
+        case StatChangesSwept(side, pokemon):
+            return f"{_label(side, pokemon)}'s stat changes were swept away!"
         case CourtChanged():
             return "Court Change swapped the battlefield effects!"
         case Revived(side, pokemon):
             return f"{_label(side, pokemon)} was revived and is ready to fight again!"
         case WishMade(side, pokemon):
             return f"{_label(side, pokemon)} made a wish!"
+        case FutureAttackQueued(side, pokemon, move):
+            return f"{_label(side, pokemon)} {_FUTURE_ATTACK_QUEUED_TEXT.get(move, 'foresaw an attack!')}"
+        case FutureAttackLands(side, pokemon, move):
+            return f"{_label(side, pokemon)} took the {move} attack!"
         case Transformed(side, pokemon, into):
             return f"{_label(side, pokemon)} transformed into {into}!"
         case ItemRemoved(side, pokemon, item):
             return f"{_label(side, pokemon)} lost its {_pretty(item)}!"
+        case ItemDevoured(side, pokemon, item):
+            return f"{_label(side, pokemon)} greedily devoured the {_pretty(item)}!"
+        case ItemRestored(side, pokemon, item):
+            return f"{_label(side, pokemon)} got its {_pretty(item)} back!"
         case ItemStolen(side, pokemon, item):
             return f"{_label(side, pokemon)} stole the target's {_pretty(item)}!"
         case ItemsSwapped(side, pokemon):
             return f"{_label(side, pokemon)} switched items with its target!"
         case AbilityCopied(side, pokemon, ability):
             return f"{_label(side, pokemon)} traced {_pretty(ability)}!"
+        case AbilityChanged(side, pokemon, ability):
+            return f"{_label(side, pokemon)}'s ability became {_pretty(ability)}!"
+        case AbilityUnchanged(side, pokemon, ability):
+            return f"{_label(side, pokemon)}'s {_pretty(ability)} cannot be changed!"
         case AbilitiesSwapped(side, pokemon):
             return f"{_label(side, pokemon)} swapped abilities with its target!"
         case FormeChanged(side, pokemon, forme):
@@ -377,5 +432,11 @@ def render_text(entry: LogEntry) -> str:  # noqa: C901 — exhaustive match over
             return f"{_label(side, pokemon)} already has a substitute!"
         case LeechSeedSap(side, pokemon, amount):
             return f"{_label(side, pokemon)}'s health is sapped by Leech Seed! ({amount} HP)"
+        case LastStand(side, pokemon):
+            return f"{_label(side, pokemon)} has nothing left to spend, and takes it standing! {pokemon} yields."
+        case TrapSqueezed(side, pokemon, amount):
+            return f"{_label(side, pokemon)} is hurt by the trap! ({amount} HP)"
+        case TrapReleased(side, pokemon):
+            return f"{_label(side, pokemon)} was freed!"
         case BattleEnded(outcome):
             return _OUTCOME_TEXT[outcome]
