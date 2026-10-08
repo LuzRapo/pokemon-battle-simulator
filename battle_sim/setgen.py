@@ -2,6 +2,7 @@
 
 import json
 import random
+from collections.abc import Callable
 from functools import cache
 from pathlib import Path
 
@@ -52,6 +53,36 @@ def random_set(species: str, rng: random.Random, level: int | None = None) -> Po
         effort_values=_random_evs(rng),
         individual_values=_random_ivs(rng),
         moves=moves,
+    )
+
+
+def learnpool_set(
+    species: str,
+    rng: random.Random,
+    move_ok: Callable[[str], bool],
+    ability_ok: Callable[[Ability], bool],
+    level: int | None = None,
+) -> PokemonSpec:
+    """A set drawn from the species' own Gen 7 learnpool, holding nothing."""
+    key = normalize_id(species)
+    if key not in in_scope_species():
+        raise KeyError(f"{species!r} is not a Gen-7-legal battling species.")
+    entry = get_species(key)
+    # None of its abilities playable, so it plays with none rather than being left out.
+    abilities = [ability for ability in legal_abilities(species) if ability_ok(ability)] or [Ability.NONE]
+    pool = [name for name in sorted(gen7_movepool(key) & get_all_moves().keys()) if move_ok(get_move(name).name)]
+    if not pool:
+        raise ValueError(f"{entry.name} has no playable moves")
+    moves = _pick_heuristic_moves(entry, _with_effects(pool), rng)
+    return PokemonSpec(
+        species=entry.name,
+        level=DEFAULT_LEVEL if level is None else level,
+        ability=rng.choice(abilities),
+        item=Item.NONE,
+        nature=rng.choice(list(Nature)),
+        effort_values=_random_evs(rng),
+        individual_values=_random_ivs(rng),
+        moves=[get_move(name).name for name in moves],
     )
 
 

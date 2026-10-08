@@ -39,7 +39,7 @@ use crate::turn::{
     apply_forced_switch, begin_turn, parse_action, resume_with_switch, step, unsupported_pokemon, Action, Refusal,
     Replacements, TurnStatus,
 };
-use crate::{choices, digest, env, obs};
+use crate::{choices, digest, env, matchup, obs, tournament};
 use numpy::{PyArray1, PyArray2, PyArray3, PyArrayMethods, PyReadonlyArray1};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -72,6 +72,16 @@ impl PyDatabase {
     #[new]
     fn new(data_dir: &str) -> PyResult<Self> {
         Database::load(Path::new(data_dir)).map(|db| PyDatabase(Arc::new(db))).map_err(PyValueError::new_err)
+    }
+
+    /// Whether this engine can play the move at all: known, and nothing in it left unported.
+    fn move_playable(&self, name: &str) -> bool {
+        self.0.move_named(name).is_some_and(|m| crate::turn::unsupported(m, &self.0).is_none())
+    }
+
+    /// Whether a Pokemon holding this ability can be built into a battle here.
+    fn ability_playable(&self, name: &str) -> bool {
+        !self.0.live_abilities.contains(name) || crate::turn::ported_abilities().contains(name)
     }
 }
 
@@ -148,6 +158,9 @@ pub struct PyBattle {
     state: State,
     db: Arc<Database>,
     tape: Tape,
+    /// One `MatchupPlayer` per side, kept for the whole battle as the Python's players are, so
+    /// their offense caches fill in the same order.
+    scorers: [matchup::MatchupAi; 2],
 }
 
 #[pymethods]
@@ -162,7 +175,7 @@ impl PyBattle {
         let state = build_state(&teams_json, &orders, &database)?;
         check_playable(&state, &database)?;
         let tape = Tape::new(draws_from_json(tape_json)?);
-        Ok(PyBattle { state, db: database, tape })
+        Ok(PyBattle { state, db: database, tape, scorers: fresh_scorers() })
     }
 
     /// A battle whose randomness is freshly drawn from a seeded RNG, with no recording behind it —
@@ -173,7 +186,7 @@ impl PyBattle {
         let database = db.0.clone();
         let state = build_state(&teams_json, &orders, &database)?;
         check_playable(&state, &database)?;
-        Ok(PyBattle { state, db: database, tape: Tape::live(seed) })
+        Ok(PyBattle { state, db: database, tape: Tape::live(seed), scorers: fresh_scorers() })
     }
 
     /// Resolve one turn. `actions` is `["move:FIRST:Tackle", "switch:Onix"]`-shaped, the same
@@ -240,6 +253,18 @@ impl PyBattle {
             .collect()
     }
 
+    /// `MatchupPlayer.feature_actions` for `side`'s legal actions, in order: each action's name and
+    /// its 28 features, or `None` for one scored as dead.
+    fn matchup_features(&mut self, side: usize) -> Vec<(String, Option<Vec<f64>>)> {
+        let legal = choices::legal_actions(&self.state, side, &self.db);
+        let features = self.scorers[side].features(&self.state, side, &legal, &self.db);
+        legal
+            .iter()
+            .zip(features)
+            .map(|(&action, f)| (choices::name_action(&self.state, side, action), f.map(|f| f.to_vec())))
+            .collect()
+    }
+
     /// `obs::encode` from `viewer`'s side, as flat `(ids, pokemon, field)` lists — for checking the
     /// Python encoder against; training reads the same arrays from `VecEnv` without the copies.
     fn observe(&self, viewer: usize, decision: &str) -> PyResult<(Vec<i64>, Vec<f32>, Vec<f32>)> {
@@ -273,6 +298,99 @@ impl PyBattle {
     fn drawn(&self) -> usize {
         self.tape.position()
     }
+}
+
+fn fresh_scorers() -> [matchup::MatchupAi; 2] {
+    [matchup::MatchupAi::new(matchup::Weights::default()), matchup::MatchupAi::new(matchup::Weights::default())]
+}
+
+fn team_from_json(raw: &str) -> PyResult<Vec<Spec>> {
+    serde_json::from_str(raw).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+/// `MatchupPlayer().choose_order(own, opponent)`: team indices, the lead first.
+#[pyfunction]
+fn matchup_order(db: &PyDatabase, own_json: &str, opponent_json: &str) -> PyResult<Vec<usize>> {
+    let build = |raw: &str| -> PyResult<Vec<Pokemon>> {
+        team_from_json(raw)?
+            .iter()
+            .map(|spec| Pokemon::build(spec, &db.0))
+            .collect::<Result<Vec<_>, String>>()
+            .map_err(PyValueError::new_err)
+    };
+    Ok(matchup::choose_order(build(own_json)?, build(opponent_json)?, &db.0))
+}
+
+/// `(side, index, move, foe index, low, high)`.
+type Estimate = (usize, usize, String, usize, i32, i32);
+/// `(outcome, turns, survivors_a, survivors_b, error)`.
+type TournamentResult = (Option<&'static str>, i32, usize, usize, Option<String>);
+
+/// `analysis.damage_range` for every move of every Pokemon on each team against every Pokemon on
+/// the other, on the scratch board `choose_order` reads: `(side, index, move, foe index, low, high)`.
+/// For finding which estimate the two engines disagree on.
+#[pyfunction]
+fn matchup_damage(db: &PyDatabase, own_json: &str, opponent_json: &str) -> PyResult<Vec<Estimate>> {
+    let build = |raw: &str| -> PyResult<Vec<Pokemon>> {
+        team_from_json(raw)?
+            .iter()
+            .map(|spec| Pokemon::build(spec, &db.0))
+            .collect::<Result<Vec<_>, String>>()
+            .map_err(PyValueError::new_err)
+    };
+    let state = State::new(Side::new(build(own_json)?), Side::new(build(opponent_json)?));
+    let mut out = Vec::new();
+    for side in 0..2 {
+        for (index, pokemon) in state.sides[side].team.iter().enumerate() {
+            for name in &pokemon.moves {
+                let Some(the_move) = db.0.move_named(name) else { continue };
+                for foe in 0..state.sides[1 - side].team.len() {
+                    let (low, high) = matchup::damage_range(the_move, (side, index), (1 - side, foe), &state, &db.0);
+                    out.push((side, index, name.clone(), foe, low, high));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Battles piloted by `MatchupPlayer` on both sides, played in parallel with the GIL released.
+/// Each job is `(team_a_json, team_b_json, seed)`; each result is `(outcome, turns, survivors_a,
+/// survivors_b, error)`, where `outcome` is "P1_WIN", "P2_WIN", "DRAW" or `None` at the turn cap,
+/// and `error` names why a battle could not be played.
+#[pyfunction]
+#[pyo3(signature = (db, jobs, weights_json=None, max_turns=1000, threads=0))]
+fn play_matchup_battles(
+    py: Python<'_>,
+    db: &PyDatabase,
+    jobs: Vec<(String, String, u64)>,
+    weights_json: Option<&str>,
+    max_turns: i32,
+    threads: usize,
+) -> PyResult<Vec<TournamentResult>> {
+    let weights = match weights_json {
+        Some(raw) => matchup::Weights::from_json(raw).map_err(PyValueError::new_err)?,
+        None => matchup::Weights::default(),
+    };
+    let battles = jobs
+        .iter()
+        .map(|(a, b, seed)| Ok(([team_from_json(a)?, team_from_json(b)?], *seed)))
+        .collect::<PyResult<Vec<_>>>()?;
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let database = db.0.clone();
+    let results = py.allow_threads(|| pool.install(|| tournament::play_all(&battles, weights, max_turns, &database)));
+    Ok(results
+        .into_iter()
+        .map(|result| match result {
+            Ok(played) => {
+                (played.outcome.map(|o| o.name()), played.turns, played.survivors[0], played.survivors[1], None)
+            }
+            Err(why) => (None, 0, 0, 0, Some(why)),
+        })
+        .collect())
 }
 
 fn specs_from_json(teams_json: &[String; 2]) -> PyResult<[Vec<Spec>; 2]> {
@@ -439,6 +557,9 @@ fn pokemon_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDatabase>()?;
     m.add_class::<PyBattle>()?;
     m.add_class::<PyVecEnv>()?;
+    m.add_function(wrap_pyfunction!(matchup_order, m)?)?;
+    m.add_function(wrap_pyfunction!(matchup_damage, m)?)?;
+    m.add_function(wrap_pyfunction!(play_matchup_battles, m)?)?;
     m.add("Unported", m.py().get_type_bound::<Unported>())?;
     m.add("Diverged", m.py().get_type_bound::<Diverged>())?;
     Ok(())

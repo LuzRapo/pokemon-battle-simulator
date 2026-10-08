@@ -140,6 +140,43 @@ pub fn calculate_hit(
     rolls: Rolls,
     payload: &Payload,
 ) -> Hit {
+    formula(attacker, defender, the_move, field, defender_side, db, Crit::Rolled(rolls.crit), rolls.damage, payload)
+}
+
+/// The formula with the crit and the roll fixed rather than drawn — `calculate_damage` called with
+/// `is_crit=False, random_roll=...`, as the AI's damage estimate calls it. No crit means none at
+/// all: Merciless and the armors only ever rule on a rolled one.
+#[allow(clippy::too_many_arguments)]
+pub fn estimate_hit(
+    attacker: &Pokemon,
+    defender: &Pokemon,
+    the_move: &Move,
+    field: &Field,
+    defender_side: &Side,
+    db: &Database,
+    roll: i32,
+    payload: &Payload,
+) -> i32 {
+    formula(attacker, defender, the_move, field, defender_side, db, Crit::Never, roll, payload).amount
+}
+
+enum Crit {
+    Rolled(f64),
+    Never,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn formula(
+    attacker: &Pokemon,
+    defender: &Pokemon,
+    the_move: &Move,
+    field: &Field,
+    defender_side: &Side,
+    db: &Database,
+    crit: Crit,
+    damage_roll: i32,
+    payload: &Payload,
+) -> Hit {
     let Some((power, category, crit_stage)) = damage_effect(the_move) else {
         return Hit::nothing();
     };
@@ -170,7 +207,10 @@ pub fn calculate_hit(
     let stage = crit_stage
         + crate::inline::crit_stage_bonus(attacker)
         + if attacker.volatiles.contains_key("FOCUS_ENERGY") { 2 } else { 0 };
-    let is_crit = crate::inline::crit_overrides(attacker, defender, rolls.crit < crit_chance(stage));
+    let is_crit = match crit {
+        Crit::Rolled(roll) => crate::inline::crit_overrides(attacker, defender, roll < crit_chance(stage)),
+        Crit::Never => false,
+    };
 
     let (attack_stat, defense_stat) = if category == "PHYSICAL" {
         ("ATTACK", "DEFENCE")
@@ -221,7 +261,7 @@ pub fn calculate_hit(
         damage = chain(damage, if attacker.ability == "SNIPER" { 9216 } else { 6144 });
     }
 
-    damage = damage * rolls.damage / 100;
+    damage = damage * damage_roll / 100;
 
     if attacker.types.iter().flatten().any(|t| t == &the_move.move_type) {
         damage = chain(damage, payload.stab_4096);
